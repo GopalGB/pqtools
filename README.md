@@ -62,6 +62,9 @@ diff = update_file(path, format_source, write=True)  # atomic write
 | `M005` | warning | unresolved unqualified reference |
 | `M006` | info | source-function inventory (`*.Contents` dependency) |
 
+`M002` and `M003` are conservative text-pattern checks on the raw source, not
+AST checks; expect occasional false positives inside comments or strings.
+
 `check --json` emits stable objects; `check` without `--json` prints
 `file:line:column: severity code: message` per diagnostic. The CLI exits `2`
 when any diagnostic has severity `error`, `0` otherwise.
