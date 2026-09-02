@@ -375,17 +375,18 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
                 )
             )
 
-    web_match = re.search(r"Web\.Contents\s*\(\s*", source)
-    if web_match and source[web_match.end() : web_match.end() + 1] != '"':
-        line = source.count("\n", 0, web_match.start()) + 1
-        column = web_match.start() - source.rfind("\n", 0, web_match.start())
-        diagnostics.append(
-            Diagnostic(
-                file, line, column, "M002", "warning", "dynamic Web.Contents URL"
+    for web_match in re.finditer(r"Web\.Contents\s*\(\s*", source):
+        if source[web_match.end() : web_match.end() + 1] != '"':
+            line = source.count("\n", 0, web_match.start()) + 1
+            column = web_match.start() - source.rfind("\n", 0, web_match.start())
+            diagnostics.append(
+                Diagnostic(
+                    file, line, column, "M002", "warning", "dynamic Web.Contents URL"
+                )
             )
-        )
-    credential_match = re.search(r"(?i)(password|token|secret)\s*=\s*\"", source)
-    if credential_match:
+    for credential_match in re.finditer(
+        r"(?i)(password|token|secret)\s*=\s*\"", source
+    ):
         line = source.count("\n", 0, credential_match.start()) + 1
         column = credential_match.start() - source.rfind(
             "\n", 0, credential_match.start()

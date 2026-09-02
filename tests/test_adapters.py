@@ -120,6 +120,98 @@ def test_fabric_uses_operation_id_and_retries_original_post_on_429():
     )
 
 
+def test_fabric_lro_succeeded_fetches_result():
+    execute_url = "https://api.fabric.microsoft.com/v1/query"
+    op_url = "https://api.fabric.microsoft.com/v1/operations/op-9"
+    responses = iter(
+        [
+            {
+                "status": 202,
+                "headers": {
+                    "Location": op_url,
+                    "x-ms-operation-id": "op-9",
+                    "Retry-After": "1",
+                },
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Running"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Succeeded"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/vnd.apache.arrow.stream"},
+                "body": b"arrow",
+            },
+        ]
+    )
+    seen = []
+
+    def transport(url, _headers, payload, _timeout):
+        seen.append((url, payload))
+        return next(responses)
+
+    client = FabricClient(
+        transport, sleeper=lambda _: None, arrow_validator=lambda _: None
+    )
+    payload = {"q": 1}
+    result = client.execute(execute_url, "token", payload)
+    assert seen == [
+        (execute_url, payload),
+        (op_url, None),
+        (op_url, None),
+        (op_url + "/result", None),
+    ]
+    assert result["status"] == 200
+
+
+def test_fabric_rejects_succeeded_without_operation():
+    client = FabricClient(
+        lambda *_: {
+            "status": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": {"status": "Succeeded"},
+        },
+        sleeper=lambda _: None,
+    )
+    with pytest.raises(AdapterError, match="JSON status"):
+        client.execute("https://api.fabric.microsoft.com/v1/query", "token", {})
+
+
+def test_fabric_rejects_json_from_result_endpoint():
+    op_url = "https://api.fabric.microsoft.com/v1/operations/op-1"
+    responses = iter(
+        [
+            {
+                "status": 202,
+                "headers": {"Location": op_url, "x-ms-operation-id": "op-1"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Succeeded"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Succeeded"},
+            },
+        ]
+    )
+    client = FabricClient(
+        lambda *_: next(responses),
+        sleeper=lambda _: None,
+        arrow_validator=lambda _: None,
+    )
+    with pytest.raises(AdapterError, match="result endpoint"):
+        client.execute("https://api.fabric.microsoft.com/v1/query", "token", {})
+
+
 def test_fabric_never_sends_token_to_cross_origin_location():
     seen = []
 

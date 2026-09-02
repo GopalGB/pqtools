@@ -64,6 +64,8 @@ diff = update_file(path, format_source, write=True)  # atomic write
 
 `M002` and `M003` are conservative text-pattern checks on the raw source, not
 AST checks; expect occasional false positives inside comments or strings.
+Every matching occurrence is reported, one diagnostic per call site or
+literal.
 
 `check --json` emits stable objects; `check` without `--json` prints
 `file:line:column: severity code: message` per diagnostic. The CLI exits `2`

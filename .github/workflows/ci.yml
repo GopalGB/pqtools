@@ -29,6 +29,8 @@ jobs:
 
       - run: npm ci --ignore-scripts
       - run: npm test
+      - run: npm run bundle
+      - run: git diff --exit-code -- src/mquery_toolkit/_bridge.cjs
 
       - run: python -m pip install -e ".[dev,fabric]"
       - run: python -m pytest -q --cov=mquery_toolkit --cov-fail-under=80

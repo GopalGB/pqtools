@@ -92,6 +92,13 @@ class FabricClient:
             raise AdapterError("Fabric transport timed out") from error
 
     @staticmethod
+    def _require_https_same_origin(start: str, candidate: str) -> None:
+        if urlsplit(candidate).scheme != "https" or not _same_origin(start, candidate):
+            raise AdapterError(
+                "Fabric operation Location must remain HTTPS and same-origin"
+            )
+
+    @staticmethod
     def _poll_url(start: str, location: str, operation_id: str) -> str:
         candidate = urljoin(start, location) if location else ""
         if not candidate:
@@ -102,10 +109,7 @@ class FabricClient:
                 f"{origin.scheme}://{origin.netloc}/v1/operations/"
                 f"{quote(operation_id, safe='')}"
             )
-        if urlsplit(candidate).scheme != "https" or not _same_origin(start, candidate):
-            raise AdapterError(
-                "Fabric operation Location must remain HTTPS and same-origin"
-            )
+        FabricClient._require_https_same_origin(start, candidate)
         return candidate
 
     def execute(self, url: str, token: str, payload: Mapping[str, Any]) -> Response:
@@ -121,6 +125,7 @@ class FabricClient:
         request_url: str = url
         request_payload: Mapping[str, Any] | None = payload
         operation_id: str | None = None
+        result_requested = False
         while True:
             if self.clock() > deadline:
                 raise AdapterError("Fabric operation exceeded caller timeout")
@@ -138,6 +143,22 @@ class FabricClient:
                         continue
                     if state == "Failed":
                         raise AdapterError("Fabric operation reported Failed")
+                    if state == "Succeeded":
+                        if request_url == url:
+                            raise AdapterError(
+                                "Fabric returned a JSON status instead of an "
+                                "Arrow stream"
+                            )
+                        if result_requested:
+                            raise AdapterError(
+                                "Fabric result endpoint returned JSON instead of Arrow"
+                            )
+                        result_url = request_url.rstrip("/") + "/result"
+                        self._require_https_same_origin(url, result_url)
+                        request_url = result_url
+                        request_payload = None
+                        result_requested = True
+                        continue
                 if (
                     "arrow" not in content_type
                     or not isinstance(body, bytes)

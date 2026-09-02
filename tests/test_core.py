@@ -67,6 +67,21 @@ def test_check_literal_web_url_is_not_dynamic():
     assert "M002" not in {item.code for item in diagnostics}
 
 
+def test_check_reports_every_dynamic_web_contents_and_credential_literal():
+    source = (
+        'let A = Web.Contents("https://example.test"), B = Web.Contents(Url), '
+        'C = [Password = "a", Token = "b"] in B'
+    )
+    diagnostics = check(source)
+    first_call = source.index("Web.Contents(")
+    first_call_column = first_call - source.rfind("\n", 0, first_call)
+    m002 = [item for item in diagnostics if item.code == "M002"]
+    m003 = [item for item in diagnostics if item.code == "M003"]
+    assert len(m002) == 1
+    assert m002[0].column > first_call_column
+    assert len(m003) == 2
+
+
 def test_check_understands_function_and_each_scopes():
     function_codes = {item.code for item in check("let F = (x) => x in F")}
     each_codes = {
