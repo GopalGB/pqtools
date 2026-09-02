@@ -6,9 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from mquery_toolkit import core
 from mquery_toolkit.core import (
     MAX_BYTES,
     MQueryError,
+    NodeError,
     ParseError,
     RenameRefusal,
     SafeWriteError,
@@ -169,3 +171,38 @@ def test_write_refuses_concurrent_change(tmp_path: Path):
 
     with pytest.raises(SafeWriteError, match="changed"):
         update_file(path, change_then_format, write=True)
+
+
+def test_node_version_gate_accepts_22_and_newer(monkeypatch):
+    cases = [
+        ("node-a", b"v22.23.2\n", True),
+        ("node-b", b"v24.1.0\n", True),
+        ("node-c", b"v26.0.0\n", True),
+        ("node-d", b"v20.19.0\n", False),
+        ("node-e", b"garbage\n", False),
+    ]
+    for binary, stdout, ok in cases:
+        core._require_node.cache_clear()
+        monkeypatch.setattr(
+            core,
+            "_run_process_bounded",
+            lambda command, input_data, timeout, stdout=stdout: (
+                subprocess.CompletedProcess(command, 0, stdout, b"")
+            ),
+        )
+        if ok:
+            core._require_node(binary)
+        else:
+            with pytest.raises(NodeError):
+                core._require_node(binary)
+    core._require_node.cache_clear()
+
+
+def test_update_file_leaves_no_lock_or_temp_files(tmp_path: Path):
+    path = tmp_path / "query.pq"
+    path.write_text("let A=1 in A", encoding="utf-8")
+    update_file(path, format_source)
+    assert {item.name for item in tmp_path.iterdir()} == {"query.pq"}
+    update_file(path, format_source, write=True)
+    assert {item.name for item in tmp_path.iterdir()} == {"query.pq"}
+    assert path.read_text() == "let A = 1 in A"

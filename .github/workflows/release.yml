@@ -1,0 +1,66 @@
+# Publishes to PyPI on a "v*" tag push, using PyPI Trusted Publishing (OIDC) -
+# no API token stored in this repo. Before the first tag is pushed, the PyPI
+# project (https://pypi.org/manage/project/mquery-toolkit/settings/publishing/)
+# must have a trusted publisher configured for this exact repository, workflow
+# file name ("release.yml"), and the "pypi" environment used below.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Uncomment to dry-run a release against TestPyPI before the real PyPI
+  # trusted publisher is configured. TestPyPI needs its own trusted publisher
+  # entry (same repo/workflow, "testpypi" environment) pointed at
+  # https://test.pypi.org/legacy/.
+  #
+  # publish-testpypi:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   environment: testpypi
+  #   permissions:
+  #     id-token: write
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: dist
+  #         path: dist/
+  #
+  #     - uses: pypa/gh-action-pypi-publish@release/v1
+  #       with:
+  #         repository-url: https://test.pypi.org/legacy/

@@ -31,7 +31,7 @@ def _same_origin(start: str, candidate: str) -> bool:
 
 def _validate_arrow(body: bytes) -> None:
     try:
-        import pyarrow as pa  # type: ignore[import-not-found,import-untyped]
+        import pyarrow as pa  # type: ignore[import-untyped]
     except ImportError as error:
         raise AdapterError(
             "Arrow validation requires the mquery-toolkit[fabric] extra"
@@ -159,9 +159,8 @@ class FabricClient:
                 self.sleeper(min(retry, max(0, deadline - self.clock())))
                 continue
             if status != 202:
-                raise AdapterError(
-                    f"Fabric returned HTTP {status if status is not None else 'unknown'}"
-                )
+                shown = status if status is not None else "unknown"
+                raise AdapterError(f"Fabric returned HTTP {shown}")
             location = str(response_headers.get("location", ""))
             next_operation = str(response_headers.get("x-ms-operation-id", ""))
             if not location and not next_operation:

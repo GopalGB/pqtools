@@ -76,7 +76,8 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 for item in diagnostics:
                     print(
-                        f"{item.file}:{item.line}:{item.column}: {item.severity} {item.code}: {item.message}"
+                        f"{item.file}:{item.line}:{item.column}: "
+                        f"{item.severity} {item.code}: {item.message}"
                     )
             return 2 if any(item.severity == "error" for item in diagnostics) else 0
         if args.command == "dependencies":

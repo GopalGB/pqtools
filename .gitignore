@@ -8,3 +8,8 @@ __pycache__/
 .coverage
 .pytest_cache/
 codedb.snapshot
+.DS_Store
+.*.lock
+.*.tmp
+.mypy_cache/
+.ruff_cache/

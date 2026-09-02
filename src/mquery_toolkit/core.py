@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import importlib
 import json
@@ -179,13 +180,15 @@ def _run_process_bounded(
 
 
 @lru_cache(maxsize=4)
-def _require_node22(binary: str) -> None:
+def _require_node(binary: str) -> None:
     try:
         result = _run_process_bounded([binary, "--version"], None, 5)
     except (OSError, subprocess.SubprocessError, _ProcessOutputLimit) as error:
-        raise NodeError("Node 22 is required") from error
-    if result.returncode or not re.fullmatch(rb"v22\.\d+\.\d+\s*", result.stdout):
-        raise NodeError("Node 22 is required")
+        raise NodeError("Node.js 22 or newer is required") from error
+    if result.returncode or not re.fullmatch(
+        rb"v(2[2-9]|[3-9]\d)\.\d+\.\d+\s*", result.stdout
+    ):
+        raise NodeError("Node.js 22 or newer is required")
 
 
 def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
@@ -200,13 +203,13 @@ def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
         raise MQueryError("input exceeds 10 MiB")
     bridge = Path(__file__).with_name("_bridge.cjs")
     node = _node_binary()
-    _require_node22(node)
+    _require_node(node)
     try:
         result = _run_process_bounded(
             [node, str(bridge)], payload, NODE_TIMEOUT_SECONDS
         )
     except FileNotFoundError as error:
-        raise NodeError("Node 22 is required") from error
+        raise NodeError("Node.js 22 or newer is required") from error
     except subprocess.TimeoutExpired as error:
         raise NodeError("Node subprocess timed out after 30 seconds") from error
     except _ProcessOutputLimit as error:
@@ -214,7 +217,7 @@ def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
     if result.returncode:
         raise NodeError(f"Node bridge failed with exit {result.returncode}")
     try:
-        response = json.loads(result.stdout.decode("utf-8", "strict"))
+        response: dict[str, Any] = json.loads(result.stdout.decode("utf-8", "strict"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise NodeError("Node bridge returned invalid JSON") from error
     if response.get("error") == "PARSE_ERROR":
@@ -424,8 +427,6 @@ def _snapshot(path: Path) -> FileSnapshot:
                 raise SafeWriteError("input exceeds 10 MiB")
     finally:
         os.close(descriptor)
-    if len(data) > MAX_BYTES:
-        raise SafeWriteError("writes require a regular, non-symlink, single-link file")
     return FileSnapshot(
         bytes(data),
         stat.S_IMODE(info.st_mode),
@@ -483,6 +484,14 @@ def update_file(
 ) -> str:
     if path.suffix not in _FILE_SUFFIXES and not path.name.endswith(".query.pq"):
         raise SafeWriteError("unsupported source file extension")
+    if not write:
+        snapshot = _snapshot(path)
+        try:
+            original = snapshot.data.decode("utf-8", "strict")
+        except UnicodeDecodeError as error:
+            raise SafeWriteError("source must be valid UTF-8") from error
+        updated = _preserve_layout(transform(original), original)
+        return _diff(path, snapshot.data, updated)
     lock = path.with_name(f".{path.name}.lock")
     lock_flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -501,7 +510,7 @@ def update_file(
             raise SafeWriteError("source must be valid UTF-8") from error
         updated = _preserve_layout(transform(original), original)
         diff = _diff(path, snapshot.data, updated)
-        if not write or updated == original:
+        if updated == original:
             return diff
         if _snapshot(path) != snapshot:
             raise SafeWriteError("source changed during operation")
@@ -520,3 +529,7 @@ def update_file(
             temporary.unlink()
         _unlock_file(lock_fd)
         os.close(lock_fd)
+        # Lock removal is best-effort; the snapshot re-checks above remain
+        # the correctness guard against a concurrent writer.
+        with contextlib.suppress(OSError):
+            os.unlink(lock)
