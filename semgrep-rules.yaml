@@ -1,0 +1,14 @@
+rules:
+  - id: no-shell-subprocess
+    languages: [python]
+    severity: ERROR
+    message: Shell execution is prohibited.
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$F(..., shell=True, ...)
+          - pattern: os.system(...)
+  - id: no-hardcoded-bearer
+    languages: [python]
+    severity: ERROR
+    message: Credentials must be caller-provided.
+    pattern-regex: '(?i)bearer\\s+[a-z0-9._-]{16,}'

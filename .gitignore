@@ -1,0 +1,10 @@
+.venv/
+.tools/
+node_modules/
+dist/
+build/
+*.egg-info/
+__pycache__/
+.coverage
+.pytest_cache/
+codedb.snapshot

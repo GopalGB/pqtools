@@ -1,0 +1,1 @@
+{"name":"mquery-toolkit-bridge","private":true,"engines":{"node":">=22 <23"},"dependencies":{"@microsoft/powerquery-formatter":"1.0.0","@microsoft/powerquery-parser":"2.0.0"},"scripts":{"bundle":"esbuild js/bridge.js --bundle --platform=node --target=node22 --outfile=src/mquery_toolkit/_bridge.cjs","test":"node --test"},"devDependencies":{"esbuild":"0.28.2"}}
