@@ -263,6 +263,14 @@ def parse(source: str) -> dict[str, Any]:
     return _bridge(source, "parse")
 
 
+def ast(source: str) -> dict[str, Any]:
+    """Return the parsed AST, pruned to kind/value/children/line/column.
+
+    Used by :mod:`pqtools.evaluate` to walk and evaluate a query offline.
+    """
+    return dict(_bridge(source, "ast")["ast"])
+
+
 def _preserve_layout(updated: str, original: str) -> str:
     if _newline(original) == "\r\n":
         updated = updated.replace("\r\n", "\n").replace("\n", "\r\n")

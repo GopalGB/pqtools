@@ -102,6 +102,62 @@ function analysisView(ast) {
   };
 }
 
+// Fields every raw parser node carries purely for the parser's own
+// bookkeeping (id, attributeIndex), for full-range diagnostics we do not
+// need (tokenRange - only positionStart survives, below), or that this
+// function already lifts onto the pruned view under a stable name
+// (literal/literalKind/constantKind/identifierContextKind/
+// primitiveTypeKind/handlerKind). Anything else on the node is a real
+// child (or an array of them) and is walked in place.
+const AST_SKIP_KEYS = new Set([
+  "kind",
+  "id",
+  "attributeIndex",
+  "tokenRange",
+  "isLeaf",
+  "literal",
+  "literalKind",
+  "constantKind",
+  "identifierContextKind",
+  "primitiveTypeKind",
+  "handlerKind",
+]);
+
+function astView(node) {
+  if (!node || typeof node !== "object" || typeof node.kind !== "string") return undefined;
+  const view = { kind: node.kind };
+  const start = node.tokenRange && node.tokenRange.positionStart;
+  if (start) {
+    view.line = start.lineNumber + 1;
+    view.column = start.lineCodeUnit + 1;
+  }
+  if (typeof node.literal === "string") view.value = node.literal;
+  if (typeof node.constantKind === "string") view.value = node.constantKind;
+  if (typeof node.primitiveTypeKind === "string") view.value = node.primitiveTypeKind;
+  if (typeof node.literalKind === "string") view.literalKind = node.literalKind;
+  if (typeof node.identifierContextKind === "string") {
+    view.identifierContextKind = node.identifierContextKind;
+  }
+  if (typeof node.handlerKind === "string") view.handlerKind = node.handlerKind;
+
+  const children = [];
+  for (const key of Object.keys(node)) {
+    if (AST_SKIP_KEYS.has(key)) continue;
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const child = astView(item);
+        if (child !== undefined) children.push(child);
+      }
+    } else if (value && typeof value === "object") {
+      const child = astView(value);
+      if (child !== undefined) children.push(child);
+    }
+  }
+  if (children.length) view.children = children;
+  return view;
+}
+
 async function main() {
   const raw = fs.readFileSync(0, "utf8");
   if (Buffer.byteLength(raw, "utf8") > MAX_BYTES) return emit({ error: "INPUT_LIMIT" });
@@ -139,6 +195,9 @@ async function main() {
       return emit({ error: String(error.message || "RENAME_UNSAFE") });
     }
   }
+  if (request.kind === "ast") {
+    return emit({ ast: astView(parsed.ast) });
+  }
   return emit({
     rootKind: parsed.ast.kind,
     tokens: parsed.lexerSnapshot.tokens.map(tokenView),
@@ -148,4 +207,4 @@ async function main() {
 
 if (require.main === module) main().catch(() => emit({ error: "BRIDGE_FAILURE" }));
 
-module.exports = { tokenView, renameSpans, analysisView };
+module.exports = { tokenView, renameSpans, analysisView, astView };

@@ -45490,6 +45490,52 @@ function analysisView(ast) {
     resultReferences: references(ast.expression)
   };
 }
+var AST_SKIP_KEYS = /* @__PURE__ */ new Set([
+  "kind",
+  "id",
+  "attributeIndex",
+  "tokenRange",
+  "isLeaf",
+  "literal",
+  "literalKind",
+  "constantKind",
+  "identifierContextKind",
+  "primitiveTypeKind",
+  "handlerKind"
+]);
+function astView(node) {
+  if (!node || typeof node !== "object" || typeof node.kind !== "string") return void 0;
+  const view = { kind: node.kind };
+  const start = node.tokenRange && node.tokenRange.positionStart;
+  if (start) {
+    view.line = start.lineNumber + 1;
+    view.column = start.lineCodeUnit + 1;
+  }
+  if (typeof node.literal === "string") view.value = node.literal;
+  if (typeof node.constantKind === "string") view.value = node.constantKind;
+  if (typeof node.primitiveTypeKind === "string") view.value = node.primitiveTypeKind;
+  if (typeof node.literalKind === "string") view.literalKind = node.literalKind;
+  if (typeof node.identifierContextKind === "string") {
+    view.identifierContextKind = node.identifierContextKind;
+  }
+  if (typeof node.handlerKind === "string") view.handlerKind = node.handlerKind;
+  const children = [];
+  for (const key of Object.keys(node)) {
+    if (AST_SKIP_KEYS.has(key)) continue;
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const child = astView(item);
+        if (child !== void 0) children.push(child);
+      }
+    } else if (value && typeof value === "object") {
+      const child = astView(value);
+      if (child !== void 0) children.push(child);
+    }
+  }
+  if (children.length) view.children = children;
+  return view;
+}
 async function main() {
   const raw = fs.readFileSync(0, "utf8");
   if (Buffer.byteLength(raw, "utf8") > MAX_BYTES) return emit({ error: "INPUT_LIMIT" });
@@ -45525,6 +45571,9 @@ async function main() {
       return emit({ error: String(error.message || "RENAME_UNSAFE") });
     }
   }
+  if (request.kind === "ast") {
+    return emit({ ast: astView(parsed.ast) });
+  }
   return emit({
     rootKind: parsed.ast.kind,
     tokens: parsed.lexerSnapshot.tokens.map(tokenView),
@@ -45532,4 +45581,4 @@ async function main() {
   });
 }
 if (require.main === module) main().catch(() => emit({ error: "BRIDGE_FAILURE" }));
-module.exports = { tokenView, renameSpans, analysisView };
+module.exports = { tokenView, renameSpans, analysisView, astView };
