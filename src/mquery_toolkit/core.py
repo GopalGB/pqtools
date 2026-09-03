@@ -11,6 +11,7 @@ import re
 import shutil
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 from collections import Counter
@@ -304,7 +305,11 @@ def rename(source: str, old: str, new: str) -> str:
 
 def replace_source(source: str, replacement: str) -> str:
     """Replace complete source only - never an unsafe partial-text match."""
-    if len(replacement.encode()) > MAX_BYTES:
+    try:
+        size = len(replacement.encode("utf-8", "strict"))
+    except UnicodeEncodeError as error:
+        raise MQueryError("source must be valid UTF-8") from error
+    if size > MAX_BYTES:
         raise MQueryError("replacement exceeds 10 MiB")
     parse(replacement)
     return replacement
@@ -508,6 +513,7 @@ def update_file(
         return _diff(path, snapshot.data, updated)
     lock = path.with_name(f".{path.name}.lock")
     lock_flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    temporary: Path | None = None
     try:
         lock_fd = os.open(lock, lock_flags, 0o600)
     except OSError as error:
@@ -533,8 +539,14 @@ def update_file(
             return diff
         if _snapshot(path) != snapshot:
             raise SafeWriteError("source changed during operation")
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        with temporary.open("xb") as handle:
+        try:
+            descriptor, name = tempfile.mkstemp(
+                dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+            )
+        except OSError as error:
+            raise SafeWriteError("unable to create temporary file") from error
+        temporary = Path(name)
+        with os.fdopen(descriptor, "wb") as handle:
             handle.write(updated.encode())
             handle.flush()
             os.fsync(handle.fileno())
@@ -544,8 +556,9 @@ def update_file(
         os.replace(temporary, path)
         return diff
     finally:
-        if "temporary" in locals() and temporary.exists():
-            temporary.unlink()
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink()
         try:
             if acquired:
                 with contextlib.suppress(OSError):

@@ -43,3 +43,9 @@ def test_cli_refuses_missing_required_edit_arguments(tmp_path: Path, capsys):
     assert main(["rename", str(path)]) == 2
     assert "MQUERY_ERROR" in capsys.readouterr().out
     assert main(["replace-source", str(path)]) == 2
+
+
+def test_cli_replace_source_rejects_invalid_unicode(tmp_path: Path, capsys):
+    path = _query(tmp_path)
+    assert main(["replace-source", str(path), "--source", "\udcff"]) == 2
+    assert "UTF-8" in capsys.readouterr().out

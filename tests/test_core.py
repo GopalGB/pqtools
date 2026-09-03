@@ -136,6 +136,11 @@ def test_replace_source_validates_complete_replacement():
         replace_source("let A = 1 in A", "let =")
 
 
+def test_replace_source_rejects_invalid_unicode():
+    with pytest.raises(MQueryError, match="UTF-8"):
+        replace_source("let A = 1 in A", "\udcff")
+
+
 def test_input_limit():
     with pytest.raises(MQueryError, match="10 MiB"):
         parse("x" * (MAX_BYTES + 1))
@@ -174,10 +179,15 @@ def test_dry_run_and_atomic_write_preserve_mode_and_no_partial(tmp_path: Path):
     assert update_file(path, format_source).startswith("---")
     assert path.read_text() == "let A=1 in A"
     update_file(path, format_source, write=True)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert path.read_text() == "let A = 1 in A"
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX link semantics; Windows symlinks need Developer Mode",
+)
 def test_write_refuses_symlink_and_hardlink(tmp_path: Path):
     original = tmp_path / "query.pq"
     original.write_text("let A=1 in A")
@@ -261,3 +271,17 @@ def test_update_file_leaves_no_lock_or_temp_files(tmp_path: Path):
     update_file(path, format_source, write=True)
     assert {item.name for item in tmp_path.iterdir()} == {"query.pq"}
     assert path.read_text() == "let A = 1 in A"
+
+
+def test_write_does_not_clobber_stale_temp(tmp_path: Path):
+    path = tmp_path / "query.pq"
+    path.write_text("let A=1 in A", encoding="utf-8")
+    stale = tmp_path / f".query.pq.{os.getpid()}.tmp"
+    stale.write_text("stale", encoding="utf-8")
+    update_file(path, format_source, write=True)
+    assert stale.read_text() == "stale"
+    assert path.read_text() == "let A = 1 in A"
+    assert {item.name for item in tmp_path.iterdir()} == {
+        "query.pq",
+        f".query.pq.{os.getpid()}.tmp",
+    }
