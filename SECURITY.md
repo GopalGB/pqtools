@@ -26,7 +26,8 @@ network requests and handles no credentials. The optional adapters do:
 `mquery --write` snapshots the file (identity, size, timestamp, content), applies the
 transform, then re-checks that snapshot immediately before the atomic replace. **That
 re-check is the guarantee against a lost update** - a change between the final check
-and `os.replace` is a microsecond window on every operating system.
+and `os.replace` is a microsecond window on every operating system. After the replace,
+the parent directory is `fsync`'d so the rename itself is durable.
 
 The advisory lock taken during a write is best-effort serialisation between
 cooperating `mquery` processes, not a correctness guarantee: the lock file is removed

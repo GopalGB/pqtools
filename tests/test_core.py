@@ -84,6 +84,26 @@ def test_check_reports_every_dynamic_web_contents_and_credential_literal():
     assert len(m003) == 2
 
 
+def test_check_ignores_comments_and_strings():
+    commented = 'let A = 1 in A // Web.Contents(Url) Password = "x"'
+    codes = {item.code for item in check(commented)}
+    assert "M002" not in codes
+    assert "M003" not in codes
+    assert "M002" not in {
+        item.code for item in check('let A = "Web.Contents(Url)" in A')
+    }
+
+
+def test_check_bom_offsets_match_the_no_bom_source():
+    with_bom = check("\ufefflet A = Web.Contents(Url) in A")
+    without_bom = check("let A = Web.Contents(Url) in A")
+    m002_with_bom = [item for item in with_bom if item.code == "M002"]
+    m002_without_bom = [item for item in without_bom if item.code == "M002"]
+    assert len(m002_with_bom) == 1
+    assert m002_with_bom[0].column == 9
+    assert m002_without_bom[0].column == 9
+
+
 def test_check_understands_function_and_each_scopes():
     function_codes = {item.code for item in check("let F = (x) => x in F")}
     each_codes = {
@@ -192,6 +212,24 @@ def test_process_timeout_survives_grandchild_holding_stdout():
     with pytest.raises(subprocess.TimeoutExpired):
         _run_process_bounded(command, None, 2)
     assert time.monotonic() - start < 10
+
+
+@pytest.mark.skipif(
+    not Path("/dev/fd").exists(), reason="/dev/fd not available on this platform"
+)
+def test_process_timeout_closes_abandoned_pipe_fds():
+    command = [
+        sys.executable,
+        "-c",
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        "sys.stdout.write('parent done')",
+    ]
+    before = len(os.listdir("/dev/fd"))
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_process_bounded(command, None, 2)
+    after = len(os.listdir("/dev/fd"))
+    assert after <= before + 1
 
 
 def test_dry_run_and_atomic_write_preserve_mode_and_no_partial(tmp_path: Path):
@@ -330,6 +368,23 @@ def test_node_binary_refuses_cwd_resolution(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("MQUERY_NODE", raising=False)
     with pytest.raises(NodeError, match="current directory"):
         core._node_binary()
+
+
+def test_update_file_fsyncs_parent_directory_after_replace(tmp_path: Path, monkeypatch):
+    path = tmp_path / "query.pq"
+    path.write_text("let A=1 in A", encoding="utf-8")
+    real_fsync = os.fsync
+    calls = []
+
+    def recording_fsync(fd):
+        info = os.fstat(fd)
+        calls.append(stat.S_ISDIR(info.st_mode))
+        real_fsync(fd)
+
+    monkeypatch.setattr(core.os, "fsync", recording_fsync)
+    update_file(path, format_source, write=True)
+    assert len(calls) >= 2
+    assert any(calls)
 
 
 def test_update_file_leaves_no_lock_or_temp_files(tmp_path: Path):

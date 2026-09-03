@@ -20,13 +20,14 @@ ArrowValidator = Callable[[bytes], None]
 _OPERATION_ID = re.compile(r"^[A-Za-z0-9-]{1,128}$")
 
 
-def redact(value: str) -> str:
-    return "<redacted>" if value else ""
-
-
 def _same_origin(start: str, candidate: str) -> bool:
     left, right = urlsplit(start), urlsplit(candidate)
-    return (left.scheme, left.netloc) == (right.scheme, right.netloc)
+
+    def origin(parts: Any) -> tuple[str, str | None, int | None]:
+        host = parts.hostname
+        return (parts.scheme.lower(), host.lower() if host else host, parts.port)
+
+    return origin(left) == origin(right)
 
 
 def _validate_arrow(body: bytes) -> None:
@@ -109,6 +110,14 @@ class FabricClient:
             )
 
     @staticmethod
+    def _retry_seconds(headers: Mapping[str, Any]) -> int:
+        retry_raw = headers.get("retry-after", 1)
+        try:
+            return max(1, int(str(retry_raw)))
+        except ValueError as error:
+            raise AdapterError("Fabric Retry-After must be whole seconds") from error
+
+    @staticmethod
     def _poll_url(start: str, location: str, operation_id: str) -> str:
         candidate = urljoin(start, location) if location else ""
         if not candidate:
@@ -149,7 +158,8 @@ class FabricClient:
                     state = str(body.get("status", ""))
                     if state in {"Running", "NotStarted"}:
                         request_payload = None
-                        self.sleeper(1)
+                        retry = self._retry_seconds(response_headers)
+                        self.sleeper(min(retry, max(0, deadline - self.clock())))
                         continue
                     if state == "Failed":
                         raise AdapterError("Fabric operation reported Failed")
@@ -182,19 +192,14 @@ class FabricClient:
                     )
                 self.arrow_validator(body)
                 return response
-            retry_raw = response_headers.get("retry-after", 1)
-            try:
-                retry = max(1, int(str(retry_raw)))
-            except ValueError as error:
-                raise AdapterError(
-                    "Fabric Retry-After must be whole seconds"
-                ) from error
             if status == 429:
+                retry = self._retry_seconds(response_headers)
                 self.sleeper(min(retry, max(0, deadline - self.clock())))
                 continue
             if status != 202:
                 shown = status if status is not None else "unknown"
                 raise AdapterError(f"Fabric returned HTTP {shown}")
+            retry = self._retry_seconds(response_headers)
             location = str(response_headers.get("location", ""))
             next_operation = str(response_headers.get("x-ms-operation-id", ""))
             if not location and not next_operation:
@@ -210,4 +215,5 @@ class FabricClient:
             operation_id = next_operation or operation_id
             request_url = self._poll_url(url, location, operation_id or "")
             request_payload = None
+            result_requested = False
             self.sleeper(min(retry, max(0, deadline - self.clock())))

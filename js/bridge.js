@@ -131,7 +131,10 @@ async function main() {
   }
   if (request.kind === "rename") {
     try {
-      return emit(renameSpans(parsed.ast, request.old));
+      return emit({
+        ...renameSpans(parsed.ast, request.old),
+        tokens: parsed.lexerSnapshot.tokens.map(tokenView),
+      });
     } catch (error) {
       return emit({ error: String(error.message || "RENAME_UNSAFE") });
     }
@@ -143,4 +146,6 @@ async function main() {
   });
 }
 
-main().catch(() => emit({ error: "BRIDGE_FAILURE" }));
+if (require.main === module) main().catch(() => emit({ error: "BRIDGE_FAILURE" }));
+
+module.exports = { tokenView, renameSpans, analysisView };

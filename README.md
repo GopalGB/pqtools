@@ -62,10 +62,9 @@ diff = update_file(path, format_source, write=True)  # atomic write
 | `M005` | warning | unresolved unqualified reference |
 | `M006` | info | source-function inventory (`*.Contents` dependency) |
 
-`M002` and `M003` are conservative text-pattern checks on the raw source, not
-AST checks; expect occasional false positives inside comments or strings.
-Every matching occurrence is reported, one diagnostic per call site or
-literal.
+`M002` and `M003` are token-based checks over the parsed source, so they no
+longer fire inside comments or strings. Every matching occurrence is
+reported, one diagnostic per call site or literal.
 
 `check --json` emits stable objects; `check` without `--json` prints
 `file:line:column: severity code: message` per diagnostic. The CLI exits `2`
@@ -78,7 +77,8 @@ when any diagnostic has severity `error`, `0` otherwise.
   is passed.
 - **`--write` is an atomic replace**: the file is written to a sibling temp
   file, `fsync`'d, `chmod`'d to match the original, then moved into place with
-  `os.replace`.
+  `os.replace`, after which the parent directory is `fsync`'d so the rename
+  itself is durable.
 - **Layout is preserved**: UTF-8 encoding, a leading BOM (present in every
   Power Query SDK connector file), newline convention (`\n` vs `\r\n`),
   final-newline state, and file mode all round-trip unchanged.

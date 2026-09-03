@@ -24,6 +24,7 @@ from typing import Any
 MAX_BYTES = 10 * 1024 * 1024
 NODE_TIMEOUT_SECONDS = 30
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_CREDENTIAL_NAME = re.compile(r"(?i)^(password|token|secret)$")
 _FILE_SUFFIXES = (".pq", ".m", ".pqm")
 _RESERVED = {
     "and",
@@ -138,12 +139,15 @@ def _run_process_bounded(
         exceeded = threading.Event()
 
         def read(stream: Any, buffer: bytearray) -> None:
-            while chunk := stream.read(65536):
-                if len(buffer) + len(chunk) > MAX_BYTES:
-                    exceeded.set()
-                    process.kill()
-                    return
-                buffer.extend(chunk)
+            try:
+                while chunk := stream.read(65536):
+                    if len(buffer) + len(chunk) > MAX_BYTES:
+                        exceeded.set()
+                        process.kill()
+                        return
+                    buffer.extend(chunk)
+            except (OSError, ValueError):
+                return
 
         threads = [
             threading.Thread(target=read, args=(stream, buffer), daemon=True)
@@ -179,10 +183,21 @@ def _run_process_bounded(
             if any(thread.is_alive() for thread in threads):
                 if process.poll() is None:
                     process.kill()
+                try:
+                    raw = [
+                        stream.fileno()
+                        for stream in (process.stdout, process.stderr, process.stdin)
+                        if stream is not None
+                    ]
+                except (OSError, ValueError):
+                    raw = []
                 # An abandoned thread may still hold the read lock on this
                 # pipe (e.g. a grandchild keeping it open); detach it so the
                 # context manager's close() below does not block on it.
                 process.stdout = process.stderr = process.stdin = None
+                for fd in raw:
+                    with contextlib.suppress(OSError):
+                        os.close(fd)
                 raise subprocess.TimeoutExpired(command, timeout)
         if exceeded.is_set():
             raise _ProcessOutputLimit
@@ -419,25 +434,45 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
                 )
             )
 
-    for web_match in re.finditer(r"Web\.Contents\s*\(\s*", source):
-        if source[web_match.end() : web_match.end() + 1] != '"':
-            line = source.count("\n", 0, web_match.start()) + 1
-            column = web_match.start() - source.rfind("\n", 0, web_match.start())
+    tokens = parsed["tokens"]
+    for index, token in enumerate(tokens):
+        if token["kind"] != "Identifier":
+            continue
+        text = str(token["text"])
+        if (
+            text == "Web.Contents"
+            and index + 1 < len(tokens)
+            and tokens[index + 1]["kind"] == "LeftParenthesis"
+            and not (
+                index + 2 < len(tokens) and tokens[index + 2]["kind"] == "TextLiteral"
+            )
+        ):
             diagnostics.append(
                 Diagnostic(
-                    file, line, column, "M002", "warning", "dynamic Web.Contents URL"
+                    file,
+                    int(token["line"]),
+                    int(token["column"]),
+                    "M002",
+                    "warning",
+                    "dynamic Web.Contents URL",
                 )
             )
-    for credential_match in re.finditer(
-        r"(?i)(password|token|secret)\s*=\s*\"", source
-    ):
-        line = source.count("\n", 0, credential_match.start()) + 1
-        column = credential_match.start() - source.rfind(
-            "\n", 0, credential_match.start()
-        )
-        diagnostics.append(
-            Diagnostic(file, line, column, "M003", "warning", "credential-like literal")
-        )
+        if (
+            _CREDENTIAL_NAME.match(text)
+            and index + 2 < len(tokens)
+            and tokens[index + 1]["kind"] == "Equal"
+            and tokens[index + 2]["kind"] == "TextLiteral"
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    file,
+                    int(token["line"]),
+                    int(token["column"]),
+                    "M003",
+                    "warning",
+                    "credential-like literal",
+                )
+            )
     for dependency in _dependencies_from(parsed):
         if dependency.endswith(".Contents"):
             diagnostics.append(
@@ -447,7 +482,10 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
 
 
 def _snapshot(path: Path) -> FileSnapshot:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    # O_NONBLOCK keeps a FIFO/device open() from blocking forever waiting for
+    # a writer; it has no effect on regular files. The S_ISREG check below
+    # then rejects the non-regular file immediately instead of hanging.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         info = os.lstat(path)
         if stat.S_ISLNK(info.st_mode) or (
@@ -530,7 +568,7 @@ def _unlock_file(descriptor: int) -> None:
 def update_file(
     path: Path, transform: Callable[[str], str], write: bool = False
 ) -> str:
-    if path.suffix not in _FILE_SUFFIXES and not path.name.endswith(".query.pq"):
+    if path.suffix not in _FILE_SUFFIXES:
         raise SafeWriteError("unsupported source file extension")
     if not write:
         snapshot = _snapshot(path)
@@ -583,6 +621,14 @@ def update_file(
         if _snapshot(path) != snapshot:
             raise SafeWriteError("source changed before atomic replacement")
         os.replace(temporary, path)
+        with contextlib.suppress(OSError):
+            directory_fd = os.open(
+                path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            )
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         return diff
     finally:
         if temporary is not None:

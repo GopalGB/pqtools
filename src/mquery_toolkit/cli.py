@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from .core import (
     MQueryError,
+    _snapshot,
     check,
     dependencies,
     format_source,
@@ -21,14 +23,7 @@ from .core import (
 
 
 def _source(path: Path) -> str:
-    limit = 10 * 1024 * 1024
-    if path.stat().st_size > limit:
-        raise MQueryError("input exceeds 10 MiB")
-    with path.open("rb") as handle:
-        data = handle.read(limit + 1)
-    if len(data) > limit:
-        raise MQueryError("input exceeds 10 MiB")
-    return data.decode("utf-8", "strict")
+    return _snapshot(path).data.decode("utf-8", "strict")
 
 
 def _print(value: Any, as_json: bool) -> None:
@@ -105,12 +100,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (OSError, UnicodeDecodeError, MQueryError) as error:
         code = getattr(error, "code", "M_IO_ERROR")
-        _print(
-            {"code": code, "message": str(error)}
-            if args.json
-            else f"error {code}: {error}",
-            args.json,
-        )
+        if args.json:
+            print(
+                json.dumps({"code": code, "message": str(error)}, sort_keys=True),
+                file=sys.stderr,
+            )
+        else:
+            print(f"error {code}: {error}", file=sys.stderr)
         return 2
 
 

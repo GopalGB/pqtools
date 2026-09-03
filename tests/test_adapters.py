@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from mquery_toolkit.core import MAX_BYTES, AdapterError
-from mquery_toolkit.fabric import FabricClient, redact
+from mquery_toolkit.fabric import FabricClient, _same_origin
 from mquery_toolkit.pqtest import run_pqtest, validate_pqtest
 
 
@@ -26,7 +26,6 @@ def test_fabric_200_passes_caller_token_without_logging():
     ).execute("https://example.test", "token", {"q": 1})
     assert result["body"] == b"arrow"
     assert seen[0][1]["Authorization"] == "Bearer token"
-    assert redact("token") == "<redacted>"
 
 
 def test_fabric_202_and_429_poll_location():
@@ -65,6 +64,116 @@ def test_fabric_fails_closed_for_missing_token_and_error():
         client.execute("https://start.test", "", {})
     with pytest.raises(AdapterError, match="500"):
         client.execute("https://start.test", "token", {})
+
+
+def test_fabric_non_202_429_status_ignores_unparseable_retry_after():
+    client = FabricClient(
+        lambda *_: {
+            "status": 503,
+            "headers": {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"},
+        },
+        sleeper=lambda _: None,
+    )
+    with pytest.raises(AdapterError, match="HTTP 503"):
+        client.execute("https://start.test", "token", {})
+
+
+def test_fabric_running_state_honors_retry_after():
+    execute_url = "https://api.fabric.microsoft.com/v1/query"
+    op_url = "https://api.fabric.microsoft.com/v1/operations/op-7"
+    responses = iter(
+        [
+            {
+                "status": 202,
+                "headers": {
+                    "Location": op_url,
+                    "x-ms-operation-id": "op-7",
+                    "Retry-After": "30",
+                },
+            },
+            {
+                "status": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Retry-After": "30",
+                },
+                "body": {"status": "Running"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/vnd.apache.arrow.stream"},
+                "body": b"arrow",
+            },
+        ]
+    )
+    sleeps = []
+    client = FabricClient(
+        lambda *_: next(responses),
+        sleeper=sleeps.append,
+        arrow_validator=lambda _: None,
+    )
+    assert client.execute(execute_url, "token", {})["status"] == 200
+    assert sleeps == [30, 30]
+
+
+def test_fabric_202_after_result_resets_polling_state():
+    execute_url = "https://api.fabric.microsoft.com/v1/query"
+    op_url = "https://api.fabric.microsoft.com/v1/operations/op-3"
+    result_url = op_url + "/result"
+    responses = iter(
+        [
+            {
+                "status": 202,
+                "headers": {"Location": op_url, "x-ms-operation-id": "op-3"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Succeeded"},
+            },
+            {
+                "status": 202,
+                "headers": {"Location": op_url, "x-ms-operation-id": "op-3"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Succeeded"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/vnd.apache.arrow.stream"},
+                "body": b"arrow",
+            },
+        ]
+    )
+    seen = []
+
+    def transport(url, _headers, _payload, _timeout):
+        seen.append(url)
+        return next(responses)
+
+    client = FabricClient(
+        transport, sleeper=lambda _: None, arrow_validator=lambda _: None
+    )
+    result = client.execute(execute_url, "token", {"q": 1})
+    assert result["status"] == 200
+    assert seen == [execute_url, op_url, result_url, op_url, result_url]
+
+
+def test_same_origin_case_insensitive_host_port_and_scheme_sensitive():
+    assert _same_origin(
+        "https://api.fabric.microsoft.com/v1/q",
+        "https://API.Fabric.microsoft.com/v1/operations/x",
+    )
+    assert not _same_origin(
+        "https://api.fabric.microsoft.com/v1/q",
+        "https://api.fabric.microsoft.com:8443/v1/operations/x",
+    )
+    assert not _same_origin(
+        "https://api.fabric.microsoft.com/v1/q",
+        "http://api.fabric.microsoft.com/v1/operations/x",
+    )
 
 
 def test_fabric_rejects_cross_origin_and_non_arrow():
