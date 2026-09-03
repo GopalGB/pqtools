@@ -9,6 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from . import containers
+from .containers import ContainerError
 from .core import (
     MQueryError,
     _snapshot,
@@ -21,9 +23,15 @@ from .core import (
     update_file,
 )
 
+_CONTAINER_SUFFIXES = {".xlsx", ".pbix", ".pbit", ".pbip"}
+
 
 def _source(path: Path) -> str:
     return _snapshot(path).data.decode("utf-8", "strict")
+
+
+def _is_container(path: Path) -> bool:
+    return path.suffix.lower() in _CONTAINER_SUFFIXES or path.is_dir()
 
 
 def _print(value: Any, as_json: bool) -> None:
@@ -60,6 +68,55 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
+        if _is_container(args.file):
+            if args.command in {"format", "rename", "replace-source"}:
+                raise ContainerError(
+                    f"{args.file}: writing inside a container is not enabled in "
+                    "the CLI yet (pqtools.containers.write_sections exists but "
+                    "is unvalidated against real Excel/Power BI output)"
+                )
+            sections = containers.read_sections(args.file)
+            if args.command == "check":
+                diagnostics = [
+                    diagnostic
+                    for section in sections
+                    for diagnostic in check(
+                        section.source, f"{section.container}!{section.path}"
+                    )
+                ]
+                if args.json:
+                    _print([item.as_dict() for item in diagnostics], True)
+                else:
+                    for item in diagnostics:
+                        print(
+                            f"{item.file}:{item.line}:{item.column}: "
+                            f"{item.severity} {item.code}: {item.message}"
+                        )
+                return 2 if any(item.severity == "error" for item in diagnostics) else 0
+            if args.command == "parse":
+                _print(
+                    [
+                        {
+                            "file": f"{section.container}!{section.path}",
+                            "parsed": parse(section.source),
+                        }
+                        for section in sections
+                    ],
+                    True,
+                )
+                return 0
+            if args.command == "dependencies":
+                _print(
+                    [
+                        {
+                            "file": f"{section.container}!{section.path}",
+                            "dependencies": dependencies(section.source),
+                        }
+                        for section in sections
+                    ],
+                    True,
+                )
+                return 0
         if args.command == "parse":
             _print(parse(_source(args.file)), True)
             return 0

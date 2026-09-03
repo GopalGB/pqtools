@@ -564,19 +564,20 @@ def _unlock_file(descriptor: int) -> None:
         locker.flock(descriptor, locker.LOCK_UN)
 
 
-def update_file(
-    path: Path, transform: Callable[[str], str], write: bool = False
+def _atomic_write(
+    path: Path, build: Callable[[FileSnapshot], tuple[str, bytes | None]]
 ) -> str:
-    if path.suffix not in _FILE_SUFFIXES:
-        raise SafeWriteError("unsupported source file extension")
-    if not write:
-        snapshot = _snapshot(path)
-        try:
-            original = snapshot.data.decode("utf-8", "strict")
-        except UnicodeDecodeError as error:
-            raise SafeWriteError("source must be valid UTF-8") from error
-        updated = _preserve_layout(transform(original), original)
-        return _diff(path, snapshot.data, updated)
+    """Lock, snapshot, and atomically replace path's bytes.
+
+    Acquires path's cross-process advisory lock, snapshots it, calls
+    ``build(snapshot)`` to get ``(diff, updated)``, and - only if `updated`
+    is not None and differs from the snapshot - writes it to a sibling temp
+    file, fsyncs, chmods to match, re-checks the snapshot once more, then
+    ``os.replace``s it into place and fsyncs the parent directory. Returns
+    `diff` either way. This is the one atomic-replace implementation in the
+    package: `update_file`'s ``--write`` path and `containers.write_sections`
+    both call it, so there is never a second hand-rolled write path.
+    """
     lock = path.with_name(f".{path.name}.lock")
     lock_flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     temporary: Path | None = None
@@ -595,13 +596,8 @@ def update_file(
             raise SafeWriteError("unable to acquire safe source lock") from error
         acquired = True
         snapshot = _snapshot(path)
-        try:
-            original = snapshot.data.decode("utf-8", "strict")
-        except UnicodeDecodeError as error:
-            raise SafeWriteError("source must be valid UTF-8") from error
-        updated = _preserve_layout(transform(original), original)
-        diff = _diff(path, snapshot.data, updated)
-        if updated == original:
+        diff, updated = build(snapshot)
+        if updated is None or updated == snapshot.data:
             return diff
         if _snapshot(path) != snapshot:
             raise SafeWriteError("source changed during operation")
@@ -613,7 +609,7 @@ def update_file(
             raise SafeWriteError("unable to create temporary file") from error
         temporary = Path(name)
         with os.fdopen(descriptor, "wb") as handle:
-            handle.write(updated.encode())
+            handle.write(updated)
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary, snapshot.mode)
@@ -643,3 +639,29 @@ def update_file(
         # the correctness guard against a concurrent writer.
         with contextlib.suppress(OSError):
             os.unlink(lock)
+
+
+def update_file(
+    path: Path, transform: Callable[[str], str], write: bool = False
+) -> str:
+    if path.suffix not in _FILE_SUFFIXES:
+        raise SafeWriteError("unsupported source file extension")
+    if not write:
+        snapshot = _snapshot(path)
+        try:
+            original = snapshot.data.decode("utf-8", "strict")
+        except UnicodeDecodeError as error:
+            raise SafeWriteError("source must be valid UTF-8") from error
+        updated = _preserve_layout(transform(original), original)
+        return _diff(path, snapshot.data, updated)
+
+    def build(snapshot: FileSnapshot) -> tuple[str, bytes | None]:
+        try:
+            original = snapshot.data.decode("utf-8", "strict")
+        except UnicodeDecodeError as error:
+            raise SafeWriteError("source must be valid UTF-8") from error
+        updated = _preserve_layout(transform(original), original)
+        diff = _diff(path, snapshot.data, updated)
+        return diff, updated.encode()
+
+    return _atomic_write(path, build)

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pqtools"
-version = "0.2.0"
-description = "Unofficial offline linter, formatter and refactoring CLI for Power Query M source (.pq)"
+version = "0.3.0"
+description = "Unofficial offline linter, formatter and refactoring CLI for Power Query M - reads queries straight out of .pbix and .xlsx"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

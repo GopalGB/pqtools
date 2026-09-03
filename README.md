@@ -115,6 +115,37 @@ when any diagnostic has severity `error`, `0` otherwise.
   are rejected.
 - The parse response is roughly 40x the size of the source, and it is capped at 10 MiB, so `parse`, `check`, `dependencies` and `rename` fail with a typed `NodeError` on sources above roughly 240 KiB. `format` returns only text and is not affected.
 
+## Working inside .xlsx and .pbix
+
+`pqtools` can read the Power Query M source out of the real files it lives
+in - no need to open Excel or Power BI to see or lint a query.
+
+**Supported:** `pq check`, `pq parse` and `pq dependencies` accept an
+`.xlsx`, `.pbix`, `.pbit`, or a `.pbip` project (or its directory) directly.
+Each finds the Power Query section(s) inside the container and runs
+normally; `check` diagnostics and JSON output are labelled
+`container!part` (e.g. `report.pbix!Formulas/Section1.m`) so the output
+stays greppable across a batch of files.
+
+```bash
+pq check report.pbix
+pq check "Sales.pbip" --json
+pq dependencies workbook.xlsx
+```
+
+**Not supported (yet):** writing back into a container. `pq format`,
+`pq rename` and `pq replace-source` refuse with a clear error on a
+container path. The underlying logic exists
+(`pqtools.containers.write_sections`) and is exercised in this repo's test
+suite against synthesized fixtures and a real Power BI Desktop sample - it
+rebuilds the container with only the M source changed, then re-reads its
+own output and verifies nothing else moved before ever touching disk - but
+it has not been validated against the wide range of real-world files this
+format can take, so it is deliberately kept out of the CLI.
+
+`pqtools` is not a Power BI or Excel client: it does not evaluate queries,
+open workbooks, or write anything back through the CLI.
+
 ## Optional adapters
 
 - **`fabric` extra** (`pip install "pqtools[fabric]"`) - a Fabric

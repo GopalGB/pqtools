@@ -13,3 +13,4 @@ codedb.snapshot
 .*.tmp
 .mypy_cache/
 .ruff_cache/
+.samples/
