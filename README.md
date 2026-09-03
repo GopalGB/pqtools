@@ -113,6 +113,12 @@ when any diagnostic has severity `error`, `0` otherwise.
   non-ASCII source.
 - `Retry-After` on the Fabric adapter must be whole seconds; HTTP-date values
   are rejected.
+- **Windows:** two guarantees are weaker there and the code says so rather than pretending.
+  A directory `fsync` after the atomic replace is impossible on Windows, so the rename is durable
+  only as far as the filesystem makes it; and if the Node subprocess spawns a grandchild that
+  inherits its stdout, a reader already blocked in `ReadFile` is not released by closing the pipe,
+  so a timed-out call can run until that grandchild exits. Neither affects the bundled bridge,
+  which spawns nothing.
 - The parse response is roughly 40x the size of the source, and it is capped at 10 MiB, so `parse`, `check`, `dependencies` and `rename` fail with a typed `NodeError` on sources above roughly 240 KiB. `format` returns only text and is not affected.
 
 ## Working inside .xlsx and .pbix

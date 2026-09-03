@@ -213,6 +213,14 @@ def test_process_input_write_obeys_same_timeout():
         _run_process_bounded(command, b"x" * MAX_BYTES, 1)
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason=(
+        "POSIX-only guarantee: closing the pipe fd unblocks the abandoned reader. "
+        "On Windows a thread already blocked in ReadFile is not released by a close, "
+        "so the call can run until the grandchild exits. Documented in README Limits."
+    ),
+)
 def test_process_timeout_survives_grandchild_holding_stdout():
     command = [
         sys.executable,
@@ -396,8 +404,14 @@ def test_update_file_fsyncs_parent_directory_after_replace(tmp_path: Path, monke
 
     monkeypatch.setattr(core.os, "fsync", recording_fsync)
     update_file(path, format_source, write=True)
-    assert len(calls) >= 2
-    assert any(calls)
+    assert calls, "the file itself must always be fsynced"
+    if os.name == "nt":
+        # Windows cannot open a directory to fsync it; update_file suppresses that
+        # OSError by design, so only the file fsync is observable here.
+        assert not any(calls)
+    else:
+        assert len(calls) >= 2
+        assert any(calls), "the parent directory must be fsynced after os.replace"
 
 
 def test_update_file_leaves_no_lock_or_temp_files(tmp_path: Path):
