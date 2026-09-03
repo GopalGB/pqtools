@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -317,6 +318,10 @@ def test_fabric_rejects_oversized_arrow_body():
         client.execute("https://api.fabric.microsoft.com/v1/query", "token", {})
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="asserts the non-Windows guard; on Windows it does not apply",
+)
 def test_pqtest_rejects_non_windows_without_running_binary(tmp_path: Path):
     with pytest.raises(AdapterError, match="Windows"):
         validate_pqtest(tmp_path / "PQTest.exe")

@@ -318,7 +318,8 @@ def test_node_version_gate_accepts_22_and_newer(monkeypatch):
 
 def test_node_binary_requires_env_or_path(monkeypatch):
     monkeypatch.delenv("MQUERY_NODE", raising=False)
-    monkeypatch.setattr(core.shutil, "which", lambda _: None)
+    # _node_binary passes path= on Windows, so the stub must accept kwargs.
+    monkeypatch.setattr(core.shutil, "which", lambda *_args, **_kwargs: None)
     with pytest.raises(NodeError):
         core._node_binary()
 
