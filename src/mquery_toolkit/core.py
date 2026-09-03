@@ -8,9 +8,11 @@ import importlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import threading
+import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -106,16 +108,10 @@ def _node_binary() -> str:
     configured = os.environ.get("MQUERY_NODE")
     if configured:
         return configured
-    local = (
-        Path(__file__).parents[2]
-        / ".tools"
-        / "node-v22.23.2-darwin-arm64"
-        / "bin"
-        / "node"
-    )
-    if local.is_file():
-        return str(local)
-    return "node"
+    found = shutil.which("node")
+    if found is None:
+        raise NodeError("Node.js 22 or newer is required")
+    return found
 
 
 def _newline(source: str) -> str:
@@ -125,6 +121,7 @@ def _newline(source: str) -> str:
 def _run_process_bounded(
     command: list[str], input_data: bytes | None, timeout: int
 ) -> subprocess.CompletedProcess[bytes]:
+    deadline = time.monotonic() + timeout
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
@@ -171,7 +168,11 @@ def _run_process_bounded(
         raise
     finally:
         for thread in threads:
-            thread.join()
+            thread.join(max(0.0, deadline - time.monotonic()))
+        if any(thread.is_alive() for thread in threads):
+            if process.poll() is None:
+                process.kill()
+            raise subprocess.TimeoutExpired(command, timeout)
     if exceeded.is_set():
         raise _ProcessOutputLimit
     return subprocess.CompletedProcess(
@@ -186,7 +187,7 @@ def _require_node(binary: str) -> None:
     except (OSError, subprocess.SubprocessError, _ProcessOutputLimit) as error:
         raise NodeError("Node.js 22 or newer is required") from error
     if result.returncode or not re.fullmatch(
-        rb"v(2[2-9]|[3-9]\d)\.\d+\.\d+\s*", result.stdout
+        rb"v(2[2-9]|[3-9]\d|\d{3,})\.\d+\.\d+\S*\s*", result.stdout
     ):
         raise NodeError("Node.js 22 or newer is required")
 
@@ -291,6 +292,10 @@ def rename(source: str, old: str, new: str) -> str:
     edits = [(int(start), int(end)) for start, end in plan["spans"]]
     if not edits:
         raise RenameRefusal("target must name exactly one top-level let binding")
+    edits = sorted(edits)
+    for index in range(len(edits) - 1):
+        if edits[index][1] > edits[index + 1][0]:
+            raise RenameRefusal("rename spans overlap")
     for start, end in reversed(edits):
         source = source[:start] + new + source[end:]
     parse(source)
@@ -405,6 +410,14 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
 def _snapshot(path: Path) -> FileSnapshot:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
+        info = os.lstat(path)
+        if stat.S_ISLNK(info.st_mode) or (
+            getattr(info, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        ):
+            raise SafeWriteError(
+                "writes require a regular, non-symlink, single-link file"
+            )
         descriptor = os.open(path, flags)
     except OSError as error:
         raise SafeWriteError(
@@ -499,11 +512,16 @@ def update_file(
         lock_fd = os.open(lock, lock_flags, 0o600)
     except OSError as error:
         raise SafeWriteError("unable to acquire safe source lock") from error
+    acquired = False
     try:
         lock_info = os.fstat(lock_fd)
         if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1:
             raise SafeWriteError("source lock must be a regular single-link file")
-        _lock_file(lock_fd)
+        try:
+            _lock_file(lock_fd)
+        except OSError as error:
+            raise SafeWriteError("unable to acquire safe source lock") from error
+        acquired = True
         snapshot = _snapshot(path)
         try:
             original = snapshot.data.decode("utf-8", "strict")
@@ -528,8 +546,12 @@ def update_file(
     finally:
         if "temporary" in locals() and temporary.exists():
             temporary.unlink()
-        _unlock_file(lock_fd)
-        os.close(lock_fd)
+        try:
+            if acquired:
+                with contextlib.suppress(OSError):
+                    _unlock_file(lock_fd)
+        finally:
+            os.close(lock_fd)
         # Lock removal is best-effort; the snapshot re-checks above remain
         # the correctness guard against a concurrent writer.
         with contextlib.suppress(OSError):

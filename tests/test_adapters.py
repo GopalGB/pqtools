@@ -170,6 +170,46 @@ def test_fabric_lro_succeeded_fetches_result():
     assert result["status"] == 200
 
 
+def test_fabric_result_url_keeps_query_string():
+    execute_url = "https://api.fabric.microsoft.com/v1/query"
+    op_url = "https://api.fabric.microsoft.com/v1/operations/op-2?api-version=1"
+    responses = iter(
+        [
+            {
+                "status": 202,
+                "headers": {
+                    "Location": op_url,
+                    "x-ms-operation-id": "op-2",
+                    "Retry-After": "1",
+                },
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": {"status": "Succeeded"},
+            },
+            {
+                "status": 200,
+                "headers": {"Content-Type": "application/vnd.apache.arrow.stream"},
+                "body": b"arrow",
+            },
+        ]
+    )
+    seen = []
+
+    def transport(url, _headers, payload, _timeout):
+        seen.append(url)
+        return next(responses)
+
+    client = FabricClient(
+        transport, sleeper=lambda _: None, arrow_validator=lambda _: None
+    )
+    client.execute(execute_url, "token", {"q": 1})
+    assert seen[2] == (
+        "https://api.fabric.microsoft.com/v1/operations/op-2/result?api-version=1"
+    )
+
+
 def test_fabric_rejects_succeeded_without_operation():
     client = FabricClient(
         lambda *_: {

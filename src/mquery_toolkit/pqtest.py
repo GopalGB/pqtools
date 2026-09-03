@@ -10,19 +10,21 @@ from pathlib import Path
 
 from .core import (
     MAX_BYTES,
-    NODE_TIMEOUT_SECONDS,
     AdapterError,
     _ProcessOutputLimit,
     _run_process_bounded,
 )
 
 PQTEST_VERSION = "2.155.2"
+PQTEST_TIMEOUT_SECONDS = 300
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
-def _run(runner: Runner, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    runner: Runner, command: Sequence[str], timeout: int = PQTEST_TIMEOUT_SECONDS
+) -> subprocess.CompletedProcess[str]:
     if runner is subprocess.run:
-        return _run_bounded(command)
+        return _run_bounded(command, timeout)
     try:
         result = runner(
             command,
@@ -31,7 +33,7 @@ def _run(runner: Runner, command: Sequence[str]) -> subprocess.CompletedProcess[
             encoding="utf-8",
             errors="strict",
             check=False,
-            timeout=NODE_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError, UnicodeError) as error:
         raise AdapterError("PQTest process failed") from error
@@ -45,11 +47,13 @@ def _run(runner: Runner, command: Sequence[str]) -> subprocess.CompletedProcess[
     return result
 
 
-def _run_bounded(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run_bounded(
+    command: Sequence[str], timeout: int = PQTEST_TIMEOUT_SECONDS
+) -> subprocess.CompletedProcess[str]:
     try:
-        result = _run_process_bounded(list(command), None, NODE_TIMEOUT_SECONDS)
+        result = _run_process_bounded(list(command), None, timeout)
     except subprocess.TimeoutExpired as error:
-        raise AdapterError("PQTest timed out after 30 seconds") from error
+        raise AdapterError(f"PQTest timed out after {timeout} seconds") from error
     except _ProcessOutputLimit as error:
         raise AdapterError("PQTest output exceeds 10 MiB") from error
     except OSError as error:
@@ -64,17 +68,26 @@ def _run_bounded(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(command, result.returncode, output, error_output)
 
 
-def validate_pqtest(path: Path, runner: Runner = subprocess.run) -> Path:
+def validate_pqtest(
+    path: Path,
+    runner: Runner = subprocess.run,
+    timeout: int = PQTEST_TIMEOUT_SECONDS,
+) -> Path:
     if platform.system() != "Windows":
         raise AdapterError("PQTest adapter is supported on Windows only")
     if not path.is_file() or path.is_symlink() or path.suffix.lower() != ".exe":
         raise AdapterError("PQTest path must name a user-installed regular .exe")
-    version = _run(runner, [str(path), "version"]).stdout
+    version = _run(runner, [str(path), "version"], timeout).stdout
     if not re.search(rf"(?<![0-9.]){re.escape(PQTEST_VERSION)}(?![0-9.])", version):
         raise AdapterError(f"PQTest {PQTEST_VERSION} is required")
     return path
 
 
-def run_pqtest(path: Path, args: Sequence[str], runner: Runner = subprocess.run) -> str:
-    validate_pqtest(path, runner)
-    return _run(runner, [str(path), *args]).stdout
+def run_pqtest(
+    path: Path,
+    args: Sequence[str],
+    runner: Runner = subprocess.run,
+    timeout: int = PQTEST_TIMEOUT_SECONDS,
+) -> str:
+    validate_pqtest(path, runner, timeout)
+    return _run(runner, [str(path), *args], timeout).stdout

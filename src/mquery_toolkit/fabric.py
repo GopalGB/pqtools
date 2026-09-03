@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from time import monotonic, sleep
 from typing import Any
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from .core import AdapterError
 
@@ -153,7 +153,10 @@ class FabricClient:
                             raise AdapterError(
                                 "Fabric result endpoint returned JSON instead of Arrow"
                             )
-                        result_url = request_url.rstrip("/") + "/result"
+                        parts = urlsplit(request_url)
+                        result_url = urlunsplit(
+                            parts._replace(path=parts.path.rstrip("/") + "/result")
+                        )
                         self._require_https_same_origin(url, result_url)
                         request_url = result_url
                         request_payload = None

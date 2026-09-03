@@ -84,15 +84,19 @@ when any diagnostic has severity `error`, `0` otherwise.
 - **Refuses symlinks and hardlinks** - writes require a regular, single-link
   file.
 - **Detects concurrent change**: the source is snapshotted before the
-  transform and re-checked immediately before the atomic replace; a change in
-  between raises `SafeWriteError`.
+  transform and re-checked immediately before the atomic replace - this final
+  snapshot check, not the lock, is the guarantee against lost updates; a
+  change in that microsecond window raises `SafeWriteError`.
 - **Advisory lock while writing only** - a `--write` call takes a
   cross-process advisory lock (`fcntl`/`msvcrt`) for the duration of the
-  write and removes the lock file afterward, best-effort. Dry-run calls take
-  no lock and create no lock file.
+  write and removes the lock file afterward, best-effort. It only serialises
+  cooperating `mquery` processes and is not a correctness guarantee: because
+  the lock file is removed after use, a waiting process and a freshly
+  started one can end up locking different inodes. Dry-run calls take no
+  lock and create no lock file.
 - This is **not mandatory locking** - no OS provides a portable mandatory
-  lock, so a non-cooperating program can still race past the final snapshot
-  check. The snapshot re-checks are the correctness guard, not the lock.
+  lock, and the advisory lock is not itself the correctness guard. Use
+  source control or external exclusive ownership for concurrent editors.
 
 ## Limits
 
@@ -102,6 +106,8 @@ when any diagnostic has severity `error`, `0` otherwise.
 - `rename` scope: exactly **one unquoted top-level `let` binding**. It refuses
   quoted identifiers (`#"..."`), record literals, lambda expressions, and
   non-ASCII source.
+- `Retry-After` on the Fabric adapter must be whole seconds; HTTP-date values
+  are rejected.
 
 ## Optional adapters
 

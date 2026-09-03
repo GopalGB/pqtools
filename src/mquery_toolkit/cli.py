@@ -99,8 +99,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise MQueryError("replace-source requires --source")
             replacement = args.source
 
-            def transform(_text: str) -> str:
-                return replace_source(source, replacement)
+            def transform(text: str) -> str:
+                return replace_source(text, replacement)
 
         _print(update_file(args.file, transform, write=args.write), args.json)
         return 0

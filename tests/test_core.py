@@ -2,6 +2,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -152,6 +153,20 @@ def test_process_input_write_obeys_same_timeout():
         _run_process_bounded(command, b"x" * MAX_BYTES, 1)
 
 
+def test_process_timeout_survives_grandchild_holding_stdout():
+    command = [
+        sys.executable,
+        "-c",
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        "sys.stdout.write('parent done')",
+    ]
+    start = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_process_bounded(command, None, 2)
+    assert time.monotonic() - start < 10
+
+
 def test_dry_run_and_atomic_write_preserve_mode_and_no_partial(tmp_path: Path):
     path = tmp_path / "query.pq"
     path.write_text("let A=1 in A", encoding="utf-8")
@@ -174,6 +189,8 @@ def test_write_refuses_symlink_and_hardlink(tmp_path: Path):
     link.symlink_to(original)
     with pytest.raises(SafeWriteError, match="non-symlink"):
         update_file(link, format_source, write=True)
+    with pytest.raises(SafeWriteError, match="non-symlink"):
+        update_file(link, format_source)
 
 
 def test_write_refuses_concurrent_change(tmp_path: Path):
@@ -188,6 +205,20 @@ def test_write_refuses_concurrent_change(tmp_path: Path):
         update_file(path, change_then_format, write=True)
 
 
+def test_write_lock_failure_closes_descriptor(tmp_path: Path, monkeypatch):
+    path = tmp_path / "query.pq"
+    path.write_text("let A=1 in A", encoding="utf-8")
+
+    def fail_lock(descriptor: int) -> None:
+        raise OSError("simulated lock failure")
+
+    monkeypatch.setattr(core, "_lock_file", fail_lock)
+    with pytest.raises(SafeWriteError, match="lock"):
+        update_file(path, format_source, write=True)
+    assert {item.name for item in tmp_path.iterdir()} == {"query.pq"}
+    assert path.read_text() == "let A=1 in A"
+
+
 def test_node_version_gate_accepts_22_and_newer(monkeypatch):
     cases = [
         ("node-a", b"v22.23.2\n", True),
@@ -195,6 +226,8 @@ def test_node_version_gate_accepts_22_and_newer(monkeypatch):
         ("node-c", b"v26.0.0\n", True),
         ("node-d", b"v20.19.0\n", False),
         ("node-e", b"garbage\n", False),
+        ("node-f", b"v100.0.0\n", True),
+        ("node-g", b"v22.0.0-nightly20260101\n", True),
     ]
     for binary, stdout, ok in cases:
         core._require_node.cache_clear()
@@ -211,6 +244,13 @@ def test_node_version_gate_accepts_22_and_newer(monkeypatch):
             with pytest.raises(NodeError):
                 core._require_node(binary)
     core._require_node.cache_clear()
+
+
+def test_node_binary_requires_env_or_path(monkeypatch):
+    monkeypatch.delenv("MQUERY_NODE", raising=False)
+    monkeypatch.setattr(core.shutil, "which", lambda _: None)
+    with pytest.raises(NodeError):
+        core._node_binary()
 
 
 def test_update_file_leaves_no_lock_or_temp_files(tmp_path: Path):

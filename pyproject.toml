@@ -34,7 +34,7 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "build>=1.2",
-    "twine>=5",
+    "twine>=6.1",
     "pip-audit>=2.7",
 ]
 
@@ -53,7 +53,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-mquery_toolkit = ["_bridge.cjs", "THIRD_PARTY_NOTICES.txt"]
+mquery_toolkit = ["_bridge.cjs", "THIRD_PARTY_NOTICES.txt", "py.typed"]
 
 [tool.ruff]
 line-length = 88

@@ -1,0 +1,4 @@
+* text=auto eol=lf
+tests/fixtures/** -text
+src/mquery_toolkit/_bridge.cjs -text
+*.pq -text
