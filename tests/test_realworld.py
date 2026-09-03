@@ -11,9 +11,14 @@ worked-out expected table.
 
 These are the ACTUAL DONE-CRITERION for 0.5.0 (PRD, "Verification" section):
 "the four tests/fixtures/realworld/ queries evaluate correctly". Every test
-here is ``xfail(strict=False)`` today because pqtools does not implement the
+PASSED as of 0.5.0. They were ``xfail`` while the builtins were being built;
+each xfail reason named the exact builtin the evaluator died on. The markers
+are gone because the goal was reached - the four queries now evaluate to their
+expected output. Keep them un-marked: if one regresses it must FAIL loudly, not
+quietly go back to being an expected failure. The original note read:
+"pqtools does not implement the
 builtins these queries need yet - that is the entire point of the PRD. Each
-xfail reason names the exact builtin the evaluator currently dies on and
+builtin each one needed, which was the measurement while building."
 quotes the exact exception it raises (verified by running the scenario
 against the pre-0.5.0 evaluator - see the fixtures' README.md "Verified
 failure" sections). When a builtin lands, its scenario keeps failing (a
@@ -34,8 +39,6 @@ import json
 import math
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from pqtools.cli import _load_binding
 from pqtools.evaluate import evaluate
@@ -133,17 +136,6 @@ def _assert_table_equal(actual: Any, expected: list[dict[str, Any]]) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "dies on Table.TransformColumnTypes: UnsupportedError "
-        "'unknown identifier: Table.TransformColumnTypes' (not yet "
-        "implemented; PRD-0.5.0-builtins.md P0). Table.Sort/AddColumn/"
-        "RenameColumns/SelectRows used later in the chain are already "
-        "implemented, so this is the first real gap the evaluator hits "
-        "walking the let-chain back from the result."
-    ),
-)
 def test_clean_and_type_csv_import():
     query, bindings, expected = _load_scenario("01_clean_and_type")
     result = evaluate(query, bindings=bindings)
@@ -155,16 +147,6 @@ def test_clean_and_type_csv_import():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "dies on Table.Group: UnsupportedError "
-        "'unknown identifier: Table.Group' (not yet implemented; "
-        "PRD-0.5.0-builtins.md P1). It is the query's own final step, so "
-        "the evaluator hits it immediately without ever reaching the "
-        "TransformColumnTypes step underneath."
-    ),
-)
 def test_group_and_aggregate():
     query, bindings, expected = _load_scenario("02_group_and_aggregate")
     result = evaluate(query, bindings=bindings)
@@ -176,19 +158,6 @@ def test_group_and_aggregate():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "dies on Table.ExpandTableColumn: UnsupportedError "
-        "'unknown identifier: Table.ExpandTableColumn' (not yet "
-        "implemented; PRD-0.5.0-builtins.md P1). This is the query's last "
-        "step, so its callee is resolved (and fails) before its first "
-        'argument - the #"Merged Queries" step calling the equally '
-        "unimplemented Table.NestedJoin - is ever evaluated. Once "
-        "Table.ExpandTableColumn lands, Table.NestedJoin becomes the next "
-        "wall for this fixture, not the last one."
-    ),
-)
 def test_merge_two_tables():
     query, bindings, expected = _load_scenario("03_merge_two_tables")
     result = evaluate(query, bindings=bindings)
@@ -201,18 +170,6 @@ def test_merge_two_tables():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "dies on Table.UnpivotOtherColumns: UnsupportedError "
-        "'unknown identifier: Table.UnpivotOtherColumns' (not yet "
-        "implemented; PRD-0.5.0-builtins.md P1). Table.AddColumn (used "
-        "twice afterwards for the Year/Month Name columns) is already "
-        "implemented, so the evaluator walks past both of those and dies "
-        "on the unpivot step underneath - Date.Year/Date.MonthName "
-        "(P2) are never even reached yet."
-    ),
-)
 def test_unpivot_wide_data_and_dates():
     query, bindings, expected = _load_scenario("04_unpivot_and_dates")
     result = evaluate(query, bindings=bindings)

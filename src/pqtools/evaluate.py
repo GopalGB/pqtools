@@ -22,6 +22,7 @@ builtin is a fixed, named Python function.
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Callable
 from typing import Any
 
@@ -36,6 +37,7 @@ from .builtins._shared import (
     _type_name,
 )
 from .builtins._table import _ORDER_ENUM
+from .builtins._type import _PRIMITIVE_TYPES
 from .core import ast as _parse_ast
 
 _MAX_STEPS_DEFAULT = 1_000_000
@@ -325,6 +327,27 @@ def _eval_parenthesized(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     return _eval(inner, scope, ctx)
 
 
+def _eval_type_primary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    # `type text`, `type number`, ... - the AST wraps a leaf `PrimitiveType`
+    # node (whose `value` is the exact lowercase keyword) in `TypePrimaryType`.
+    # Compound type shapes (`type table [...]`, `type [a = text]`, `type
+    # {number}`, `type nullable text`, `type function ...`) wrap something
+    # other than `PrimitiveType` here and are not modelled - see
+    # builtins/_type.py's module docstring for why.
+    (type_node,) = _semantic(node)
+    if type_node.get("kind") != "PrimitiveType":
+        raise UnsupportedError(
+            f"type value: {type_node.get('kind')} (pqtools only supports the "
+            "primitive M types - type text/number/date/datetime/"
+            "datetimezone/time/duration/logical/any/none/binary)"
+        )
+    name = str(type_node["value"])
+    type_value = _PRIMITIVE_TYPES.get(name)
+    if type_value is None:
+        raise UnsupportedError(f"type value: type {name}")
+    return type_value
+
+
 def _eval_field_selector(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     # `[field]` on its own (not chained after another expression) is M's
     # "implicit target" shorthand for `_[field]` - only meaningful inside
@@ -368,6 +391,23 @@ def _list_index(base: Any, index: Any, optional: bool) -> Any:
 
 
 def _record_field_access(base: Any, name: str, optional: bool) -> Any:
+    # M's [Name] is defined on records AND on tables. On a table it projects the
+    # column, yielding the list of that column's values - which is what makes
+    # `each List.Sum([Amount])` work as a Table.Group aggregation, the single most
+    # common form Power Query's UI writes. Tables are list[dict] here, so the table
+    # case is checked first and a non-table list still falls through to the error.
+    if isinstance(base, list) and all(isinstance(row, dict) for row in base):
+        if not base:
+            # An empty table has no columns to disprove, so an unknown column is
+            # indistinguishable from an empty one. Real PQ keeps the schema and
+            # would return an empty list; matching that beats erroring on a filter
+            # that legitimately removed every row.
+            return []
+        if all(name in row for row in base):
+            return [row[name] for row in base]
+        if optional:
+            return None
+        raise EvalError(f"column not found in every row: {name}")
     if not isinstance(base, dict):
         if optional:
             return None
@@ -473,17 +513,37 @@ def _eval_relational(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     left_node, operator, right_node = _binop_parts(node)
     left = _eval(left_node, scope, ctx)
     right = _eval(right_node, scope, ctx)
+
+    # Temporal values are ordered in M (a date range filter is one of the most
+    # common things a real query does), so they are comparable here. Each kind
+    # only compares against its own kind: datetime is tested before date because
+    # datetime.datetime subclasses datetime.date, and an aware/naive pair is a
+    # datetimezone-vs-datetime mismatch that Python itself refuses to order.
+    def _same_temporal(a: Any, b: Any) -> bool:
+        if isinstance(a, datetime.datetime) or isinstance(b, datetime.datetime):
+            return (
+                isinstance(a, datetime.datetime)
+                and isinstance(b, datetime.datetime)
+                and (a.tzinfo is None) == (b.tzinfo is None)
+            )
+        return any(
+            isinstance(a, kind) and isinstance(b, kind)
+            for kind in (datetime.date, datetime.time, datetime.timedelta)
+        )
+
     comparable = (
         not isinstance(left, bool)
         and not isinstance(right, bool)
         and (
             (isinstance(left, (int, float)) and isinstance(right, (int, float)))
             or (isinstance(left, str) and isinstance(right, str))
+            or _same_temporal(left, right)
         )
     )
     if not comparable:
         raise EvalError(
-            "relational operators require two numbers or two text values "
+            "relational operators require two numbers, two text values or two "
+            "temporal values of the same kind "
             f"(got {_type_name(left)} and {_type_name(right)})"
         )
     if operator == "<":
@@ -598,6 +658,7 @@ _HANDLERS: dict[str, Callable[[dict[str, Any], _Scope, _Ctx], Any]] = {
     "EachExpression": _eval_each,
     "ParenthesizedExpression": _eval_parenthesized,
     "FieldSelector": _eval_field_selector,
+    "TypePrimaryType": _eval_type_primary,
     "RecursivePrimaryExpression": _eval_recursive,
     "ErrorHandlingExpression": _eval_try,
     "ArithmeticExpression": _eval_arithmetic,
@@ -612,7 +673,6 @@ _SIMPLE_UNSUPPORTED: dict[str, str] = {
     "IsExpression": "is-expression",
     "NullCoalescingExpression": "?? (null-coalescing operator)",
     "MetadataExpression": "meta",
-    "TypePrimaryType": "a type value (type ...)",
     "NotImplementedExpression": "... (not-implemented placeholder)",
     "FieldProjection": "field projection (r[[a],[b]])",
     "RangeExpression": "a .. range",

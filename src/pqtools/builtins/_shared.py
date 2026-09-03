@@ -16,6 +16,7 @@ sits below both ``evaluate.py`` and this package.
 
 from __future__ import annotations
 
+import datetime
 import math
 from typing import Any
 
@@ -69,6 +70,24 @@ def _m_equal(left: Any, right: Any) -> bool:
         return left == right
     if isinstance(left, str) and isinstance(right, str):
         return left == right
+    # Temporal values compare by value in M, and this function is what `=` and
+    # `<>` reach. Before this clause a date only ever compared FALSE to itself,
+    # so `each [d] = #date(...)` silently filtered every row away with no error -
+    # the worst failure mode available. datetime is checked before date because
+    # datetime.datetime is a subclass of datetime.date; comparing the two kinds
+    # is a type mismatch in M, so they must not fall into one branch.
+    if isinstance(left, datetime.datetime) or isinstance(right, datetime.datetime):
+        return (
+            isinstance(left, datetime.datetime)
+            and isinstance(right, datetime.datetime)
+            # An aware and a naive datetime are different M types
+            # (datetimezone vs datetime) and Python refuses to compare them.
+            and (left.tzinfo is None) == (right.tzinfo is None)
+            and left == right
+        )
+    for kind in (datetime.date, datetime.time, datetime.timedelta):
+        if isinstance(left, kind) or isinstance(right, kind):
+            return isinstance(left, kind) and isinstance(right, kind) and left == right
     if isinstance(left, list) and isinstance(right, list):
         return len(left) == len(right) and all(
             _m_equal(a, b) for a, b in zip(left, right, strict=True)

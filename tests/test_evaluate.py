@@ -257,9 +257,19 @@ def test_is_expression_is_unsupported():
         evaluate("1 is number")
 
 
-def test_type_value_is_unsupported():
-    with pytest.raises(UnsupportedError, match="type value"):
-        evaluate("type text")
+def test_type_value_evaluates_to_a_type():
+    """0.5.0 implemented the type system; `type text` is a real value now.
+
+    This test previously asserted the opposite. A test that pins a limitation
+    becomes a test that resists the fix, so it asserts the capability instead of
+    being deleted - deleting it would have removed the only coverage of bare
+    `type` evaluation.
+    """
+    from pqtools.builtins._type import _MType
+
+    assert isinstance(evaluate("type text"), _MType)
+    assert isinstance(evaluate("Int64.Type"), _MType)
+    assert evaluate("type text") is not evaluate("type number")
 
 
 def test_parameter_type_ascription_is_unsupported():
@@ -283,10 +293,15 @@ def test_unknown_identifier_is_unsupported():
 
 
 def test_unknown_builtin_style_identifier_is_unsupported():
-    with pytest.raises(
-        UnsupportedError, match="unknown identifier: Table.AddIndexColumn"
-    ):
-        evaluate("Table.AddIndexColumn(1)")
+    """Uses a CONNECTOR as the example of a name that will never resolve.
+
+    This previously used `Table.AddIndexColumn`, which 0.5.0 implemented - so the
+    test broke for the good reason that the gap it relied on had closed. A
+    connector is the durable choice: running one needs Microsoft's Mashup Engine,
+    so it is out of scope permanently by design, not merely unimplemented yet.
+    """
+    with pytest.raises(UnsupportedError, match="Sql.Database"):
+        evaluate('Sql.Database("server", "db")')
 
 
 def test_outer_scope_at_identifier_is_unsupported():

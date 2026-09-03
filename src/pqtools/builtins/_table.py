@@ -27,6 +27,7 @@ from ._shared import (
     _require_int,
     _require_str,
     _require_table,
+    _type_name,
 )
 
 if TYPE_CHECKING:
@@ -131,16 +132,38 @@ def _table_rename_columns(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_add_column(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.AddColumn", args, 3)
+    # The UI emits the 4-argument form with a declared column type
+    # (`Table.AddColumn(t, "Year", each Date.Year([D]), Int64.Type)`), so refusing
+    # it would reject most real queries. The declared type is applied to the
+    # generated values, exactly as Table.TransformColumnTypes would - accepting it
+    # and ignoring it would silently produce a differently-typed column than
+    # Power Query does.
+    _arity("Table.AddColumn", args, 3, 4)
     table = _require_table(args[0])
     name = _require_str(args[1])
     generator = args[2]
+    declared = args[3] if len(args) == 4 else None
     if table and name in table[0]:
         raise EvalError(f"Table.AddColumn: column already exists: {name}")
+    convert = None
+    if declared is not None:
+        # Imported lazily: _type imports nothing from here, but keeping the import
+        # inside the branch means the common 3-arg path never pays for it.
+        from ._type import _converter_for, _MType
+
+        if not isinstance(declared, _MType):
+            raise EvalError(
+                "Table.AddColumn: expected a type value for the column type, got "
+                f"{_type_name(declared)}"
+            )
+        convert = _converter_for(declared)
     result = []
     for row in table:
         new_row = dict(row)
-        new_row[name] = ctx.invoke(generator, [row], ctx)
+        value = ctx.invoke(generator, [row], ctx)
+        if convert is not None:
+            value = convert(value)
+        new_row[name] = value
         result.append(new_row)
     return result
 
