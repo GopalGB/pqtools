@@ -10,7 +10,7 @@ from time import monotonic, sleep
 from typing import Any
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
-from .core import AdapterError
+from .core import MAX_BYTES, AdapterError
 
 Response = Mapping[str, Any]
 Transport = Callable[
@@ -30,6 +30,8 @@ def _same_origin(start: str, candidate: str) -> bool:
 
 
 def _validate_arrow(body: bytes) -> None:
+    if len(body) > MAX_BYTES:
+        raise AdapterError("Fabric Arrow stream exceeds 10 MiB")
     try:
         import pyarrow as pa  # type: ignore[import-untyped]
     except ImportError as error:
@@ -38,6 +40,7 @@ def _validate_arrow(body: bytes) -> None:
         ) from error
     stream = io.BytesIO(body)
     streams = 0
+    total_bytes = 0
     try:
         while stream.tell() < len(body):
             start = stream.tell()
@@ -46,12 +49,19 @@ def _validate_arrow(body: bytes) -> None:
                 key.decode("utf-8", "replace"): value.decode("utf-8", "replace")
                 for key, value in (reader.schema.metadata or {}).items()
             }
-            reader.read_all()
-            streams += 1
             if metadata.get("IsError", "").lower() == "true":
                 code = metadata.get("FaultCode", "unknown")
                 message = metadata.get("FaultString", "Fabric query failed")
                 raise AdapterError(f"Fabric Arrow error [{code}]: {message}")
+            while True:
+                try:
+                    batch = reader.read_next_batch()
+                except StopIteration:
+                    break
+                total_bytes += batch.nbytes
+                if total_bytes > MAX_BYTES:
+                    raise AdapterError("Fabric Arrow stream exceeds 10 MiB")
+            streams += 1
             if stream.tell() <= start:
                 raise AdapterError("Fabric Arrow decoder made no progress")
     except AdapterError:

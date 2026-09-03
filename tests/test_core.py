@@ -97,6 +97,19 @@ def test_dependencies_only_returns_invoked_names():
     assert dependencies("let F = (x) => x, A = F(1) in A") == []
 
 
+def test_check_parses_the_source_once(monkeypatch):
+    calls = []
+    original = core._bridge
+
+    def counting_bridge(source, kind, **options):
+        calls.append(kind)
+        return original(source, kind, **options)
+
+    monkeypatch.setattr(core, "_bridge", counting_bridge)
+    check("let A = Web.Contents(Url) in A")
+    assert calls == ["parse"]
+
+
 def test_rename_updates_binding_references_but_not_comment_or_string():
     updated = rename(SOURCE + '\n// "A"', "A", "Renamed")
     assert "Renamed =" in updated and "B = Renamed" in updated
@@ -110,6 +123,14 @@ def test_rename_handles_multiline_equality_and_rejects_collisions_and_keywords()
         rename(source, "A", "B")
     with pytest.raises(RenameRefusal, match="reserved"):
         rename(source, "A", "in")
+
+
+def test_rename_refuses_to_capture_a_free_identifier():
+    with pytest.raises(RenameRefusal, match="already appears"):
+        rename("let A = 1 in A + Total", "A", "Total")
+    assert (
+        rename("let A = 1 in A + B", "A", "Renamed") == "let Renamed = 1 in Renamed + B"
+    )
 
 
 def test_bridge_normalizes_invalid_unicode():
@@ -182,6 +203,19 @@ def test_dry_run_and_atomic_write_preserve_mode_and_no_partial(tmp_path: Path):
     if os.name != "nt":
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert path.read_text() == "let A = 1 in A"
+
+
+def test_format_preserves_final_newline_state(tmp_path: Path):
+    with_newline = tmp_path / "with_newline.pq"
+    with_newline.write_text("let A=1 in A\n", encoding="utf-8")
+    update_file(with_newline, format_source, write=True)
+    content = with_newline.read_text()
+    assert content.endswith("\n") and not content.endswith("\n\n")
+
+    without_newline = tmp_path / "without_newline.pq"
+    without_newline.write_text("let A=1 in A", encoding="utf-8")
+    update_file(without_newline, format_source, write=True)
+    assert not without_newline.read_text().endswith("\n")
 
 
 @pytest.mark.skipif(

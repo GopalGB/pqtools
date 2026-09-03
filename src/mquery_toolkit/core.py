@@ -156,7 +156,8 @@ def _run_process_bounded(
             except BrokenPipeError:
                 pass
             finally:
-                stdin.close()
+                with contextlib.suppress(OSError):
+                    stdin.close()
 
         threads.append(threading.Thread(target=write, daemon=True))
     for thread in threads:
@@ -242,7 +243,11 @@ def _preserve_layout(updated: str, original: str) -> str:
         updated = updated.replace("\r\n", "\n").replace("\n", "\r\n")
     else:
         updated = updated.replace("\r\n", "\n")
-    return updated if original.endswith(("\n", "\r")) else updated.rstrip("\r\n")
+    if not original.endswith(("\n", "\r")):
+        return updated.rstrip("\r\n")
+    if not updated.endswith(("\n", "\r")):
+        updated += _newline(original)
+    return updated
 
 
 def format_source(source: str) -> str:
@@ -250,7 +255,10 @@ def format_source(source: str) -> str:
 
 
 def dependencies(source: str) -> list[str]:
-    parsed = parse(source)
+    return _dependencies_from(parse(source))
+
+
+def _dependencies_from(parsed: dict[str, Any]) -> list[str]:
     tokens = parsed["tokens"]
     bound = {
         str(binding["name"])
@@ -290,6 +298,12 @@ def rename(source: str, old: str, new: str) -> str:
     declarations = list(plan["bindings"])
     if new in declarations:
         raise RenameRefusal("rename target collides with an existing let binding")
+    parsed = parse(source)
+    if any(
+        token["kind"] == "Identifier" and str(token["text"]) == new
+        for token in parsed["tokens"]
+    ):
+        raise RenameRefusal("rename target already appears in the source")
     edits = [(int(start), int(end)) for start, end in plan["spans"]]
     if not edits:
         raise RenameRefusal("target must name exactly one top-level let binding")
@@ -404,7 +418,7 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
         diagnostics.append(
             Diagnostic(file, line, column, "M003", "warning", "credential-like literal")
         )
-    for dependency in dependencies(source):
+    for dependency in _dependencies_from(parsed):
         if dependency.endswith(".Contents"):
             diagnostics.append(
                 Diagnostic(file, 1, 1, "M006", "info", f"source function: {dependency}")
@@ -454,11 +468,6 @@ def _snapshot(path: Path) -> FileSnapshot:
         info.st_size,
         info.st_mtime_ns,
     )
-
-
-def dry_diff(path: Path, updated: str) -> str:
-    snapshot = _snapshot(path)
-    return _diff(path, snapshot.data, updated)
 
 
 def _diff(path: Path, original: bytes, updated: str) -> str:

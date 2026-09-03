@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mquery_toolkit.core import AdapterError
+from mquery_toolkit.core import MAX_BYTES, AdapterError
 from mquery_toolkit.fabric import FabricClient, redact
 from mquery_toolkit.pqtest import run_pqtest, validate_pqtest
 
@@ -302,6 +302,19 @@ def test_fabric_validates_real_arrow_and_detects_error_metadata():
         client_for(error_stream).execute(
             "https://api.fabric.microsoft.com/v1/query", "token", {}
         )
+
+
+def test_fabric_rejects_oversized_arrow_body():
+    client = FabricClient(
+        lambda *_: {
+            "status": 200,
+            "headers": {"Content-Type": "application/vnd.apache.arrow.stream"},
+            "body": b"x" * (MAX_BYTES + 1),
+        },
+        sleeper=lambda _: None,
+    )
+    with pytest.raises(AdapterError, match="10 MiB"):
+        client.execute("https://api.fabric.microsoft.com/v1/query", "token", {})
 
 
 def test_pqtest_rejects_non_windows_without_running_binary(tmp_path: Path):
