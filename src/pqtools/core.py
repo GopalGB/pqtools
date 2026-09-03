@@ -489,10 +489,20 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
 
 
 def _snapshot(path: Path) -> FileSnapshot:
+    # O_BINARY is REQUIRED on Windows: os.open there defaults to TEXT mode, which
+    # translates \r\n and treats 0x1A as end-of-file. Reading a .pbix or .xlsx that
+    # way silently truncates or mangles it. Whether that corrupts a given file
+    # depends on its bytes, so it presented as an intermittent CI failure rather
+    # than a consistent one. It is a no-op flag everywhere else.
     # O_NONBLOCK keeps a FIFO/device open() from blocking forever waiting for
     # a writer; it has no effect on regular files. The S_ISREG check below
     # then rejects the non-regular file immediately instead of hanging.
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
         info = os.lstat(path)
         if stat.S_ISLNK(info.st_mode) or (

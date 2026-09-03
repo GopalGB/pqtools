@@ -436,3 +436,16 @@ def test_write_does_not_clobber_stale_temp(tmp_path: Path):
         "query.pq",
         f".query.pq.{os.getpid()}.tmp",
     }
+
+
+def test_snapshot_reads_bytes_that_text_mode_would_corrupt(tmp_path: Path):
+    """Windows os.open defaults to TEXT mode: it eats \\r and stops at 0x1A.
+
+    Any binary container (.pbix, .xlsx) can contain both. Without O_BINARY the
+    read silently truncates, which surfaced as an intermittent CI failure because
+    zip bytes vary with the embedded timestamp.
+    """
+    path = tmp_path / "binary.pq"
+    payload = b"let A = 1 in A\r\n\x1aTRAILING BYTES AFTER THE EOF MARKER\r\n"
+    path.write_bytes(payload)
+    assert core._snapshot(path).data == payload
