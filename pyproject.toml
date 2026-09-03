@@ -3,15 +3,15 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mquery-toolkit"
-version = "0.1.0"
-description = "Unofficial offline tooling for Power Query M source (parse, format, check, rename) via Microsoft's official parser and formatter"
+name = "pqtools"
+version = "0.2.0"
+description = "Unofficial offline linter, formatter and refactoring CLI for Power Query M source (.pq)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Gopal Bagaswar" }]
-keywords = ["power-query", "m-language", "power-bi", "fabric", "linter", "formatter"]
+keywords = ["power-query", "m-language", "power-bi", "fabric", "linter", "formatter", "pq"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -39,12 +39,12 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/GopalGB/mquery-toolkit"
-Repository = "https://github.com/GopalGB/mquery-toolkit"
-Issues = "https://github.com/GopalGB/mquery-toolkit/issues"
+Homepage = "https://github.com/GopalGB/pqtools"
+Repository = "https://github.com/GopalGB/pqtools"
+Issues = "https://github.com/GopalGB/pqtools/issues"
 
 [project.scripts]
-mquery = "mquery_toolkit.cli:main"
+pq = "pqtools.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -53,7 +53,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-mquery_toolkit = ["_bridge.cjs", "THIRD_PARTY_NOTICES.txt", "py.typed"]
+pqtools = ["_bridge.cjs", "THIRD_PARTY_NOTICES.txt", "py.typed"]
 
 [tool.ruff]
 line-length = 88
@@ -71,4 +71,4 @@ files = ["src"]
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["mquery_toolkit"]
+source = ["pqtools"]

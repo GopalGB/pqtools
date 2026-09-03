@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from mquery_toolkit import core
-from mquery_toolkit.core import (
+from pqtools import core
+from pqtools.core import (
     MAX_BYTES,
     MQueryError,
     NodeError,
@@ -129,6 +129,19 @@ def test_check_parses_the_source_once(monkeypatch):
     monkeypatch.setattr(core, "_bridge", counting_bridge)
     check("let A = Web.Contents(Url) in A")
     assert calls == ["parse"]
+
+
+def test_rename_uses_two_bridge_calls(monkeypatch):
+    calls = []
+    original = core._bridge
+
+    def counting_bridge(source, kind, **options):
+        calls.append(kind)
+        return original(source, kind, **options)
+
+    monkeypatch.setattr(core, "_bridge", counting_bridge)
+    rename(SOURCE, "A", "Renamed")
+    assert calls == ["rename", "parse"]
 
 
 def test_rename_updates_binding_references_but_not_comment_or_string():

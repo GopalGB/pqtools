@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from mquery_toolkit.core import MAX_BYTES, AdapterError
-from mquery_toolkit.fabric import FabricClient, _same_origin
-from mquery_toolkit.pqtest import run_pqtest, validate_pqtest
+from pqtools.core import MAX_BYTES, AdapterError
+from pqtools.fabric import FabricClient, _same_origin
+from pqtools.pqtest import run_pqtest, validate_pqtest
 
 
 def test_fabric_200_passes_caller_token_without_logging():
@@ -437,7 +437,7 @@ def test_pqtest_rejects_non_windows_without_running_binary(tmp_path: Path):
 
 
 def test_pqtest_rejects_invalid_windows_prerequisites(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("mquery_toolkit.pqtest.platform.system", lambda: "Windows")
+    monkeypatch.setattr("pqtools.pqtest.platform.system", lambda: "Windows")
     executable = tmp_path / "PQTest.exe"
     executable.write_text("not a binary")
     completed = subprocess.CompletedProcess([], 0, stdout="wrong version", stderr="")
@@ -446,7 +446,7 @@ def test_pqtest_rejects_invalid_windows_prerequisites(tmp_path: Path, monkeypatc
 
 
 def test_pqtest_requires_exact_version_and_zero_exit(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("mquery_toolkit.pqtest.platform.system", lambda: "Windows")
+    monkeypatch.setattr("pqtools.pqtest.platform.system", lambda: "Windows")
     executable = tmp_path / "PQTest.exe"
     executable.write_text("test seam")
     wrong = subprocess.CompletedProcess([], 0, stdout="2.155.20", stderr="")
@@ -458,7 +458,7 @@ def test_pqtest_requires_exact_version_and_zero_exit(tmp_path: Path, monkeypatch
 
 
 def test_pqtest_wrapper_validates_then_runs(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("mquery_toolkit.pqtest.platform.system", lambda: "Windows")
+    monkeypatch.setattr("pqtools.pqtest.platform.system", lambda: "Windows")
     executable = tmp_path / "PQTest.exe"
     executable.write_text("test seam")
     commands = []

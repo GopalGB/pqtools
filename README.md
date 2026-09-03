@@ -1,4 +1,4 @@
-# mquery-toolkit
+# pqtools
 
 Offline command-line and Python tooling for Power Query M source: parse, format,
 lint (`check`), and safely rename a `let` binding.
@@ -6,10 +6,14 @@ lint (`check`), and safely rename a `let` binding.
 > **Unofficial.** Not affiliated with or endorsed by Microsoft. Not an M runtime -
 > it parses and formats M source text; it does not evaluate queries.
 
+> **Renamed.** Published as `mquery-toolkit` 0.1.0 on 2026-09-03 and renamed the
+> same day to `pqtools` to avoid a CLI name collision with the existing `mquery`
+> package on PyPI (a Yara malware-query tool). `mquery-toolkit` 0.1.0 is yanked.
+
 ## Install
 
 ```bash
-pip install mquery-toolkit
+pip install pqtools
 ```
 
 Requires **Node.js 22 or newer** on `PATH`, or point `MQUERY_NODE` at a Node
@@ -20,25 +24,25 @@ wheel (`_bridge.cjs`) - no `npm install` needed.
 
 ```bash
 # Parse to deterministic JSON (tokens, root kind, bindings/references)
-mquery parse query.pq
+pq parse query.pq
 
 # Format - dry run prints a unified diff, nothing is written
-mquery format query.pq
+pq format query.pq
 
 # Format and write in place (atomic replace, preserves mode/newline/encoding)
-mquery format query.pq --write
+pq format query.pq --write
 
 # Lint, machine-readable output; exit code 2 if any diagnostic is severity=error
-mquery check query.pq --json
+pq check query.pq --json
 
 # Rename one top-level let binding - dry run first
-mquery rename query.pq --old OldName --new NewName
+pq rename query.pq --old OldName --new NewName
 ```
 
 ## Python API
 
 ```python
-from mquery_toolkit import check, format_source, parse, rename, update_file
+from pqtools import check, format_source, parse, rename, update_file
 
 parsed = parse(source_text)  # dict: tokens, rootKind, analysis
 formatted = format_source(source_text)  # formatted M source, same encoding
@@ -91,7 +95,7 @@ when any diagnostic has severity `error`, `0` otherwise.
 - **Advisory lock while writing only** - a `--write` call takes a
   cross-process advisory lock (`fcntl`/`msvcrt`) for the duration of the
   write and removes the lock file afterward, best-effort. It only serialises
-  cooperating `mquery` processes and is not a correctness guarantee: because
+  cooperating `pq` processes and is not a correctness guarantee: because
   the lock file is removed after use, a waiting process and a freshly
   started one can end up locking different inodes. Dry-run calls take no
   lock and create no lock file.
@@ -109,10 +113,11 @@ when any diagnostic has severity `error`, `0` otherwise.
   non-ASCII source.
 - `Retry-After` on the Fabric adapter must be whole seconds; HTTP-date values
   are rejected.
+- The parse response is roughly 40x the size of the source, and it is capped at 10 MiB, so `parse`, `check`, `dependencies` and `rename` fail with a typed `NodeError` on sources above roughly 240 KiB. `format` returns only text and is not affected.
 
 ## Optional adapters
 
-- **`fabric` extra** (`pip install "mquery-toolkit[fabric]"`) - a Fabric
+- **`fabric` extra** (`pip install "pqtools[fabric]"`) - a Fabric
   Execute Query client that takes a caller-provided bearer token and an
   injected HTTP transport. It never manages credentials itself and is fully
   mocked in tests (no network access in the test suite).
@@ -132,13 +137,13 @@ when any diagnostic has severity `error`, `0` otherwise.
 ## Development
 
 ```bash
-git clone https://github.com/GopalGB/mquery-toolkit
-cd mquery-toolkit
+git clone https://github.com/GopalGB/pqtools
+cd pqtools
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,fabric]"
 npm ci --ignore-scripts
 
-pytest -q --cov=mquery_toolkit --cov-fail-under=80
+pytest -q --cov=pqtools --cov-fail-under=80
 mypy src
 ruff check .
 ruff format --check .

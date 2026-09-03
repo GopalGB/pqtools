@@ -1,6 +1,6 @@
 # Publishes to PyPI on a "v*" tag push, using PyPI Trusted Publishing (OIDC) -
 # no API token stored in this repo. Before the first tag is pushed, the PyPI
-# project (https://pypi.org/manage/project/mquery-toolkit/settings/publishing/)
+# project (https://pypi.org/manage/project/pqtools/settings/publishing/)
 # must have a trusted publisher configured for this exact repository, workflow
 # file name ("release.yml"), and the "pypi" environment used below.
 
@@ -49,9 +49,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run bundle
-      - run: git diff --exit-code -- src/mquery_toolkit/_bridge.cjs
+      - run: git diff --exit-code -- src/pqtools/_bridge.cjs
       - run: python -m pip install -e ".[dev,fabric]"
-      - run: python -m pytest -q --cov=mquery_toolkit --cov-fail-under=80
+      - run: python -m pytest -q --cov=pqtools --cov-fail-under=80
       - run: python -m mypy src
       - run: python -m ruff check .
       - run: python -m ruff format --check .

@@ -1,6 +1,6 @@
 Unofficial project, not affiliated with Microsoft. The bundled JavaScript
 components retain their copyright and MIT permission notices in
-`mquery_toolkit/THIRD_PARTY_NOTICES.txt`.
+`pqtools/THIRD_PARTY_NOTICES.txt`.
 The test corpus includes a short Power Query M let-expression example from the
 Microsoft M language specification:
 https://learn.microsoft.com/en-us/powerquery-m/m-spec-let

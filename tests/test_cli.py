@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mquery_toolkit.cli import main
+from pqtools.cli import main
 
 
 def _query(tmp_path: Path) -> Path:

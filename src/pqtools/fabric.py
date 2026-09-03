@@ -37,7 +37,7 @@ def _validate_arrow(body: bytes) -> None:
         import pyarrow as pa  # type: ignore[import-untyped]
     except ImportError as error:
         raise AdapterError(
-            "Arrow validation requires the mquery-toolkit[fabric] extra"
+            "Arrow validation requires the pqtools[fabric] extra"
         ) from error
     stream = io.BytesIO(body)
     streams = 0

@@ -331,10 +331,9 @@ def rename(source: str, old: str, new: str) -> str:
     declarations = list(plan["bindings"])
     if new in declarations:
         raise RenameRefusal("rename target collides with an existing let binding")
-    parsed = parse(source)
     if any(
         token["kind"] == "Identifier" and str(token["text"]) == new
-        for token in parsed["tokens"]
+        for token in plan["tokens"]
     ):
         raise RenameRefusal("rename target already appears in the source")
     edits = [(int(start), int(end)) for start, end in plan["spans"]]

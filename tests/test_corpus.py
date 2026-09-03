@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from mquery_toolkit.core import format_source, parse
+from pqtools.core import format_source, parse
 
 FIXTURES = Path(__file__).parent / "fixtures" / "DataConnectors"
 

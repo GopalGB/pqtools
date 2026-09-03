@@ -34,7 +34,7 @@ def _print(value: Any, as_json: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="mquery")
+    parser = argparse.ArgumentParser(prog="pq")
     parser.add_argument(
         "command",
         choices=[
