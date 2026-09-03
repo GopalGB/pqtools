@@ -1,4 +1,5 @@
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -218,6 +219,31 @@ def test_format_preserves_final_newline_state(tmp_path: Path):
     assert not without_newline.read_text().endswith("\n")
 
 
+def test_bom_survives_format_and_rename(tmp_path: Path):
+    fixture = (
+        Path(__file__).parent / "fixtures" / "DataConnectors" / "HelloWorld.query.pq"
+    )
+    path = tmp_path / fixture.name
+    shutil.copy(fixture, path)
+    update_file(path, format_source, write=True)
+    data = path.read_bytes()
+    assert data.startswith(b"\xef\xbb\xbf")
+    parse(data.decode("utf-8"))
+    assert update_file(path, format_source, write=True) == ""
+
+
+def test_bom_rename_shifts_spans_correctly():
+    assert (
+        rename("\ufefflet A = 1 in A", "A", "Renamed")
+        == "\ufefflet Renamed = 1 in Renamed"
+    )
+
+
+def test_bom_check_returns_no_parse_error():
+    diagnostics = check("\ufefflet A = 1 in A")
+    assert not any(item.code == "M_PARSE_ERROR" for item in diagnostics)
+
+
 @pytest.mark.skipif(
     os.name == "nt",
     reason="POSIX link semantics; Windows symlinks need Developer Mode",
@@ -294,6 +320,14 @@ def test_node_binary_requires_env_or_path(monkeypatch):
     monkeypatch.delenv("MQUERY_NODE", raising=False)
     monkeypatch.setattr(core.shutil, "which", lambda _: None)
     with pytest.raises(NodeError):
+        core._node_binary()
+
+
+def test_node_binary_refuses_cwd_resolution(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(core.shutil, "which", lambda *a, **k: str(tmp_path / "node"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MQUERY_NODE", raising=False)
+    with pytest.raises(NodeError, match="current directory"):
         core._node_binary()
 
 

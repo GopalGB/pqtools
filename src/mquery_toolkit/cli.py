@@ -65,12 +65,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        source = _source(args.file)
         if args.command == "parse":
-            _print(parse(source), True)
+            _print(parse(_source(args.file)), True)
             return 0
         if args.command == "check":
-            diagnostics = check(source, str(args.file))
+            diagnostics = check(_source(args.file), str(args.file))
             if args.json:
                 _print([item.as_dict() for item in diagnostics], True)
             else:
@@ -81,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
             return 2 if any(item.severity == "error" for item in diagnostics) else 0
         if args.command == "dependencies":
-            _print(dependencies(source), True)
+            _print(dependencies(_source(args.file)), True)
             return 0
         transform: Callable[[str], str]
         if args.command == "format":

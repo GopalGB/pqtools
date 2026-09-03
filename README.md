@@ -79,8 +79,9 @@ when any diagnostic has severity `error`, `0` otherwise.
 - **`--write` is an atomic replace**: the file is written to a sibling temp
   file, `fsync`'d, `chmod`'d to match the original, then moved into place with
   `os.replace`.
-- **Layout is preserved**: UTF-8 encoding, newline convention (`\n` vs
-  `\r\n`), final-newline state, and file mode all round-trip unchanged.
+- **Layout is preserved**: UTF-8 encoding, a leading BOM (present in every
+  Power Query SDK connector file), newline convention (`\n` vs `\r\n`),
+  final-newline state, and file mode all round-trip unchanged.
 - **Refuses symlinks and hardlinks** - writes require a regular, single-link
   file.
 - **Detects concurrent change**: the source is snapshotted before the

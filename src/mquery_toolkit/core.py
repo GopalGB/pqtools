@@ -109,9 +109,14 @@ def _node_binary() -> str:
     configured = os.environ.get("MQUERY_NODE")
     if configured:
         return configured
-    found = shutil.which("node")
+    if os.name == "nt":
+        found = shutil.which("node", path=os.environ.get("PATH", ""))
+    else:
+        found = shutil.which("node")
     if found is None:
         raise NodeError("Node.js 22 or newer is required")
+    if Path(found).resolve().parent == Path.cwd().resolve():
+        raise NodeError("refusing to run node from the current directory")
     return found
 
 
@@ -123,63 +128,67 @@ def _run_process_bounded(
     command: list[str], input_data: bytes | None, timeout: int
 ) -> subprocess.CompletedProcess[bytes]:
     deadline = time.monotonic() + timeout
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command,
         stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-    )
-    buffers = [bytearray(), bytearray()]
-    exceeded = threading.Event()
+    ) as process:
+        buffers = [bytearray(), bytearray()]
+        exceeded = threading.Event()
 
-    def read(stream: Any, buffer: bytearray) -> None:
-        while chunk := stream.read(65536):
-            if len(buffer) + len(chunk) > MAX_BYTES:
-                exceeded.set()
-                process.kill()
-                return
-            buffer.extend(chunk)
+        def read(stream: Any, buffer: bytearray) -> None:
+            while chunk := stream.read(65536):
+                if len(buffer) + len(chunk) > MAX_BYTES:
+                    exceeded.set()
+                    process.kill()
+                    return
+                buffer.extend(chunk)
 
-    threads = [
-        threading.Thread(target=read, args=(stream, buffer), daemon=True)
-        for stream, buffer in zip(
-            (process.stdout, process.stderr), buffers, strict=True
-        )
-    ]
-    if process.stdin is not None:
-        stdin = process.stdin
-        input_payload = input_data or b""
+        threads = [
+            threading.Thread(target=read, args=(stream, buffer), daemon=True)
+            for stream, buffer in zip(
+                (process.stdout, process.stderr), buffers, strict=True
+            )
+        ]
+        if process.stdin is not None:
+            stdin = process.stdin
+            input_payload = input_data or b""
 
-        def write() -> None:
-            try:
-                stdin.write(input_payload)
-            except BrokenPipeError:
-                pass
-            finally:
-                with contextlib.suppress(OSError):
-                    stdin.close()
+            def write() -> None:
+                try:
+                    stdin.write(input_payload)
+                except BrokenPipeError:
+                    pass
+                finally:
+                    with contextlib.suppress(OSError):
+                        stdin.close()
 
-        threads.append(threading.Thread(target=write, daemon=True))
-    for thread in threads:
-        thread.start()
-    try:
-        process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
-        raise
-    finally:
+            threads.append(threading.Thread(target=write, daemon=True))
         for thread in threads:
-            thread.join(max(0.0, deadline - time.monotonic()))
-        if any(thread.is_alive() for thread in threads):
-            if process.poll() is None:
-                process.kill()
-            raise subprocess.TimeoutExpired(command, timeout)
-    if exceeded.is_set():
-        raise _ProcessOutputLimit
-    return subprocess.CompletedProcess(
-        command, process.returncode, *map(bytes, buffers)
-    )
+            thread.start()
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        finally:
+            for thread in threads:
+                thread.join(max(0.0, deadline - time.monotonic()))
+            if any(thread.is_alive() for thread in threads):
+                if process.poll() is None:
+                    process.kill()
+                # An abandoned thread may still hold the read lock on this
+                # pipe (e.g. a grandchild keeping it open); detach it so the
+                # context manager's close() below does not block on it.
+                process.stdout = process.stderr = process.stdin = None
+                raise subprocess.TimeoutExpired(command, timeout)
+        if exceeded.is_set():
+            raise _ProcessOutputLimit
+        return subprocess.CompletedProcess(
+            command, process.returncode, *map(bytes, buffers)
+        )
 
 
 @lru_cache(maxsize=4)
@@ -195,9 +204,10 @@ def _require_node(binary: str) -> None:
 
 
 def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
+    stripped = source[1:] if source.startswith("\ufeff") else source
     try:
         payload = json.dumps(
-            {"source": source, "kind": kind, "newline": _newline(source), **options}
+            {"source": stripped, "kind": kind, "newline": _newline(source), **options}
         ).encode("utf-8", "strict")
         source_size = len(source.encode("utf-8", "strict"))
     except UnicodeEncodeError as error:
@@ -243,6 +253,11 @@ def _preserve_layout(updated: str, original: str) -> str:
         updated = updated.replace("\r\n", "\n").replace("\n", "\r\n")
     else:
         updated = updated.replace("\r\n", "\n")
+    if original.startswith("\ufeff"):
+        if not updated.startswith("\ufeff"):
+            updated = "\ufeff" + updated
+    elif updated.startswith("\ufeff"):
+        updated = updated[1:]
     if not original.endswith(("\n", "\r")):
         return updated.rstrip("\r\n")
     if not updated.endswith(("\n", "\r")):
@@ -290,6 +305,9 @@ def _rename_plan(source: str, old: str) -> dict[str, Any]:
 
 def rename(source: str, old: str, new: str) -> str:
     """Rename one unquoted top-level binding and its unambiguous references."""
+    has_bom = source.startswith("\ufeff")
+    if has_bom:
+        source = source[1:]
     if not _IDENTIFIER.fullmatch(old) or not _IDENTIFIER.fullmatch(new) or old == new:
         raise RenameRefusal("rename requires distinct unquoted identifiers")
     if new.lower() in _RESERVED:
@@ -313,6 +331,8 @@ def rename(source: str, old: str, new: str) -> str:
             raise RenameRefusal("rename spans overlap")
     for start, end in reversed(edits):
         source = source[:start] + new + source[end:]
+    if has_bom:
+        source = "\ufeff" + source
     parse(source)
     return source
 

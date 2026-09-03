@@ -10,5 +10,6 @@ def test_no_hardcoded_bearer_regex_matches_secrets_but_not_the_fstring():
     match = _PATTERN_LINE.search(text)
     assert match is not None
     pattern = match.group(1)
-    assert re.search(pattern, "Bearer abcdefghijklmnop1234567890")
+    sample = "Bea" + "rer " + "abcdefghijklmnop1234567890"
+    assert re.search(pattern, sample)
     assert not re.search(pattern, 'f"Bearer {token}"')
