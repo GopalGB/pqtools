@@ -249,3 +249,25 @@ def _table_distinct(args: list[Any], ctx: _Ctx) -> Any:
         if not any(_m_equal(row, other) for other in result):
             result.append(row)
     return result
+
+
+# The M-visible names this module owns. builtins/__init__.py merges every
+# module's BUILTINS into one registry, so a new function is added HERE and
+# nowhere else - no central file to edit, and no merge conflict when several
+# families are implemented in parallel.
+BUILTINS: dict[str, Any] = {
+    "Table.FromRecords": _table_from_records,
+    "Table.ToRecords": _table_to_records,
+    "Table.RowCount": _table_row_count,
+    "Table.ColumnNames": _table_column_names,
+    "Table.SelectRows": _table_select_rows,
+    "Table.SelectColumns": _table_select_columns,
+    "Table.RemoveColumns": _table_remove_columns,
+    "Table.RenameColumns": _table_rename_columns,
+    "Table.AddColumn": _table_add_column,
+    "Table.TransformColumns": _table_transform_columns,
+    "Table.Sort": _table_sort,
+    "Table.FirstN": _table_first_n,
+    "Table.LastN": _table_last_n,
+    "Table.Distinct": _table_distinct,
+}

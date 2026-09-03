@@ -143,3 +143,25 @@ def _list_range(args: list[Any], ctx: _Ctx) -> Any:
             raise EvalError("List.Range: count must not be negative")
         return items[offset : offset + count]
     return items[offset:]
+
+
+# The M-visible names this module owns. builtins/__init__.py merges every
+# module's BUILTINS into one registry, so a new function is added HERE and
+# nowhere else - no central file to edit, and no merge conflict when several
+# families are implemented in parallel.
+BUILTINS: dict[str, Any] = {
+    "List.Count": _list_count,
+    "List.Sum": _list_sum,
+    "List.Max": _list_max,
+    "List.Min": _list_min,
+    "List.Average": _list_average,
+    "List.Transform": _list_transform,
+    "List.Select": _list_select,
+    "List.First": _list_first,
+    "List.Last": _list_last,
+    "List.Reverse": _list_reverse,
+    "List.Sort": _list_sort,
+    "List.Contains": _list_contains,
+    "List.Distinct": _list_distinct,
+    "List.Range": _list_range,
+}

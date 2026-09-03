@@ -53,3 +53,16 @@ def _record_remove_fields(args: list[Any], ctx: _Ctx) -> Any:
         if name not in record:
             raise EvalError(f"Record.RemoveFields: no such field: {name}")
     return {key: value for key, value in record.items() if key not in names}
+
+
+# The M-visible names this module owns. builtins/__init__.py merges every
+# module's BUILTINS into one registry, so a new function is added HERE and
+# nowhere else - no central file to edit, and no merge conflict when several
+# families are implemented in parallel.
+BUILTINS: dict[str, Any] = {
+    "Record.Field": _record_field_builtin,
+    "Record.FieldNames": _record_field_names,
+    "Record.HasFields": _record_has_fields,
+    "Record.AddField": _record_add_field,
+    "Record.RemoveFields": _record_remove_fields,
+}

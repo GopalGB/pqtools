@@ -97,3 +97,22 @@ def _text_trim(args: list[Any], ctx: _Ctx) -> Any:
     if len(args) == 2:
         return text.strip(_require_str(args[1]))
     return text.strip()
+
+
+# The M-visible names this module owns. builtins/__init__.py merges every
+# module's BUILTINS into one registry, so a new function is added HERE and
+# nowhere else - no central file to edit, and no merge conflict when several
+# families are implemented in parallel.
+BUILTINS: dict[str, Any] = {
+    "Text.From": _text_from,
+    "Text.Upper": _text_upper,
+    "Text.Lower": _text_lower,
+    "Text.Length": _text_length,
+    "Text.Combine": _text_combine,
+    "Text.Contains": _text_contains,
+    "Text.Replace": _text_replace,
+    "Text.Split": _text_split,
+    "Text.Start": _text_start,
+    "Text.End": _text_end,
+    "Text.Trim": _text_trim,
+}

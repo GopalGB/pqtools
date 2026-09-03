@@ -74,3 +74,16 @@ def _logical_from(args: list[Any], ctx: _Ctx) -> Any:
             return False
         raise EvalError(f"Logical.From: not a logical value: {value!r}")
     raise EvalError(f"Logical.From: unsupported value type: {_type_name(value)}")
+
+
+# The M-visible names this module owns. builtins/__init__.py merges every
+# module's BUILTINS into one registry, so a new function is added HERE and
+# nowhere else - no central file to edit, and no merge conflict when several
+# families are implemented in parallel.
+BUILTINS: dict[str, Any] = {
+    "Number.From": _number_from,
+    "Number.Round": _number_round,
+    "Number.Abs": _number_abs,
+    "Json.Document": _json_document,
+    "Logical.From": _logical_from,
+}
