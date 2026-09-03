@@ -1,0 +1,12 @@
+Column1,Column2,Column3,Column4
+TransactionID,Region,Category,Amount
+1,East,Books,50.00
+2,West,Electronics,200.00
+3,East,Clothing,75.00
+4,North,Books,30.00
+5,West,Books,120.00
+6,East,Electronics,300.00
+7,North,Clothing,45.00
+8,West,Clothing,60.00
+9,East,Books,25.00
+10,North,Electronics,150.00

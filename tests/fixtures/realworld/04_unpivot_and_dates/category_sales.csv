@@ -1,0 +1,7 @@
+Column1,Column2,Column3,Column4,Column5
+Region,OrderDate,Electronics,Clothing,Home
+East,2024-01-15,500.00,0,120.00
+West,2024-03-22,0,300.00,0
+East,2024-07-09,250.00,90.00,60.00
+North,2025-02-14,0,0,430.00
+West,2025-11-30,180.00,45.00,0

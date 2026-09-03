@@ -1,0 +1,74 @@
+[
+    {
+        "Region": "East",
+        "OrderDate": "2024-01-15",
+        "Category": "Electronics",
+        "Revenue": 500.0,
+        "Year": 2024,
+        "Month Name": "January"
+    },
+    {
+        "Region": "East",
+        "OrderDate": "2024-01-15",
+        "Category": "Home",
+        "Revenue": 120.0,
+        "Year": 2024,
+        "Month Name": "January"
+    },
+    {
+        "Region": "West",
+        "OrderDate": "2024-03-22",
+        "Category": "Clothing",
+        "Revenue": 300.0,
+        "Year": 2024,
+        "Month Name": "March"
+    },
+    {
+        "Region": "East",
+        "OrderDate": "2024-07-09",
+        "Category": "Electronics",
+        "Revenue": 250.0,
+        "Year": 2024,
+        "Month Name": "July"
+    },
+    {
+        "Region": "East",
+        "OrderDate": "2024-07-09",
+        "Category": "Clothing",
+        "Revenue": 90.0,
+        "Year": 2024,
+        "Month Name": "July"
+    },
+    {
+        "Region": "East",
+        "OrderDate": "2024-07-09",
+        "Category": "Home",
+        "Revenue": 60.0,
+        "Year": 2024,
+        "Month Name": "July"
+    },
+    {
+        "Region": "North",
+        "OrderDate": "2025-02-14",
+        "Category": "Home",
+        "Revenue": 430.0,
+        "Year": 2025,
+        "Month Name": "February"
+    },
+    {
+        "Region": "West",
+        "OrderDate": "2025-11-30",
+        "Category": "Electronics",
+        "Revenue": 180.0,
+        "Year": 2025,
+        "Month Name": "November"
+    },
+    {
+        "Region": "West",
+        "OrderDate": "2025-11-30",
+        "Category": "Clothing",
+        "Revenue": 45.0,
+        "Year": 2025,
+        "Month Name": "November"
+    }
+]

@@ -1,0 +1,44 @@
+[
+    {
+        "OrderID": 5001,
+        "CustomerID": 1,
+        "Amount": 120.0,
+        "CustomerName": "Ava Thompson",
+        "Tier": "Gold"
+    },
+    {
+        "OrderID": 5002,
+        "CustomerID": 2,
+        "Amount": 340.5,
+        "CustomerName": "Ben Okafor",
+        "Tier": "Silver"
+    },
+    {
+        "OrderID": 5003,
+        "CustomerID": 1,
+        "Amount": 75.25,
+        "CustomerName": "Ava Thompson",
+        "Tier": "Gold"
+    },
+    {
+        "OrderID": 5004,
+        "CustomerID": 3,
+        "Amount": 210.0,
+        "CustomerName": "Chloe Martin",
+        "Tier": "Gold"
+    },
+    {
+        "OrderID": 5005,
+        "CustomerID": 99,
+        "Amount": 500.0,
+        "CustomerName": null,
+        "Tier": null
+    },
+    {
+        "OrderID": 5006,
+        "CustomerID": 2,
+        "Amount": 60.0,
+        "CustomerName": "Ben Okafor",
+        "Tier": "Silver"
+    }
+]

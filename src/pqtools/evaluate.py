@@ -22,23 +22,23 @@ builtin is a fixed, named Python function.
 
 from __future__ import annotations
 
-import json as _json
-import math
 from collections.abc import Callable
 from typing import Any
 
-from .core import MQueryError
+from .builtins import BUILTINS
+from .builtins._shared import (
+    EvalError,
+    UnsupportedError,
+    _m_equal,
+    _parse_numeric_literal,
+    _require_int,
+    _require_number,
+    _type_name,
+)
+from .builtins._table import _ORDER_ENUM
 from .core import ast as _parse_ast
 
 _MAX_STEPS_DEFAULT = 1_000_000
-
-
-class EvalError(MQueryError):
-    code = "M_EVAL_ERROR"
-
-
-class UnsupportedError(EvalError):
-    code = "M_EVAL_UNSUPPORTED"
 
 
 # --------------------------------------------------------------------------
@@ -106,13 +106,33 @@ class _Budget:
 
 
 class _Ctx:
-    """Evaluation-wide, read-mostly state threaded through every call."""
+    """Evaluation-wide, read-mostly state threaded through every call.
 
-    __slots__ = ("bindings", "budget")
+    ``invoke`` is dependency-injected here rather than the builtins package
+    importing a module-level ``_invoke``. Builtins that take an M lambda
+    (``Table.SelectRows``, ``List.Transform``, ``Table.AddColumn``, ...)
+    need to call back into this module's ``_invoke`` to run it, but
+    ``_invoke`` is evaluator-core code that lives in this module, and this
+    module imports the builtin registry (``BUILTINS``) from
+    ``pqtools.builtins`` - a straight import the other way would be a
+    circular import (``evaluate`` -> ``builtins`` -> a family module ->
+    ``evaluate``). Threading ``_invoke`` through ``_Ctx.invoke`` instead
+    means ``pqtools.builtins`` never has to import ``pqtools.evaluate`` at
+    all: a builtin calls ``ctx.invoke(callee, args, ctx)`` where it used to
+    call the bare ``_invoke(callee, args, ctx)``.
+    """
 
-    def __init__(self, bindings: dict[str, Any], budget: _Budget) -> None:
+    __slots__ = ("bindings", "budget", "invoke")
+
+    def __init__(
+        self,
+        bindings: dict[str, Any],
+        budget: _Budget,
+        invoke: Callable[[Any, list[Any], _Ctx], Any],
+    ) -> None:
         self.bindings = bindings
         self.budget = budget
+        self.invoke = invoke
 
 
 def evaluate(
@@ -148,7 +168,7 @@ def evaluate(
     # (e.g. `Table.RowCount(Source)` with no enclosing `let Source = ...`)
     # must still resolve it.
     scope.vars.update(resolved_bindings)
-    ctx = _Ctx(resolved_bindings, _Budget(max_steps))
+    ctx = _Ctx(resolved_bindings, _Budget(max_steps), _invoke)
     return _eval(tree, scope, ctx)
 
 
@@ -200,20 +220,6 @@ def _binop_parts(node: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, A
 # --------------------------------------------------------------------------
 
 
-def _parse_numeric_literal(token: str) -> int | float:
-    text = token.strip()
-    lowered = text.lower()
-    if lowered == "#infinity":
-        return math.inf
-    if lowered == "#nan":
-        return math.nan
-    if lowered.startswith("0x"):
-        return int(text, 16)
-    if any(marker in text for marker in (".", "e", "E")):
-        return float(text)
-    return int(text)
-
-
 def _parse_text_literal(token: str) -> str:
     if len(token) < 2 or token[0] != '"' or token[-1] != '"':
         raise EvalError("malformed text literal")
@@ -235,108 +241,6 @@ def _eval_literal(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     if kind == "Null":
         return None
     raise UnsupportedError(f"literal kind: {kind}")
-
-
-# --------------------------------------------------------------------------
-# Value helpers shared by operators and builtins
-# --------------------------------------------------------------------------
-
-
-def _require_number(value: Any) -> int | float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise EvalError(f"expected a number, got {_type_name(value)}")
-    return value
-
-
-def _require_str(value: Any) -> str:
-    if not isinstance(value, str):
-        raise EvalError(f"expected text, got {_type_name(value)}")
-    return value
-
-
-def _require_int(value: Any) -> int:
-    number = _require_number(value)
-    if isinstance(number, float):
-        if not number.is_integer():
-            raise EvalError("expected a whole number")
-        return int(number)
-    return number
-
-
-def _require_list(value: Any) -> list[Any]:
-    if not isinstance(value, list):
-        raise EvalError(f"expected a list, got {_type_name(value)}")
-    return value
-
-
-def _require_record(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise EvalError(f"expected a record, got {_type_name(value)}")
-    return value
-
-
-def _require_table(value: Any) -> list[dict[str, Any]]:
-    rows = _require_list(value)
-    for row in rows:
-        if not isinstance(row, dict):
-            raise EvalError("expected a table (a list of records)")
-    return rows
-
-
-def _field_name_list(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [_require_str(item) for item in value]
-    raise EvalError("expected a field name or a list of field names")
-
-
-def _type_name(value: Any) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "logical"
-    if isinstance(value, (int, float)):
-        return "number"
-    if isinstance(value, str):
-        return "text"
-    if isinstance(value, list):
-        return "list"
-    if isinstance(value, dict):
-        return "record"
-    return type(value).__name__
-
-
-def _m_equal(left: Any, right: Any) -> bool:
-    if left is None or right is None:
-        return left is None and right is None
-    if isinstance(left, bool) or isinstance(right, bool):
-        return isinstance(left, bool) and isinstance(right, bool) and left == right
-    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-        return left == right
-    if isinstance(left, str) and isinstance(right, str):
-        return left == right
-    if isinstance(left, list) and isinstance(right, list):
-        return len(left) == len(right) and all(
-            _m_equal(a, b) for a, b in zip(left, right, strict=True)
-        )
-    if isinstance(left, dict) and isinstance(right, dict):
-        return left.keys() == right.keys() and all(
-            _m_equal(left[key], right[key]) for key in left
-        )
-    return False
-
-
-def _format_number(value: int | float) -> str:
-    if isinstance(value, int):
-        return str(value)
-    if math.isnan(value):
-        return "NaN"
-    if math.isinf(value):
-        return "Infinity" if value > 0 else "-Infinity"
-    if value.is_integer():
-        return str(int(value))
-    return str(value)
 
 
 # --------------------------------------------------------------------------
@@ -677,586 +581,6 @@ def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) 
             "--bind"
         )
     raise UnsupportedError(f"unknown identifier: {name}")
-
-
-# --------------------------------------------------------------------------
-# Builtins
-#
-# Each function takes `(args, ctx)` and returns the M value. `_arity` turns
-# an unsupported argument-count variant (an optional parameter this module
-# does not implement) into a typed, named UnsupportedError rather than a
-# best-effort guess.
-# --------------------------------------------------------------------------
-
-_Builtin = Callable[[list[Any], _Ctx], Any]
-
-
-def _arity(name: str, args: list[Any], low: int, high: int | None = None) -> None:
-    ceiling = low if high is None else high
-    if not (low <= len(args) <= ceiling):
-        raise UnsupportedError(f"{name} with {len(args)} argument(s)")
-
-
-def _text_from(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.From", args, 1)
-    value = args[0]
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float)):
-        return _format_number(value)
-    if isinstance(value, str):
-        return value
-    raise EvalError(f"Text.From: unsupported value type: {_type_name(value)}")
-
-
-def _text_upper(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Upper", args, 1)
-    return _require_str(args[0]).upper()
-
-
-def _text_lower(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Lower", args, 1)
-    return _require_str(args[0]).lower()
-
-
-def _text_length(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Length", args, 1)
-    return len(_require_str(args[0]))
-
-
-def _text_combine(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Combine", args, 1, 2)
-    texts = _require_list(args[0])
-    separator = _require_str(args[1]) if len(args) == 2 else ""
-    return separator.join(_require_str(item) for item in texts)
-
-
-def _text_contains(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Contains", args, 2)
-    return _require_str(args[1]) in _require_str(args[0])
-
-
-def _text_replace(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Replace", args, 3)
-    return _require_str(args[0]).replace(_require_str(args[1]), _require_str(args[2]))
-
-
-def _text_split(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Split", args, 2)
-    return _require_str(args[0]).split(_require_str(args[1]))
-
-
-def _text_start(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Start", args, 2)
-    text = _require_str(args[0])
-    count = _require_int(args[1])
-    if count < 0:
-        raise EvalError("Text.Start: count must not be negative")
-    return text[:count]
-
-
-def _text_end(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.End", args, 2)
-    text = _require_str(args[0])
-    count = _require_int(args[1])
-    if count < 0:
-        raise EvalError("Text.End: count must not be negative")
-    return text[len(text) - count :] if count else ""
-
-
-def _text_trim(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Trim", args, 1, 2)
-    text = _require_str(args[0])
-    if len(args) == 2:
-        return text.strip(_require_str(args[1]))
-    return text.strip()
-
-
-def _number_from(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Number.From", args, 1)
-    value = args[0]
-    if isinstance(value, bool):
-        return 1 if value else 0
-    if isinstance(value, (int, float)):
-        return value
-    if isinstance(value, str):
-        try:
-            return _parse_numeric_literal(value.strip())
-        except ValueError as error:
-            raise EvalError(f"Number.From: not a number: {value!r}") from error
-    raise EvalError(f"Number.From: unsupported value type: {_type_name(value)}")
-
-
-def _number_round(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Number.Round", args, 1, 2)
-    value = _require_number(args[0])
-    digits = _require_int(args[1]) if len(args) == 2 else 0
-    return round(value, digits)
-
-
-def _number_abs(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Number.Abs", args, 1)
-    return abs(_require_number(args[0]))
-
-
-def _list_count(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Count", args, 1)
-    return len(_require_list(args[0]))
-
-
-def _list_sum(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Sum", args, 1)
-    total: int | float = 0
-    for item in _require_list(args[0]):
-        total = total + _require_number(item)
-    return total
-
-
-def _list_max(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Max", args, 1, 2)
-    items = _require_list(args[0])
-    if not items:
-        return args[1] if len(args) == 2 else None
-    try:
-        return max(items)
-    except TypeError as error:
-        raise EvalError("List.Max: values are not comparable") from error
-
-
-def _list_min(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Min", args, 1, 2)
-    items = _require_list(args[0])
-    if not items:
-        return args[1] if len(args) == 2 else None
-    try:
-        return min(items)
-    except TypeError as error:
-        raise EvalError("List.Min: values are not comparable") from error
-
-
-def _list_average(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Average", args, 1)
-    items = _require_list(args[0])
-    if not items:
-        return None
-    numbers = [_require_number(item) for item in items]
-    return sum(numbers) / len(numbers)
-
-
-def _list_transform(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Transform", args, 2)
-    transform = args[1]
-    return [_invoke(transform, [item], ctx) for item in _require_list(args[0])]
-
-
-def _list_select(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Select", args, 2)
-    predicate = args[1]
-    result = []
-    for item in _require_list(args[0]):
-        keep = _invoke(predicate, [item], ctx)
-        if not isinstance(keep, bool):
-            raise EvalError("List.Select: predicate must return a logical value")
-        if keep:
-            result.append(item)
-    return result
-
-
-def _list_first(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.First", args, 1, 2)
-    items = _require_list(args[0])
-    if items:
-        return items[0]
-    return args[1] if len(args) == 2 else None
-
-
-def _list_last(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Last", args, 1, 2)
-    items = _require_list(args[0])
-    if items:
-        return items[-1]
-    return args[1] if len(args) == 2 else None
-
-
-def _list_reverse(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Reverse", args, 1)
-    return list(reversed(_require_list(args[0])))
-
-
-def _list_sort(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Sort", args, 1)
-    try:
-        return sorted(_require_list(args[0]))
-    except TypeError as error:
-        raise EvalError("List.Sort: values are not comparable") from error
-
-
-def _list_contains(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Contains", args, 2)
-    return any(_m_equal(item, args[1]) for item in _require_list(args[0]))
-
-
-def _list_distinct(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Distinct", args, 1)
-    result: list[Any] = []
-    for item in _require_list(args[0]):
-        if not any(_m_equal(item, seen) for seen in result):
-            result.append(item)
-    return result
-
-
-def _list_range(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Range", args, 2, 3)
-    items = _require_list(args[0])
-    offset = _require_int(args[1])
-    if offset < 0:
-        raise EvalError("List.Range: offset must not be negative")
-    if len(args) == 3:
-        count = _require_int(args[2])
-        if count < 0:
-            raise EvalError("List.Range: count must not be negative")
-        return items[offset : offset + count]
-    return items[offset:]
-
-
-def _record_field_builtin(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.Field", args, 2)
-    record = _require_record(args[0])
-    name = _require_str(args[1])
-    if name not in record:
-        raise EvalError(f"Record.Field: no such field: {name}")
-    return record[name]
-
-
-def _record_field_names(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.FieldNames", args, 1)
-    return list(_require_record(args[0]).keys())
-
-
-def _record_has_fields(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.HasFields", args, 2)
-    record = _require_record(args[0])
-    return all(name in record for name in _field_name_list(args[1]))
-
-
-def _record_add_field(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.AddField", args, 3)
-    record = _require_record(args[0])
-    name = _require_str(args[1])
-    if name in record:
-        raise EvalError(f"Record.AddField: field already exists: {name}")
-    result = dict(record)
-    result[name] = args[2]
-    return result
-
-
-def _record_remove_fields(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.RemoveFields", args, 2)
-    record = _require_record(args[0])
-    names = _field_name_list(args[1])
-    for name in names:
-        if name not in record:
-            raise EvalError(f"Record.RemoveFields: no such field: {name}")
-    return {key: value for key, value in record.items() if key not in names}
-
-
-def _table_from_records(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.FromRecords", args, 1)
-    return list(_require_table(args[0]))
-
-
-def _table_to_records(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.ToRecords", args, 1)
-    return list(_require_table(args[0]))
-
-
-def _table_row_count(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.RowCount", args, 1)
-    return len(_require_table(args[0]))
-
-
-def _table_column_names(args: list[Any], ctx: _Ctx) -> Any:
-    # A table here carries no schema beyond its rows (spec: "a TABLE is a
-    # list of dicts"), so an empty table has no column names to report -
-    # not a guess, the necessary consequence of that data model.
-    _arity("Table.ColumnNames", args, 1)
-    table = _require_table(args[0])
-    return list(table[0].keys()) if table else []
-
-
-def _table_select_rows(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.SelectRows", args, 2)
-    predicate = args[1]
-    result = []
-    for row in _require_table(args[0]):
-        keep = _invoke(predicate, [row], ctx)
-        if not isinstance(keep, bool):
-            raise EvalError("Table.SelectRows: predicate must return a logical value")
-        if keep:
-            result.append(row)
-    return result
-
-
-def _table_select_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.SelectColumns", args, 2)
-    names = _field_name_list(args[1])
-    result = []
-    for row in _require_table(args[0]):
-        for name in names:
-            if name not in row:
-                raise EvalError(f"Table.SelectColumns: no such column: {name}")
-        result.append({name: row[name] for name in names})
-    return result
-
-
-def _table_remove_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.RemoveColumns", args, 2)
-    names = _field_name_list(args[1])
-    result = []
-    for row in _require_table(args[0]):
-        for name in names:
-            if name not in row:
-                raise EvalError(f"Table.RemoveColumns: no such column: {name}")
-        result.append({key: value for key, value in row.items() if key not in names})
-    return result
-
-
-def _column_pairs(value: Any, what: str) -> list[tuple[str, Any]]:
-    """``{old, new}`` or ``{{old1, new1}, {old2, new2}, ...}``."""
-
-    def is_pair(item: Any) -> bool:
-        return isinstance(item, list) and len(item) == 2 and isinstance(item[0], str)
-
-    if not isinstance(value, list):
-        raise EvalError(f"{what}: expected a {{column, value}} pair or a list of them")
-    if is_pair(value):
-        return [(value[0], value[1])]
-    pairs: list[tuple[str, Any]] = []
-    for item in value:
-        if not is_pair(item):
-            raise EvalError(
-                f"{what}: expected a {{column, value}} pair or a list of them"
-            )
-        pairs.append((item[0], item[1]))
-    return pairs
-
-
-def _table_rename_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.RenameColumns", args, 2)
-    table = _require_table(args[0])
-    pairs = _column_pairs(args[1], "Table.RenameColumns")
-    mapping: dict[str, str] = {}
-    for old, new in pairs:
-        if not isinstance(new, str):
-            raise EvalError("Table.RenameColumns: new column name must be text")
-        if table and old not in table[0]:
-            raise EvalError(f"Table.RenameColumns: no such column: {old}")
-        mapping[old] = new
-    return [
-        {mapping.get(key, key): value for key, value in row.items()} for row in table
-    ]
-
-
-def _table_add_column(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.AddColumn", args, 3)
-    table = _require_table(args[0])
-    name = _require_str(args[1])
-    generator = args[2]
-    if table and name in table[0]:
-        raise EvalError(f"Table.AddColumn: column already exists: {name}")
-    result = []
-    for row in table:
-        new_row = dict(row)
-        new_row[name] = _invoke(generator, [row], ctx)
-        result.append(new_row)
-    return result
-
-
-def _table_transform_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.TransformColumns", args, 2)
-    table = _require_table(args[0])
-    pairs = _column_pairs(args[1], "Table.TransformColumns")
-    result = []
-    for row in table:
-        new_row = dict(row)
-        for name, transform in pairs:
-            if name not in new_row:
-                raise EvalError(f"Table.TransformColumns: no such column: {name}")
-            new_row[name] = _invoke(transform, [new_row[name]], ctx)
-        result.append(new_row)
-    return result
-
-
-# Order.Ascending / Order.Descending are M enum constants (0 and 1). Power Query's
-# own UI emits `Table.Sort(t, {{"Col", Order.Ascending}})`, so without these the most
-# common real-world sort is unusable.
-_ORDER_ENUM = {"Order.Ascending": 0, "Order.Descending": 1}
-
-
-def _table_sort(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.Sort", args, 2)
-    table = _require_table(args[0])
-    spec = args[1]
-    # Accepted shapes, all of which Power Query itself emits:
-    #   "Col"                                  one column, ascending
-    #   {"A", "B"}                             several columns, ascending
-    #   {{"Col", Order.Descending}}            column with an explicit direction
-    #   {{"A", Order.Ascending}, {"B", Order.Descending}}
-    keys: list[tuple[str, bool]] = []
-    entries = [spec] if isinstance(spec, str) else spec
-    if not isinstance(entries, list):
-        raise UnsupportedError(f"Table.Sort with a {type(spec).__name__} sort spec")
-    for entry in entries:
-        if isinstance(entry, str):
-            keys.append((entry, False))
-        elif (
-            isinstance(entry, list)
-            and 1 <= len(entry) <= 2
-            and isinstance(entry[0], str)
-        ):
-            if len(entry) == 1:
-                keys.append((entry[0], False))
-            elif entry[1] in (0, 1):
-                keys.append((entry[0], entry[1] == 1))
-            else:
-                raise UnsupportedError(
-                    "Table.Sort direction must be Order.Ascending or Order.Descending"
-                )
-        else:
-            raise UnsupportedError(
-                "Table.Sort entries must be a column name or "
-                '{"Column", Order.Ascending}'
-            )
-    for name, _ in keys:
-        if table and name not in table[0]:
-            raise EvalError(f"Table.Sort: no such column: {name}")
-    rows = list(table)
-    try:
-        # Stable sort, least significant key first, so mixed directions work.
-        for name, descending in reversed(keys):
-            rows.sort(key=lambda row: row[name], reverse=descending)
-    except TypeError as error:
-        raise EvalError("Table.Sort: values are not comparable") from error
-    return rows
-
-
-def _table_first_n(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.FirstN", args, 2)
-    table = _require_table(args[0])
-    count = _require_int(args[1])
-    if count < 0:
-        raise EvalError("Table.FirstN: count must not be negative")
-    return table[:count]
-
-
-def _table_last_n(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.LastN", args, 2)
-    table = _require_table(args[0])
-    count = _require_int(args[1])
-    if count < 0:
-        raise EvalError("Table.LastN: count must not be negative")
-    return table[len(table) - count :] if count else []
-
-
-def _table_distinct(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.Distinct", args, 1, 2)
-    table = _require_table(args[0])
-    if len(args) == 2:
-        names = _field_name_list(args[1])
-        seen: list[tuple[Any, ...]] = []
-        result = []
-        for row in table:
-            key = tuple(row.get(name) for name in names)
-            if key not in seen:
-                seen.append(key)
-                result.append(row)
-        return result
-    result = []
-    for row in table:
-        if not any(_m_equal(row, other) for other in result):
-            result.append(row)
-    return result
-
-
-def _json_document(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Json.Document", args, 1)
-    text = _require_str(args[0])
-    try:
-        return _json.loads(text)
-    except _json.JSONDecodeError as error:
-        raise EvalError(f"Json.Document: invalid JSON: {error}") from error
-
-
-def _logical_from(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Logical.From", args, 1)
-    value = args[0]
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered == "true":
-            return True
-        if lowered == "false":
-            return False
-        raise EvalError(f"Logical.From: not a logical value: {value!r}")
-    raise EvalError(f"Logical.From: unsupported value type: {_type_name(value)}")
-
-
-BUILTINS: dict[str, _Builtin] = {
-    "Text.From": _text_from,
-    "Text.Upper": _text_upper,
-    "Text.Lower": _text_lower,
-    "Text.Length": _text_length,
-    "Text.Combine": _text_combine,
-    "Text.Contains": _text_contains,
-    "Text.Replace": _text_replace,
-    "Text.Split": _text_split,
-    "Text.Start": _text_start,
-    "Text.End": _text_end,
-    "Text.Trim": _text_trim,
-    "Number.From": _number_from,
-    "Number.Round": _number_round,
-    "Number.Abs": _number_abs,
-    "List.Count": _list_count,
-    "List.Sum": _list_sum,
-    "List.Max": _list_max,
-    "List.Min": _list_min,
-    "List.Average": _list_average,
-    "List.Transform": _list_transform,
-    "List.Select": _list_select,
-    "List.First": _list_first,
-    "List.Last": _list_last,
-    "List.Reverse": _list_reverse,
-    "List.Sort": _list_sort,
-    "List.Contains": _list_contains,
-    "List.Distinct": _list_distinct,
-    "List.Range": _list_range,
-    "Record.Field": _record_field_builtin,
-    "Record.FieldNames": _record_field_names,
-    "Record.HasFields": _record_has_fields,
-    "Record.AddField": _record_add_field,
-    "Record.RemoveFields": _record_remove_fields,
-    "Table.FromRecords": _table_from_records,
-    "Table.ToRecords": _table_to_records,
-    "Table.RowCount": _table_row_count,
-    "Table.ColumnNames": _table_column_names,
-    "Table.SelectRows": _table_select_rows,
-    "Table.SelectColumns": _table_select_columns,
-    "Table.RemoveColumns": _table_remove_columns,
-    "Table.RenameColumns": _table_rename_columns,
-    "Table.AddColumn": _table_add_column,
-    "Table.TransformColumns": _table_transform_columns,
-    "Table.Sort": _table_sort,
-    "Table.FirstN": _table_first_n,
-    "Table.LastN": _table_last_n,
-    "Table.Distinct": _table_distinct,
-    "Json.Document": _json_document,
-    "Logical.From": _logical_from,
-}
 
 
 # --------------------------------------------------------------------------

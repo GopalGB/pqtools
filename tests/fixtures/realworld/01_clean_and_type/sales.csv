@@ -1,0 +1,10 @@
+Column1,Column2,Column3,Column4,Column5
+OrderID,Customer,Region,Amount,OrderDate
+1001,Alice Chen,East,250.00,2024-01-15
+1002,Bob Diaz,West,75.50,2024-01-16
+1003,Carla Smith,East,430.25,2024-01-18
+1004,Deepak Rao,North,100.00,2024-01-20
+1005,Elena Petrova,West,560.00,2024-01-22
+1006,Farhan Ali,South,120.75,2024-01-25
+1007,Grace Kim,East,45.00,2024-01-27
+1008,Hiro Tanaka,North,310.40,2024-01-29

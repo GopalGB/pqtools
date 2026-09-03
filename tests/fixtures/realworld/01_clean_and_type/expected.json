@@ -1,0 +1,42 @@
+[
+    {
+        "OrderID": 1005,
+        "CustomerName": "Elena Petrova",
+        "Region": "West",
+        "Amount": 560.0,
+        "OrderDate": "2024-01-22",
+        "AmountWithTax": 604.8
+    },
+    {
+        "OrderID": 1003,
+        "CustomerName": "Carla Smith",
+        "Region": "East",
+        "Amount": 430.25,
+        "OrderDate": "2024-01-18",
+        "AmountWithTax": 464.67
+    },
+    {
+        "OrderID": 1008,
+        "CustomerName": "Hiro Tanaka",
+        "Region": "North",
+        "Amount": 310.4,
+        "OrderDate": "2024-01-29",
+        "AmountWithTax": 335.232
+    },
+    {
+        "OrderID": 1001,
+        "CustomerName": "Alice Chen",
+        "Region": "East",
+        "Amount": 250.0,
+        "OrderDate": "2024-01-15",
+        "AmountWithTax": 270.0
+    },
+    {
+        "OrderID": 1006,
+        "CustomerName": "Farhan Ali",
+        "Region": "South",
+        "Amount": 120.75,
+        "OrderDate": "2024-01-25",
+        "AmountWithTax": 130.41
+    }
+]

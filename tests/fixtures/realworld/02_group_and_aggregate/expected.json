@@ -1,0 +1,23 @@
+[
+    {
+        "Region": "East",
+        "TotalSales": 450.0,
+        "AverageSale": 112.5,
+        "TransactionCount": 4,
+        "MaxSale": 300.0
+    },
+    {
+        "Region": "West",
+        "TotalSales": 380.0,
+        "AverageSale": 126.66666666666667,
+        "TransactionCount": 3,
+        "MaxSale": 200.0
+    },
+    {
+        "Region": "North",
+        "TotalSales": 225.0,
+        "AverageSale": 75.0,
+        "TransactionCount": 3,
+        "MaxSale": 150.0
+    }
+]
