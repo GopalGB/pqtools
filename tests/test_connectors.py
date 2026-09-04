@@ -116,7 +116,14 @@ def test_csv_document_whitespace_delimiter() -> None:
 def test_csv_document_strips_utf8_bom_from_first_header() -> None:
     # A BOM left in place becomes part of the first column name after
     # PromoteHeaders, and every later reference to that column then fails.
-    data = "OrderID,Item\r\n1,Rod".encode()
+    #
+    # Written as the \ufeff escape, never as a literal invisible character:
+    # this repo runs a commit hook that strips zero-width characters from
+    # source, and it silently ate the literal version - leaving a test that
+    # passed while asserting nothing. The assert below makes that failure
+    # loud if it ever happens again.
+    data = "\ufeffOrderID,Item\r\n1,Rod".encode()
+    assert data.startswith(b"\xef\xbb\xbf"), "the BOM under test went missing"
     assert _call("Csv.Document", data) == [
         {"Column1": "OrderID", "Column2": "Item"},
         {"Column1": "1", "Column2": "Rod"},
