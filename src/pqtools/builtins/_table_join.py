@@ -6,15 +6,10 @@ call back into M lambdas (group aggregations) or need no callback at all
 (joins/expand are pure data reshaping) - the callback path goes through
 ``ctx.invoke`` exactly like ``_table.py``'s ``Table.SelectRows``/``AddColumn``.
 
-Enum resolution (``JoinKind.*``/``GroupKind.*``): ``_table.py``'s
-``_ORDER_ENUM`` is resolved via a dedicated check hard-coded into
-``evaluate.py``'s identifier-resolution function
-(``if name in _ORDER_ENUM: return _ORDER_ENUM[name]``) - that mechanism is
-not reachable from this module without editing ``evaluate.py``, which is
-off-limits here. Instead this module reuses the SAME resolution path every
-plain builtin already goes through: ``evaluate.py``'s identifier resolver
-checks ``BUILTINS.get(name)`` *before* it ever looks at ``_ORDER_ENUM``, and
-that check does not care whether the stored value is callable. Registering
+Enum resolution (``JoinKind.*``/``GroupKind.*``): this module reuses the same
+resolution path every plain builtin goes through - ``evaluate.py``'s identifier
+resolver looks the name up in ``BUILTINS``, and does not care whether the stored
+value is callable. Registering
 ``"JoinKind.Inner"``/``"GroupKind.Global"``/etc. in this module's own
 ``BUILTINS`` dict with a plain sentinel string as the value makes a bare
 ``JoinKind.Inner`` reference in M source resolve to that string with zero
@@ -38,6 +33,77 @@ correct: the sub-table is bound to ``_`` exactly as real Power Query does
 ``each List.Sum(List.Transform(_, each [Amount]))`` form both work today),
 it is only the direct ``[Amount]`` table-column shorthand that is blocked
 upstream of this file.
+
+``Table.NestedJoin`` RightOuter/RightAnti/FullOuter - researched, not
+guessed (2026-09-04). A prior implementer of this module left these three
+kinds raising ``UnsupportedError`` because they could not verify, without
+Power Query Desktop, which table's columns shape the result and what a
+right-table-only row looks like. That gap is now closed from documentation
++ an independent empirical report, cross-checked across four sources:
+
+1. Microsoft Learn, ``JoinKind.Type``
+   (https://learn.microsoft.com/en-us/powerquery-m/joinkind-type):
+   "A right outer join ensures that all rows of the second table appear in
+   the result." / "A full outer join ensures that all rows of both tables
+   appear in the result. Rows that did not have a match in the other table
+   are joined with a default row containing null values for all of its
+   columns." / "A right anti join returns all rows from the second table
+   that do not have a match in the first table." (Written against
+   ``Table.Join``, but the row-selection semantics - which rows survive -
+   are the same join concept ``Table.NestedJoin`` implements; only the
+   *shape* of the surviving rows differs between the two functions, which
+   sources 2-4 below settle.)
+2. Ben Gribaudo, "Deep Dive Into Joins (Part 1): Join vs. Nested Join"
+   (https://bengribaudo.com/blog/2026/05/05/7714/deep-dive-into-joins-part-1-join-vs-nested-join),
+   verbatim: "Table.NestedJoin does not, by itself, multiply rows. Each row
+   from the left table that should be included in the join's output is
+   included exactly one time ... Instead of multiplying rows, the
+   joined-to rows are included in a nested table that is placed in a new
+   column which is added to the table that's output. If, based on the join
+   kind, rows from the right should be returned when they don't pair with
+   a left row, an additional row is included in the output which has all
+   columns from the left table set to null; only the row's nested join
+   column will contain a value - a nested table containing the non-joining
+   rows from the right." This is the load-bearing citation: NestedJoin
+   NEVER reorients to become table2-shaped, for any kind, including the
+   three that were refused. table1's columns are always the flat/outer
+   part; the nested column always holds table2 data.
+3. pqm.guide, "Table Joins" (https://pqm.guide/patterns/table-joins),
+   worked ``Table.NestedJoin`` examples with ``table1=Sales``,
+   ``table2=Customers``: for RightOuter, "every Customer row is kept, even
+   with no Sales" and "After ... expand ..., columns from the side with no
+   match will be null"; for RightAnti, "Expand to get Customer columns;
+   Sales columns will all be null." Both confirm table1 (Sales) stays the
+   null-able flat side and table2 (Customers) is what the nested column
+   always carries, exactly matching source 2.
+4. A real user's bug report on MrExcel
+   (https://www.mrexcel.com/board/threads/power-query-unable-to-filter-out-nulls-after-table-nestedjoin-rightouter.893908/),
+   independent empirical confirmation from an actual PQ session (not
+   documentation prose): "A RightOuter join returns all the rows from the
+   right table and the matching rows from the left table, and if there is
+   no match, the left-side columns will contain null values" - table1
+   (left) columns going null, not table2's, is exactly the "never
+   reorients" shape from source 2.
+
+One genuine ambiguity remains and is called out rather than silently
+resolved: source 2 describes ONE additional row bundling ALL non-joining
+right-table rows into a single nested table, as opposed to one additional
+row per unmatched right-table row. No source shows the unexpanded
+``Table.NestedJoin`` output's raw row count for this case to settle it
+definitively. This module follows source 2's literal wording (bundle into
+one row) because it is the only source specific enough to have an opinion.
+Critically, the ambiguity is UNOBSERVABLE through the documented
+``Table.NestedJoin`` + ``Table.ExpandTableColumn`` pipeline: an N-row
+nested table expands to N output rows via ``Table.ExpandTableColumn``
+regardless of how many top-level ``NestedJoin`` rows it was reached
+through (see ``_table_expand_table_column`` below), so the two candidate
+shapes are indistinguishable after the step every real usage actually
+takes. That is what the NestedJoin-vs-Table.Join equivalence tests in
+``tests/test_builtins_join.py`` verify - two independently-coded paths
+(``Table.NestedJoin`` + ``Table.ExpandTableColumn`` vs. the already-correct
+flat ``Table.Join``) agreeing on the observable, expanded result for
+RightOuter/RightAnti/FullOuter, including duplicate-key and
+unmatched-on-both-sides data.
 """
 
 from __future__ import annotations
@@ -268,38 +334,74 @@ def _table_nested_join(args: list[Any], ctx: _Ctx) -> Any:
     if table1 and new_column in table1[0]:
         raise EvalError(f"Table.NestedJoin: column already exists: {new_column}")
 
-    if kind not in (_JOIN_INNER, _JOIN_LEFT_OUTER, _JOIN_LEFT_ANTI):
-        # Real Power Query's merge dialog always emits table1-shaped output
-        # (table1's columns + the nested column) for Inner/LeftOuter/
-        # LeftAnti - that direction is unambiguous. RightOuter/RightAnti/
-        # FullOuter would need the function to reorient which side is
-        # "flat" and which is "nested", and there is no Power Query Desktop
-        # available in this environment to verify the exact resulting shape
-        # against - guessing it would violate the "never approximate" rule.
-        # Workaround: swap table1/table2 and use the mirrored LeftOuter/
-        # LeftAnti kind instead (RightOuter(t1,t2) is LeftOuter(t2,t1) with
-        # the tables reversed).
-        raise UnsupportedError(
-            f"Table.NestedJoin with joinKind {kind}: only JoinKind.Inner, "
-            "JoinKind.LeftOuter and JoinKind.LeftAnti are implemented - "
-            "RightOuter/RightAnti/FullOuter need to reorient which table is "
-            "nested vs flat, and that exact shape could not be verified "
-            "against real Power Query Desktop in this environment. Swap "
-            "table1/table2 and use the mirrored LeftOuter/LeftAnti kind."
-        )
-
-    result: list[dict[str, Any]] = []
-    for row in table1:
-        matches = _find_matches(row, keys1, table2, keys2, ctx, "Table.NestedJoin")
-        if kind == _JOIN_INNER and not matches:
-            continue
-        if kind == _JOIN_LEFT_ANTI:
-            if matches:
+    if kind in (_JOIN_INNER, _JOIN_LEFT_OUTER, _JOIN_LEFT_ANTI):
+        result: list[dict[str, Any]] = []
+        for row in table1:
+            matches = _find_matches(row, keys1, table2, keys2, ctx, "Table.NestedJoin")
+            if kind == _JOIN_INNER and not matches:
                 continue
-            matches = []
-        new_row = dict(row)
-        new_row[new_column] = matches
-        result.append(new_row)
+            if kind == _JOIN_LEFT_ANTI:
+                if matches:
+                    continue
+                matches = []
+            new_row = dict(row)
+            new_row[new_column] = matches
+            result.append(new_row)
+        return result
+
+    # RightOuter / RightAnti / FullOuter - see the module docstring
+    # ("NestedJoin never reorients") for the citations behind this shape.
+    # NestedJoin's output is ALWAYS table1-shaped (table1's own columns +
+    # the nested column of table2 matches) no matter which JoinKind is
+    # requested - it never flips to being table2-shaped. What changes per
+    # kind is only WHICH rows appear and what backs the nested column:
+    #   - table1 rows that matched table2: same as Inner (kept, nested =
+    #     the matches) for every one of these three kinds.
+    #   - table1 rows that did NOT match: kept with nested = [] for
+    #     FullOuter (mirrors LeftOuter's own unmatched-row handling),
+    #     dropped for RightOuter, never produced at all for RightAnti
+    #     (RightAnti has no table1-driven rows whatsoever).
+    #   - table2 rows that matched no table1 row at all: bundled into ONE
+    #     extra row whose table1-side columns are null and whose nested
+    #     column holds all of them together - Gribaudo's literal wording
+    #     ("an additional row ... a nested table containing the
+    #     non-joining rows from the right"). Only added when at least one
+    #     such row exists (a spurious null row on a fully-matched dataset
+    #     would disagree with Table.Join, which is this module's own
+    #     equivalence check - see tests/test_builtins_join.py).
+    # Bundled-into-one vs one-row-per-unmatched-right-row is unobservable
+    # after Table.ExpandTableColumn either way (an N-row nested table
+    # always expands to N output rows regardless of how many top-level
+    # NestedJoin rows funnelled into it), which is exactly why the
+    # NestedJoin-vs-Table.Join equivalence tests are real evidence here
+    # rather than a restatement of this implementation.
+    columns1 = list(table1[0].keys()) if table1 else []
+    matched2_ids: set[int] = set()
+    result = []
+    if kind != _JOIN_RIGHT_ANTI:
+        for row in table1:
+            matches = _find_matches(row, keys1, table2, keys2, ctx, "Table.NestedJoin")
+            for matched_row in matches:
+                matched2_ids.add(id(matched_row))
+            if kind == _JOIN_RIGHT_OUTER and not matches:
+                continue
+            new_row = dict(row)
+            new_row[new_column] = matches
+            result.append(new_row)
+    else:
+        # RightAnti contributes no table1-driven rows at all - still probe
+        # every table1 row so unmatched table2 rows are known correctly.
+        for row in table1:
+            for matched_row in _find_matches(
+                row, keys1, table2, keys2, ctx, "Table.NestedJoin"
+            ):
+                matched2_ids.add(id(matched_row))
+
+    unmatched2 = [row2 for row2 in table2 if id(row2) not in matched2_ids]
+    if unmatched2:
+        null_row: dict[str, Any] = dict.fromkeys(columns1)
+        null_row[new_column] = unmatched2
+        result.append(null_row)
     return result
 
 

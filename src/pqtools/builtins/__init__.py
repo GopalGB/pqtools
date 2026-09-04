@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import (
     _datetime,
+    _enums,
     _list,
     _number,
     _record,
@@ -41,6 +42,7 @@ _Builtin = Callable[[list[Any], "_Ctx"], Any]
 # whichever imported last would silently win), so it is rejected loudly here
 # rather than resolved by import order.
 _MODULES = (
+    _enums,
     _text,
     _number,
     _list,

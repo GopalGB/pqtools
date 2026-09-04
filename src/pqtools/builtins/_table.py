@@ -8,10 +8,10 @@ back into M lambdas via ``ctx.invoke`` rather than a module-level
 ``_invoke`` import - see the ``_Ctx.invoke`` docstring in ``evaluate.py``
 for why.
 
-``_ORDER_ENUM`` lives here (not in ``evaluate.py``) because ``Table.Sort``
-is its only real consumer; ``evaluate.py``'s identifier resolution imports
-it back from here to resolve the bare ``Order.Ascending``/``Order.Descending``
-identifiers Power Query's UI emits.
+``Order.Ascending``/``Order.Descending`` used to be a hard-coded
+``_ORDER_ENUM`` dict here that ``evaluate.py`` imported by name. They now live
+in ``_enums.py`` and resolve through the ordinary ``BUILTINS`` lookup, because
+an enum is just a value in M.
 """
 
 from __future__ import annotations
@@ -186,7 +186,6 @@ def _table_transform_columns(args: list[Any], ctx: _Ctx) -> Any:
 # Order.Ascending / Order.Descending are M enum constants (0 and 1). Power Query's
 # own UI emits `Table.Sort(t, {{"Col", Order.Ascending}})`, so without these the most
 # common real-world sort is unusable.
-_ORDER_ENUM = {"Order.Ascending": 0, "Order.Descending": 1}
 
 
 def _table_sort(args: list[Any], ctx: _Ctx) -> Any:

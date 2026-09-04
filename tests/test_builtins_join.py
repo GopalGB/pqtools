@@ -406,15 +406,124 @@ def test_nested_join_default_kind_is_inner():
     assert [row["id"] for row in result] == [1]
 
 
+# --------------------------------------------------------------------------
+# Table.NestedJoin RightOuter/RightAnti/FullOuter - researched and
+# implemented (see the module docstring for the four-source citation
+# trail). The real evidence these are correct is that expanding the
+# NestedJoin result reproduces exactly what the already-implemented, flat
+# Table.Join produces for the same kind - two independently-coded paths
+# agreeing, not one path restating the other. `_RIGHT_LEFT` has duplicate
+# keys on BOTH sides (id=1 twice per side, so a matched key multiplies to
+# 2x2=4 rows), a left-only row (id=2), a right-only row (id=3), AND a
+# null-keyed row on each side (which must never match anything, including
+# each other) - every shape a join test needs to not be "clean 1:1 data."
+# --------------------------------------------------------------------------
+
+_JOIN_LEFT = [
+    {"lid": 1, "L": "a1"},
+    {"lid": 1, "L": "a2"},
+    {"lid": 2, "L": "b"},
+    {"lid": None, "L": "n"},
+]
+
+_JOIN_RIGHT = [
+    {"rid": 1, "R": "x1"},
+    {"rid": 1, "R": "x2"},
+    {"rid": 3, "R": "y"},
+    {"rid": None, "R": "z"},
+]
+
+
+def _canon(rows: list[dict]) -> list[tuple]:
+    """Order-and-hash-independent shape for comparing two row sets - real
+    Power Query does not guarantee join row order, and dicts aren't
+    hashable, so this sorts each row's items and then sorts the rows by
+    their ``repr`` (safe against None/str/int mixed-type comparison,
+    unlike sorting the raw values directly)."""
+    canon_rows = [tuple(sorted(row.items())) for row in rows]
+    return sorted(canon_rows, key=repr)
+
+
 @pytest.mark.parametrize(
     "kind", ["JoinKind.RightOuter", "JoinKind.RightAnti", "JoinKind.FullOuter"]
 )
-def test_nested_join_right_and_full_kinds_are_refused_not_guessed(kind):
-    left = [{"id": 1}]
-    right = [{"id": 1, "v": "x"}]
-    query = f'Table.NestedJoin(L, "id", R, "id", "m", {kind})'
-    with pytest.raises(UnsupportedError, match="NestedJoin"):
-        evaluate(query, bindings={"L": left, "R": right})
+def test_nested_join_expand_matches_table_join_for_previously_refused_kinds(kind):
+    nested_query = (
+        f'Table.ExpandTableColumn(Table.NestedJoin(L, "lid", R, "rid", "matches", '
+        f'{kind}), "matches", {{"rid", "R"}}, {{"rid", "R"}})'
+    )
+    flat_query = f'Table.Join(L, "lid", R, "rid", {kind})'
+    bindings = {"L": _JOIN_LEFT, "R": _JOIN_RIGHT}
+    nested_result = evaluate(nested_query, bindings=bindings)
+    flat_result = evaluate(flat_query, bindings=bindings)
+    assert nested_result, "test would pass vacuously on an empty result"
+    assert _canon(nested_result) == _canon(flat_result)
+
+
+def test_nested_join_right_outer_raw_shape_stays_table1_columns_not_table2():
+    # Pins the module docstring's central finding: NestedJoin never
+    # reorients to table2-shaped output, even for the table2-completeness
+    # kinds. The unexpanded result's own top-level columns are always
+    # table1's ("lid", "L") plus the nested column - never "rid"/"R".
+    result = evaluate(
+        'Table.NestedJoin(L, "lid", R, "rid", "matches", JoinKind.RightOuter)',
+        bindings={"L": _JOIN_LEFT, "R": _JOIN_RIGHT},
+    )
+    for row in result:
+        assert set(row.keys()) == {"lid", "L", "matches"}
+
+
+def test_nested_join_right_anti_raw_shape_has_no_table1_driven_rows():
+    # RightAnti's result is entirely the unmatched-right bundle: every
+    # table1 row (matched or not) contributes nothing of its own - only
+    # rows whose table1-side columns are null (the "no left row" bucket)
+    # appear.
+    result = evaluate(
+        'Table.NestedJoin(L, "lid", R, "rid", "matches", JoinKind.RightAnti)',
+        bindings={"L": _JOIN_LEFT, "R": _JOIN_RIGHT},
+    )
+    assert all(row["lid"] is None and row["L"] is None for row in result)
+    all_nested = [nested_row for row in result for nested_row in row["matches"]]
+    assert {row["rid"] for row in all_nested} == {3, None}
+
+
+def test_nested_join_right_kinds_null_key_never_matches():
+    # Extends the null-never-matches-in-a-join pin (see
+    # test_null_key_never_matches_in_join above) to the three kinds
+    # implemented in this module: a null key on either side must never be
+    # treated as matched, including against another null key.
+    left = [{"id": None, "tag": "left-null"}]
+    right = [{"id": None, "tag": "right-null"}]
+    bindings = {"L": left, "R": right}
+
+    right_anti = evaluate(
+        'Table.ExpandTableColumn(Table.NestedJoin(L, "id", R, "id", "m", '
+        'JoinKind.RightAnti), "m", {"tag"}, {"rtag"})',
+        bindings=bindings,
+    )
+    assert right_anti == [{"id": None, "tag": None, "rtag": "right-null"}]
+
+    right_outer = evaluate(
+        'Table.ExpandTableColumn(Table.NestedJoin(L, "id", R, "id", "m", '
+        'JoinKind.RightOuter), "m", {"tag"}, {"rtag"})',
+        bindings=bindings,
+    )
+    assert right_outer == [{"id": None, "tag": None, "rtag": "right-null"}]
+
+    full_outer = evaluate(
+        'Table.ExpandTableColumn(Table.NestedJoin(L, "id", R, "id", "m", '
+        'JoinKind.FullOuter), "m", {"tag"}, {"rtag"})',
+        bindings=bindings,
+    )
+    # Both sides are unmatched (null never matches null) - FullOuter keeps
+    # BOTH: the left row nulled on the right, and the right row bundled
+    # into the null-left row per this module's documented shape.
+    assert _canon(full_outer) == _canon(
+        [
+            {"id": None, "tag": "left-null", "rtag": None},
+            {"id": None, "tag": None, "rtag": "right-null"},
+        ]
+    )
 
 
 def test_expand_table_column_null_cell_errors_not_silently_treated_as_empty():

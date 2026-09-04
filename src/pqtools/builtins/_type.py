@@ -12,8 +12,7 @@ A type value is a small, frozen, hashable ``_MType`` with two fields:
   lowercase primitive-type keyword the parser hands back in the
   ``PrimitiveType`` node (``"text"``, ``"date"``, ...) - see
   ``evaluate.py``'s ``_eval_type_primary``, which imports
-  ``_PRIMITIVE_TYPES`` from here the same way it already imports
-  ``_ORDER_ENUM`` from ``_table.py``. For a *nominal number subtype*
+  ``_PRIMITIVE_TYPES`` from here. For a *nominal number subtype*
   (``Int64.Type``, ``Currency.Type``, ``Percentage.Type``, ``Double.Type``,
   ``Single.Type``, ``Decimal.Type``, ``Byte.Type``, ``Int8.Type``,
   ``Int16.Type``, ``Int32.Type``) this is the identifier's own spelling,

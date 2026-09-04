@@ -381,13 +381,13 @@ def _text_ends_with(args: list[Any], ctx: _Ctx) -> Any:
 # Occurrence.First / Occurrence.Last / Occurrence.All are the real M enum
 # values (0 / 1 / 2 respectively - confirmed against Occurrence.Type docs).
 # Like Order.Ascending/Descending (see _table.py), the bare identifiers
-# Occurrence.* can only resolve via evaluate.py's hardcoded _ORDER_ENUM
+# (enum resolution now lives in _enums.py - see its docstring)
 # import, which is out of this module's ownership (evaluate.py and
 # _table.py are off-limits for this task). Passing the literal number
 # (0/1/2) works today; a caller writing the bare `Occurrence.Last`
 # identifier gets evaluate.py's generic "unknown identifier" error until
 # whichever module owns that wiring adds an Occurrence enum the same way
-# _ORDER_ENUM was added for Order.Ascending/Descending.
+# (enum resolution now lives in _enums.py - see its docstring)
 _OCCURRENCE_FIRST = 0
 _OCCURRENCE_LAST = 1
 _OCCURRENCE_ALL = 2

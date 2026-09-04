@@ -36,7 +36,6 @@ from .builtins._shared import (
     _require_number,
     _type_name,
 )
-from .builtins._table import _ORDER_ENUM
 from .builtins._type import _PRIMITIVE_TYPES
 from .core import ast as _parse_ast
 
@@ -629,8 +628,6 @@ def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) 
     builtin = BUILTINS.get(name)
     if builtin is not None:
         return builtin
-    if name in _ORDER_ENUM:
-        return _ORDER_ENUM[name]
     if name == "#shared":
         raise UnsupportedError("#shared")
     if _is_connector(name):

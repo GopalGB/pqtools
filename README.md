@@ -151,35 +151,114 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and this builtin set (verbatim from
-`pqtools.evaluate.BUILTINS`, so it cannot drift out of sync with the code):
+and calling them; `try ... otherwise ...`; and these 280 builtins.
+The list below is generated from `pqtools.evaluate.BUILTINS` and
+`tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
+silently drift, which a hand-maintained list can and did:
 
 ```
-Text.From Text.Upper Text.Lower Text.Length Text.Combine Text.Contains
-Text.Replace Text.Split Text.Start Text.End Text.Trim
-Number.From Number.Round Number.Abs
-List.Count List.Sum List.Max List.Min List.Average List.Transform List.Select
-List.First List.Last List.Reverse List.Sort List.Contains List.Distinct
-List.Range
-Record.Field Record.FieldNames Record.HasFields Record.AddField
-Record.RemoveFields
-Table.FromRecords Table.ToRecords Table.RowCount Table.ColumnNames
-Table.SelectRows Table.SelectColumns Table.RemoveColumns Table.RenameColumns
-Table.AddColumn Table.TransformColumns Table.Sort Table.FirstN Table.LastN
-Table.Distinct
-Json.Document (text only - not the binary overload)
-Logical.From
+Text.AfterDelimiter Text.At Text.BeforeDelimiter Text.BetweenDelimiters
+Text.Clean Text.Combine Text.Contains Text.End Text.EndsWith Text.From
+Text.Insert Text.Length Text.Lower Text.Middle Text.NewGuid Text.PadEnd
+Text.PadStart Text.PositionOf Text.PositionOfAny Text.Proper Text.Remove
+Text.Repeat Text.Replace Text.Reverse Text.Select Text.Split Text.SplitAny
+Text.Start Text.StartsWith Text.ToList Text.Trim Text.TrimEnd Text.TrimStart
+Text.Type Text.Upper
+Number.Abs Number.BitwiseAnd Number.BitwiseOr Number.BitwiseXor Number.Exp
+Number.Factorial Number.From Number.IntegerDivide Number.IsEven Number.IsNaN
+Number.IsOdd Number.Ln Number.Log Number.Log10 Number.Mod Number.Power
+Number.Random Number.RandomBetween Number.Round Number.RoundAwayFromZero
+Number.RoundDown Number.RoundTowardZero Number.RoundUp Number.Sign Number.Sqrt
+Number.ToText Number.Type
+List.Accumulate List.AllTrue List.AnyTrue List.Average List.Buffer
+List.Combine List.Contains List.ContainsAll List.ContainsAny List.Count
+List.Difference List.Distinct List.First List.FirstN List.Generate
+List.InsertRange List.Intersect List.IsEmpty List.Last List.LastN List.Max
+List.Median List.Min List.Mode List.NonNullCount List.Numbers List.Percentile
+List.PositionOf List.Positions List.Range List.RemoveItems List.RemoveNulls
+List.Repeat List.ReplaceValue List.Reverse List.Select List.Skip List.Sort
+List.Split List.StandardDeviation List.Sum List.Transform List.Union List.Zip
+Record.AddField Record.Combine Record.Field Record.FieldCount
+Record.FieldNames Record.FieldOrDefault Record.FromList Record.HasFields
+Record.RemoveFields Record.RenameFields Record.ReorderFields
+Record.SelectFields Record.ToList Record.ToTable Record.TransformFields
+Table.AddColumn Table.AddIndexColumn Table.Buffer Table.ColumnCount
+Table.ColumnNames Table.Combine Table.DemoteHeaders Table.Distinct
+Table.DuplicateColumn Table.ExpandRecordColumn Table.ExpandTableColumn
+Table.FillDown Table.FillUp Table.FirstN Table.FromColumns Table.FromList
+Table.FromRecords Table.FromRows Table.FromValue Table.Group Table.HasColumns
+Table.IsEmpty Table.Join Table.LastN Table.Max Table.Min Table.NestedJoin
+Table.Pivot Table.PromoteHeaders Table.Range Table.RemoveColumns
+Table.RemoveRowsWithErrors Table.RenameColumns Table.ReorderColumns
+Table.ReplaceValue Table.RowCount Table.SelectColumns Table.SelectDuplicates
+Table.SelectRows Table.Skip Table.Sort Table.SplitColumn Table.ToColumns
+Table.ToList Table.ToRecords Table.ToRows Table.TransformColumnNames
+Table.TransformColumnTypes Table.TransformColumns Table.Transpose
+Table.Unpivot Table.UnpivotOtherColumns
+Date.AddDays Date.AddMonths Date.AddWeeks Date.AddYears Date.Day
+Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.EndOfMonth
+Date.EndOfWeek Date.EndOfYear Date.From Date.IsInCurrentMonth
+Date.IsInCurrentYear Date.Month Date.MonthName Date.QuarterOfYear
+Date.StartOfMonth Date.StartOfWeek Date.StartOfYear Date.ToText Date.Type
+Date.WeekOfYear Date.Year
+DateTime.AddZone DateTime.Date DateTime.FixedLocalNow DateTime.From
+DateTime.LocalNow DateTime.Time DateTime.ToText DateTime.Type
+Duration.Days Duration.From Duration.Hours Duration.Minutes Duration.Seconds
+Duration.ToText Duration.TotalDays Duration.TotalHours Duration.TotalMinutes
+Duration.TotalSeconds
+Time.From Time.Hour Time.Minute Time.Second Time.ToText
+Splitter.SplitTextByCharacterTransition Splitter.SplitTextByDelimiter
+Splitter.SplitTextByEachDelimiter Splitter.SplitTextByPositions
+Replacer.ReplaceText Replacer.ReplaceValue
+Value.Compare Value.Equals Value.Is Value.Type
+Type.Is
+Json.Document
+Logical.From Logical.Type
+Order.Ascending Order.Descending
+Occurrence.All Occurrence.First Occurrence.Last
+MissingField.Error MissingField.Ignore MissingField.UseNull
+RelativePosition.FromEnd RelativePosition.FromStart
+JoinKind.FullOuter JoinKind.Inner JoinKind.LeftAnti JoinKind.LeftOuter
+JoinKind.RightAnti JoinKind.RightOuter
+GroupKind.Global GroupKind.Local
+Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
+Day.Wednesday
+Any.Type
+Byte.Type
+Currency.Type
+Decimal.Type
+Double.Type
+ExtraValues.Error ExtraValues.Ignore ExtraValues.List
+Int16.Type
+Int32.Type
+Int64.Type
+Int8.Type
+Percentage.Type
+QuoteStyle.Csv QuoteStyle.None
+Single.Type
+#date #datetime #datetimezone #duration #time
 ```
+
+Also supported: the M **type system** (`type text`, `type date`, `Int64.Type`
+and the other nominal number subtypes) as real values, which is what makes
+`Table.TransformColumnTypes` - step two of every query Power Query's UI writes -
+actually run; **column projection** (`[Amount]` on a table yields that column's
+values, so `each List.Sum([Amount])` works as a `Table.Group` aggregation); and
+**temporal values** (`#date`, `#datetime`, `#time`, `#duration`) which compare
+and order by value, so date filters and date ranges behave.
 
 **Everything else raises a typed `UnsupportedError` (`M_EVAL_UNSUPPORTED`)
 naming the exact construct** - never approximated, never guessed at. That
 includes: any connector (`Web.Contents`, `Sql.Database`, `File.Contents`,
 `Excel.Workbook`, `Csv.Document`, `Binary.*` - the error names the construct
 and says it needs Fabric or PQTest, the two hosts that can actually run it);
-`#shared`; `meta`; type ascription (`as`, `is`, parameter/return types,
-`type ...`); `??`; field projection (`r[[a],[b]]`); any identifier this
-evaluator does not know; and any builtin call with an argument shape not
-listed above. A wrong number would be worse than a refusal, so `pqtools` never
+`#shared`; `meta`; `??`; field projection (`r[[a],[b]]`); culture-aware date and
+number parsing (a supplied culture is refused by name rather than silently
+parsed as en-US); `RoundingMode.*`, `TextEncoding.*` and `BinaryEncoding.*`
+(deliberately unregistered - their numeric values could not be verified, and a
+wrong enum number would silently do the wrong thing rather than fail); any
+identifier this evaluator does not know; and any builtin call with an argument
+shape not listed above. A wrong number would be worse than a refusal, so `pqtools` never
 approximates a connector's result or a builtin's documented behaviour - it
 either runs the real, documented semantics or it stops and tells you exactly
 where. `max_steps` (default 1,000,000, an `evaluate()` keyword argument) bounds
@@ -219,6 +298,17 @@ the same trade pandas makes when it replaces a spreadsheet's data connections.
   source control or external exclusive ownership for concurrent editors.
 
 ## Limits
+
+**Each evaluation spawns Node.** `parse`, `check`, `format`, `rename` and `eval`
+each start a Node subprocess to reach Microsoft's parser - measured at roughly
+**0.75 s per call**, almost entirely process startup rather than parsing. That is
+fine for a CLI invocation and for linting a file in CI, but it means evaluating
+hundreds of queries in a loop from Python is dominated by process spawn, not by
+your data. The test suite hits this hard enough that it runs with `pytest -n auto`
+(945 s serial, 126 s parallel). Making the bridge a persistent worker process
+would remove the per-call cost; that is a real change to the most
+safety-critical code in the package, so it is not being rushed into a release.
+
 
 - Input and output are capped at **10 MiB**.
 - The Node subprocess is bounded to a **30 second** timeout.

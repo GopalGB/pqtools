@@ -18,13 +18,8 @@ Two design notes that apply to most functions below:
 - **Enum-like bare identifiers.** Power Query's UI emits arguments such as
   ``QuoteStyle.Csv`` or ``ExtraValues.List`` as plain identifiers, not
   string literals. ``evaluate.py``'s identifier resolution
-  (``_eval_identifier_expression``) resolves any unbound name by checking
-  ``BUILTINS.get(name)`` *first*, before its one legacy special case
-  (``_table.py``'s ``_ORDER_ENUM``, imported by name for
-  ``Order.Ascending``/``Order.Descending``). Adding a second special-cased
-  import to ``evaluate.py`` is out of this module's scope (it is a frozen
-  file for this task), so the supported extension point is the one
-  ``evaluate.py`` already checks first: register the constant directly in
+  (``_eval_identifier_expression``) resolves any unbound name by looking it up
+  in ``BUILTINS``, so the extension point is simply: register the constant in
   this module's own ``BUILTINS`` dict, keyed by its qualified name, holding
   a plain sentinel value nothing else in the system would produce by
   accident. See the bottom of this file.
@@ -1147,7 +1142,7 @@ BUILTINS: dict[str, Any] = {
     "Table.FromValue": _table_from_value,
     # Enum-like bare identifiers - see the module docstring's "Enum-like
     # bare identifiers" note for why these are registered directly here
-    # rather than via a second _ORDER_ENUM-style import into evaluate.py.
+    # (enum resolution now lives in _enums.py - see its docstring)
     "QuoteStyle.Csv": "QuoteStyle.Csv",
     "QuoteStyle.None": "QuoteStyle.None",
     "ExtraValues.Ignore": "ExtraValues.Ignore",
