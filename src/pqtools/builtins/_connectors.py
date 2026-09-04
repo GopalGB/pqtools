@@ -24,6 +24,10 @@ Owned by exactly one implementer; register new names in this module's own
 
 from __future__ import annotations
 
+import base64
+import binascii
+import gzip
+import zlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -307,8 +311,99 @@ def _csv_document(args: list[Any], ctx: _Ctx) -> Any:
     return table
 
 
+# Binary.* and Compression.* exist here because of one very common shape: the
+# "Enter Data" table Power BI writes inline, which looks like
+#
+#   Table.FromRows(Json.Document(Binary.Decompress(
+#       Binary.FromText("i45WMlTS...", BinaryEncoding.Base64),
+#       Compression.Deflate)))
+#
+# Without these, a large share of real .pbix queries stop on the very first
+# step. Compression.Deflate was verified to be *raw* deflate (negative wbits,
+# no zlib header) by decompressing the payload out of a real Power BI file and
+# getting well-formed JSON back - not inferred from the name.
+
+
+def _binary_from_text(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.FromText", args, 1, 2)
+    text = _require_str(args[0])
+    encoding = args[1] if len(args) == 2 else "BinaryEncoding.Base64"
+    if encoding is None:
+        encoding = "BinaryEncoding.Base64"
+    try:
+        if encoding == "BinaryEncoding.Base64":
+            return base64.b64decode(text, validate=True)
+        if encoding == "BinaryEncoding.Hex":
+            return bytes.fromhex(text)
+    except (binascii.Error, ValueError) as error:
+        raise EvalError(f"Binary.FromText: {error}") from error
+    raise UnsupportedError(
+        f"Binary.FromText encoding {encoding!r} (known: BinaryEncoding.Base64, "
+        "BinaryEncoding.Hex)"
+    )
+
+
+def _binary_to_text(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.ToText", args, 1, 2)
+    value = args[0]
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.ToText: expected binary, got {_type_name(value)}")
+    encoding = args[1] if len(args) == 2 else "BinaryEncoding.Base64"
+    if encoding is None:
+        encoding = "BinaryEncoding.Base64"
+    if encoding == "BinaryEncoding.Base64":
+        return base64.b64encode(value).decode("ascii")
+    if encoding == "BinaryEncoding.Hex":
+        return value.hex().upper()
+    raise UnsupportedError(f"Binary.ToText encoding {encoding!r}")
+
+
+def _binary_decompress(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.Decompress", args, 2)
+    value = args[0]
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.Decompress: expected binary, got {_type_name(value)}")
+    kind = args[1]
+    try:
+        if kind == "Compression.None":
+            return value
+        if kind == "Compression.Deflate":
+            # Raw deflate - no zlib header. Verified against a real .pbix.
+            return zlib.decompress(value, -zlib.MAX_WBITS)
+        if kind == "Compression.GZip":
+            return gzip.decompress(value)
+    except (zlib.error, OSError, EOFError) as error:
+        raise EvalError(f"Binary.Decompress: {error}") from error
+    raise UnsupportedError(
+        f"Binary.Decompress kind {kind!r} (known: Compression.None, "
+        "Compression.Deflate, Compression.GZip)"
+    )
+
+
+def _binary_length(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.Length", args, 1)
+    value = args[0]
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.Length: expected binary, got {_type_name(value)}")
+    return len(value)
+
+
 BUILTINS: dict[str, Any] = {
     "File.Contents": _file_contents,
     "Csv.Document": _csv_document,
     "Text.FromBinary": _text_from_binary,
+    "Binary.FromText": _binary_from_text,
+    "Binary.ToText": _binary_to_text,
+    "Binary.Decompress": _binary_decompress,
+    "Binary.Length": _binary_length,
+    # Enum-like bare identifiers, registered as sentinels rather than numbers.
+    # The numeric values of BinaryEncoding.* and Compression.* could not be
+    # verified, and a wrong number is silent wrongness - but the functions
+    # above only ever compare against these sentinels, so no number is needed.
+    # A query passing a literal number instead raises, which is honest.
+    "BinaryEncoding.Base64": "BinaryEncoding.Base64",
+    "BinaryEncoding.Hex": "BinaryEncoding.Hex",
+    "Compression.None": "Compression.None",
+    "Compression.Deflate": "Compression.Deflate",
+    "Compression.GZip": "Compression.GZip",
 }

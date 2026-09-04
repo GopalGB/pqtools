@@ -14,14 +14,22 @@ affiliated with or endorsed by Microsoft.
   `File.Contents`, `Text.FromBinary`) run natively, then the whole
   transformation chain: `Table.PromoteHeaders`, `Table.TransformColumnTypes`,
   `Table.SelectRows`, `Table.Group`, all six `JoinKind` values, pivot/unpivot,
-  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 288 M builtins.
+  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 297 M builtins.
   Output as JSON or CSV.
+- `pq list report.pbix` - name every query inside a .pbix / .pbit / .xlsx.
+  Each name is usable directly as `pq eval FILE --member NAME`.
+- `pq eval report.pbix --member Sales` - run one query out of a container,
+  including the inline "Enter Data" tables Power BI embeds as a base64
+  deflate payload.
 - `pq check report.pq` - lint, with CI-shaped exit codes.
 - `pq format report.pq` - format, via Microsoft's own pinned
   `@microsoft/powerquery-formatter`.
 - `pq rename report.pq --from Old --to New` - rename a `let` binding without a
   find-and-replace hitting a matching string literal.
 - Reads `.pbix` / `.pbit` / `.xlsx` containers to analyse the M inside them.
+  `pq format` / `pq rename` on a container PRINT the edited M; they do not
+  write back into the file. Writing is deliberately not enabled in the CLI
+  (see below).
 
 ## What it deliberately does NOT do
 
@@ -39,6 +47,11 @@ answer that looks right.
   Engine.
 - It never approximates. Any construct it cannot evaluate exactly raises a
   typed error naming it, rather than returning a plausible wrong value.
+- It does not write modified queries back into a `.pbix` / `.xlsx`. The
+  rebuild path exists and re-reads its own output, rejecting any change
+  outside the M source, but it has not been validated against a workbook
+  Excel itself produced. Use `pq format FILE` to see the result, or call
+  `pqtools.containers.write_sections` directly and accept the risk.
 - It makes no network calls and sends no telemetry.
 
 ## Correct usage

@@ -66,8 +66,18 @@ def _number_abs(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _json_document(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Json.Document", args, 1)
-    text = _require_str(args[0])
+    # Accepts binary as well as text: the "Enter Data" shape Power BI writes
+    # is Json.Document(Binary.Decompress(...)), so the argument arrives as
+    # bytes far more often than as a string.
+    _arity("Json.Document", args, 1, 2)
+    raw = args[0]
+    if isinstance(raw, bytes):
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise EvalError(f"Json.Document: {error}") from error
+    else:
+        text = _require_str(raw)
     try:
         return _json.loads(text)
     except _json.JSONDecodeError as error:

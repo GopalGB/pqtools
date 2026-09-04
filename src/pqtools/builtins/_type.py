@@ -97,6 +97,12 @@ class _MType:
 
     kind: str
     display: str
+    # Field names of a `type table [...]`, in declaration order. Only the
+    # NAMES are captured: Table.FromRows and Csv.Document need nothing else,
+    # and the field-type expressions in real Power BI output are written
+    # `((type text) meta [...])`, which uses `meta` - unsupported, and
+    # evaluating it is not required to learn the column names.
+    field_names: tuple[str, ...] | None = None
 
 
 _PRIMITIVE_TYPES: dict[str, _MType] = {

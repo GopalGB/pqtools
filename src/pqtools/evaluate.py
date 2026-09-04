@@ -36,7 +36,7 @@ from .builtins._shared import (
     _require_number,
     _type_name,
 )
-from .builtins._type import _PRIMITIVE_TYPES
+from .builtins._type import _PRIMITIVE_TYPES, _MType
 from .core import ast as _parse_ast
 
 _MAX_STEPS_DEFAULT = 1_000_000
@@ -211,8 +211,26 @@ def _has_optional(node: dict[str, Any]) -> bool:
 
 
 def _identifier_text(node: dict[str, Any]) -> str:
-    """The name held by an ``Identifier`` or ``GeneralizedIdentifier`` node."""
-    return str(node["value"])
+    """The name held by an ``Identifier`` or ``GeneralizedIdentifier`` node.
+
+    M's quoted-identifier form ``#"First Name"`` *is* the identifier
+    ``First Name`` - the ``#"..."`` is syntax, not part of the name. The
+    parser hands the raw token through, so it is unquoted here, at the single
+    place every identifier is read.
+
+    This was wrong until 0.6.1 and the failure was quiet in the worst way:
+    step names round-tripped fine (``#"Changed Type"`` was defined and
+    referenced with the same raw text, so it matched itself), while any
+    reference to a real *column* whose name has a space - ``[#"First Name"]``
+    against a header promoted from a CSV - looked up ``#"First Name"`` and
+    reported "field not found". Column names with spaces are everywhere in
+    real queries, so this hit nearly every one of them.
+    """
+    text = str(node["value"])
+    if text.startswith('#"') and text.endswith('"') and len(text) >= 3:
+        # `""` is M's escape for a literal quote inside a quoted identifier.
+        return text[2:-1].replace('""', '"')
+    return text
 
 
 def _binop_parts(node: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
@@ -331,6 +349,40 @@ def _eval_parenthesized(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     return _eval(inner, scope, ctx)
 
 
+def _table_type_value(type_node: dict[str, Any]) -> Any:
+    """``type table [Name = ..., ...]`` -> an _MType carrying the field names.
+
+    This shape is not exotic: it is the second argument of the
+    ``Table.FromRows(Json.Document(Binary.Decompress(...)), type table [...])``
+    that Power BI writes for every "Enter Data" table, so refusing it stopped
+    those queries on their first step.
+    """
+    names: list[str] = []
+    for spec in _descendants(type_node, "FieldSpecification"):
+        for child in _children(spec):
+            if child.get("kind") == "GeneralizedIdentifier":
+                names.append(_identifier_text(child))
+                break
+    return _MType(
+        kind="table",
+        display="type table",
+        field_names=tuple(names),
+    )
+
+
+def _descendants(node: dict[str, Any], kind: str) -> list[dict[str, Any]]:
+    """Every descendant of ``node`` with the given kind, in document order."""
+    found: list[dict[str, Any]] = []
+    stack = [node]
+    while stack:
+        current = stack.pop(0)
+        for child in _children(current):
+            if child.get("kind") == kind:
+                found.append(child)
+            stack.append(child)
+    return found
+
+
 def _eval_type_primary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     # `type text`, `type number`, ... - the AST wraps a leaf `PrimitiveType`
     # node (whose `value` is the exact lowercase keyword) in `TypePrimaryType`.
@@ -339,6 +391,8 @@ def _eval_type_primary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     # other than `PrimitiveType` here and are not modelled - see
     # builtins/_type.py's module docstring for why.
     (type_node,) = _semantic(node)
+    if type_node.get("kind") == "TableType":
+        return _table_type_value(type_node)
     if type_node.get("kind") != "PrimitiveType":
         raise UnsupportedError(
             f"type value: {type_node.get('kind')} (pqtools only supports the "
@@ -628,7 +682,12 @@ _CONNECTOR_NAMES = frozenset(
 
 
 def _is_connector(name: str) -> bool:
-    return name in _CONNECTOR_NAMES or name.startswith("Binary.")
+    # Binary.* is no longer refused wholesale: Binary.FromText/ToText/
+    # Decompress/Length are implemented (builtins/_connectors.py) because the
+    # inline "Enter Data" table Power BI writes depends on them. Anything else
+    # in that namespace falls through to the plain unknown-identifier error,
+    # which names it just as clearly.
+    return name in _CONNECTOR_NAMES
 
 
 def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:

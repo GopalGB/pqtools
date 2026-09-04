@@ -596,25 +596,56 @@ def test_cli_check_exit_code_2_on_error_diagnostic(tmp_path: Path):
     assert main(["check", str(path)]) == 2
 
 
-def test_cli_format_on_container_refuses_with_container_error(tmp_path: Path, capsys):
+def test_cli_format_on_container_previews_without_writing(tmp_path: Path, capsys):
+    # Changed in 0.7.0: preview is allowed because it writes nothing, so the
+    # reason --write is gated does not apply to it. The container must come
+    # out byte-identical.
     from pqtools.cli import main
 
     path = tmp_path / "report.pbix"
-    path.write_bytes(_pbix(_blob()))
-    assert main(["format", str(path)]) == 2
+    original = _pbix(_blob())
+    path.write_bytes(original)
+    assert main(["format", str(path)]) == 0
+    assert capsys.readouterr().out.strip() != ""
+    assert path.read_bytes() == original
+
+
+def test_cli_write_into_a_container_still_refuses(tmp_path: Path, capsys):
+    from pqtools.cli import main
+
+    path = tmp_path / "report.pbix"
+    original = _pbix(_blob())
+    path.write_bytes(original)
+    assert main(["format", str(path), "--write"]) == 2
     err = capsys.readouterr().err
     assert "M_CONTAINER_ERROR" in err
     assert "not enabled" in err
-    assert path.read_bytes() == _pbix(_blob())
+    assert path.read_bytes() == original
 
 
-def test_cli_rename_and_replace_source_on_container_refuse(tmp_path: Path):
+def test_cli_rename_and_replace_source_on_container_preview(tmp_path: Path, capsys):
     from pqtools.cli import main
 
     path = tmp_path / "report.pbix"
-    path.write_bytes(_pbix(_blob()))
+    original = _pbix(_blob())
+    path.write_bytes(original)
+    assert main(["replace-source", str(path), "--source", "let A = 1 in A"]) == 0
+    capsys.readouterr()
+    assert path.read_bytes() == original
+
+    # rename refuses here for a reason that has nothing to do with containers:
+    # this blob holds a section document, and rename only handles a single
+    # unquoted top-level let scope. Asserting it keeps the two refusals from
+    # being confused for one another.
     assert main(["rename", str(path), "--old", "Q1", "--new", "Q2"]) == 2
-    assert main(["replace-source", str(path), "--source", "let A = 1 in A"]) == 2
+    assert "M_RENAME_REFUSED" in capsys.readouterr().err
+
+    # ...and writing is still refused.
+    assert (
+        main(["replace-source", str(path), "--source", "let A = 1 in A", "--write"])
+        == 2
+    )
+    assert path.read_bytes() == original
 
 
 def test_cli_dependencies_on_container(tmp_path: Path, capsys):

@@ -139,6 +139,95 @@ def _print_csv(rows: list[dict[str, Any]]) -> None:
         writer.writerow(row)
 
 
+def _preview_container_transform(args: argparse.Namespace) -> int:
+    """Apply format/rename/replace-source to a container's M and print it.
+
+    Nothing is written. This is the read-only half of "work with the queries
+    inside a .pbix/.xlsx": you see exactly what the edit would produce, and
+    can redirect it to a .pq file to keep it.
+    """
+    sections = containers.read_sections(args.file)
+    transform = _transform_for(args)
+    outputs = [transform(section.source) for section in sections]
+    if args.json:
+        _print(
+            [
+                {"section": section.path, "source": output}
+                for section, output in zip(sections, outputs, strict=True)
+            ],
+            True,
+        )
+    else:
+        for section, output in zip(sections, outputs, strict=True):
+            if len(sections) > 1:
+                print(f"// ---- {section.path} ----")
+            print(output)
+    return 0
+
+
+def _transform_for(args: argparse.Namespace) -> Callable[[str], str]:
+    """The source-to-source function a write-shaped command asks for."""
+    if args.command == "format":
+        return format_source
+    if args.command == "rename":
+        if args.old is None or args.new is None:
+            raise MQueryError("rename requires --old and --new")
+        old, new = args.old, args.new
+        return lambda text: rename(text, old, new)
+    if args.source is None:
+        raise MQueryError("replace-source requires --source")
+    replacement = args.source
+    return lambda text: replace_source(text, replacement)
+
+
+def _run_list(args: argparse.Namespace) -> int:
+    """Show the queries a file holds, so the next command has a name to use.
+
+    Answers the first question anyone has about a .pbix or .xlsx they did not
+    write: what is in here? Every name printed is directly usable as
+    `pq eval FILE --member NAME`.
+    """
+    if _is_container(args.file):
+        sections = containers.read_sections(args.file)
+    else:
+        text = _source(args.file)
+        sections = [
+            containers.QuerySection(
+                container=str(args.file),
+                path=str(args.file),
+                source=text,
+                kind="source",
+            )
+        ]
+    entries: list[dict[str, Any]] = []
+    for section in sections:
+        try:
+            members = containers.split_shared(section.source, section.container)
+        except MQueryError:
+            # A section that will not split is still worth reporting - staying
+            # silent about it would make the file look emptier than it is.
+            members = {}
+        for name, source in members.items():
+            entries.append(
+                {
+                    "name": name,
+                    "section": section.path,
+                    "lines": source.count("\n") + 1,
+                }
+            )
+    if args.json:
+        _print(entries, True)
+    elif not entries:
+        print("no queries found", file=sys.stderr)
+    else:
+        width = max(len(item["name"]) for item in entries)
+        for item in entries:
+            print(
+                f"{item['name']:<{width}}  {item['lines']:>4} lines  {item['section']}"
+            )
+    return 0
+
+
 def _run_eval(args: argparse.Namespace) -> int:
     source = _eval_source(args)
     bindings: dict[str, Any] = {}
@@ -171,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
             "rename",
             "replace-source",
             "eval",
+            "list",
         ],
     )
     parser.add_argument("file", type=Path)
@@ -202,14 +292,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
+        if args.command == "list":
+            return _run_list(args)
         if args.command == "eval":
             return _run_eval(args)
         if _is_container(args.file):
             if args.command in {"format", "rename", "replace-source"}:
+                # Preview is always allowed: it rewrites nothing, so the
+                # reason writing is gated does not apply to it. Seeing the
+                # would-be result is most of the value and none of the risk.
+                if not args.write:
+                    return _preview_container_transform(args)
                 raise ContainerError(
-                    f"{args.file}: writing inside a container is not enabled in "
-                    "the CLI yet (pqtools.containers.write_sections exists but "
-                    "is unvalidated against real Excel/Power BI output)"
+                    f"{args.file}: --write inside a container is not enabled in "
+                    "the CLI yet. The rebuild path (containers.write_sections) "
+                    "re-reads the result and rejects any change outside the M "
+                    "source, and it round-trips a real .pbix - but it has never "
+                    "been validated against a workbook Excel itself produced, "
+                    "and a container Excel refuses to reopen is not something "
+                    "to discover on your own file. Run without --write to "
+                    "preview, or use containers.write_sections directly if you "
+                    "accept that risk."
                 )
             sections = containers.read_sections(args.file)
             if args.command == "check":

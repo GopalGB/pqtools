@@ -8,7 +8,9 @@ and `.xlsx` files.
 
 ```bash
 pip install pqtools
-pq eval report.pq            # run the query, print the result
+pq list  report.pbix         # what queries are in this file?
+pq eval  report.pbix --member Sales   # run one of them
+pq eval  report.pq           # or run a .pq directly
 pq format report.pq          # format it
 pq check report.pq           # lint it in CI
 ```
@@ -25,6 +27,10 @@ What it is for, in one line each:
   for a fixture with `--bind` and assert on the result from `pytest`.
 - **Refactor safely.** `pq rename` renames a `let` binding across a query without
   a find-and-replace touching a string literal that happens to match.
+- **Work with the queries inside a .pbix or .xlsx.** `pq list` names them,
+  `pq eval --member` runs one, `pq check` lints them, and `pq format` /
+  `pq rename` print the edited M. Writing back into the container is not
+  enabled in the CLI yet - see [Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
 
 > **Unofficial.** Not affiliated with or endorsed by Microsoft. Not a Power Query
 > runtime - `pq eval` runs the transformation chain of a query locally; it never
@@ -191,7 +197,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 288 builtins.
+and calling them; `try ... otherwise ...`; and these 297 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -238,7 +244,9 @@ Table.SplitColumn Table.ToColumns
 Table.ToList Table.ToRecords Table.ToRows Table.TransformColumnNames
 Table.TransformColumnTypes Table.TransformColumns Table.Transpose
 Table.Unpivot Table.UnpivotOtherColumns
-Csv.Document File.Contents Text.FromBinary
+Csv.Document File.Contents Text.FromBinary Binary.FromText Binary.ToText
+Binary.Decompress Binary.Length BinaryEncoding.Base64 BinaryEncoding.Hex
+Compression.None Compression.Deflate Compression.GZip
 Date.AddDays Date.AddMonths Date.AddWeeks Date.AddYears Date.Day
 Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.EndOfMonth
 Date.EndOfWeek Date.EndOfYear Date.From Date.IsInCurrentMonth
@@ -294,7 +302,7 @@ and order by value, so date filters and date ranges behave.
 **Everything else raises a typed `UnsupportedError` (`M_EVAL_UNSUPPORTED`)
 naming the exact construct** - never approximated, never guessed at. That
 includes: any engine-backed connector (`Web.Contents`, `Sql.Database`,
-`Excel.Workbook`, `SharePoint.*`, `Odbc.*`, `Folder.*`, `Binary.*` - the error
+`Excel.Workbook`, `SharePoint.*`, `Odbc.*`, `Folder.*` - the error
 names the construct and says it needs Fabric or PQTest, the two hosts that can
 actually run it; `Csv.Document` and `File.Contents` are *not* in this list, they
 run natively);

@@ -243,7 +243,6 @@ def test_bind_prepopulates_top_level_scope_even_without_a_let():
         "Odbc.DataSource",
         "PostgreSQL.Database",
         "Folder.Files",
-        "Binary.FromText",
     ],
 )
 def test_connectors_raise_unsupported_naming_the_fabric_or_pqtest_host(name):

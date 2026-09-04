@@ -1050,7 +1050,15 @@ def _table_from_rows(args: list[Any], ctx: _Ctx) -> Any:
     elif isinstance(columns_spec, (int, float)) and not isinstance(columns_spec, bool):
         column_names = [f"Column{i + 1}" for i in range(_require_int(columns_spec))]
     else:
-        raise UnsupportedError("Table.FromRows: columns as a table type")
+        from ._type import _MType
+
+        names = getattr(columns_spec, "field_names", None)
+        if isinstance(columns_spec, _MType) and names:
+            column_names = list(names)
+        else:
+            raise UnsupportedError(
+                "Table.FromRows: columns as a type without named fields"
+            )
     result: list[dict[str, Any]] = []
     for r in rows:
         row: dict[str, Any] = {}
