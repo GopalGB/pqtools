@@ -25,9 +25,12 @@ from .core import (
     update_file,
 )
 from .evaluate import evaluate
+from .io import IOPolicy
 
 _CONTAINER_SUFFIXES = {".xlsx", ".pbix", ".pbit", ".pbip"}
-_BIND_SUFFIXES = {".csv", ".json"}
+# Suffixes with a structured reading. Everything else binds to raw bytes,
+# which is what File.Contents returns - so there is no file --bind refuses.
+_BIND_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".xlsb"}
 
 
 def _source(path: Path) -> str:
@@ -111,10 +114,32 @@ def _parse_bind(spec: str) -> tuple[str, Path]:
 
 
 def _load_binding(path: Path) -> Any:
+    """Read PATH into the value the bound step should produce.
+
+    The rule is "whatever pqtools would get from this file", so a bind lines
+    up with the step it replaces: a `.csv` step yields records, a `.json` step
+    the parsed document, a workbook step the Excel.Workbook navigation table,
+    and anything else the bytes File.Contents returns.
+
+    That last case is why there is no longer a supported-suffix list.
+    Refusing `.xlsx` was the visible symptom - Excel.Workbook is a supported
+    connector, so the one file type a workbook-hosted query is most likely to
+    reference was also the one --bind would not accept - but the refusal was
+    wrong in general, since File.Contents happily reads any file at all.
+    """
     suffix = path.suffix.lower()
-    if suffix not in _BIND_SUFFIXES:
-        raise MQueryError(f"{path}: --bind supports only .csv or .json, not {suffix!r}")
     snapshot = _snapshot(path)
+    if suffix in _BIND_TABLE_SUFFIXES:
+        from .builtins._sources import workbook_nav_table
+
+        # useHeaders=False, matching Excel.Workbook's own default. Generated
+        # queries pass null here and then call Table.PromoteHeaders
+        # themselves, so promoting during the bind would promote twice and
+        # lose the real header row - which surfaces later and confusingly, as
+        # "column not found" against a column the file plainly has.
+        return workbook_nav_table(snapshot.data, False)
+    if suffix not in {".csv", ".json"}:
+        return snapshot.data
     try:
         text = snapshot.data.decode("utf-8", "strict")
     except UnicodeDecodeError as error:
@@ -304,13 +329,29 @@ def _run_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _io_policy(args: argparse.Namespace) -> IOPolicy:
+    """Turn the --allow-* flags into the policy the evaluator enforces.
+
+    Default-deny is the whole point: the M source, not the person running it,
+    supplies the URL a connector reaches, and that source often came from
+    somebody else's workbook. Naming the flag in the refusal keeps the honest
+    case one word away without making the hostile case free.
+    """
+    return IOPolicy(
+        allow_net=bool(getattr(args, "allow_net", False)),
+        allow_db=bool(getattr(args, "allow_db", False)),
+        allow_private=bool(getattr(args, "allow_private_net", False)),
+        hosts=frozenset(h.lower() for h in (getattr(args, "allow_host", None) or [])),
+    )
+
+
 def _run_eval(args: argparse.Namespace) -> int:
     source = _eval_source(args)
     bindings: dict[str, Any] = {}
     for spec in args.bind or []:
         name, path = _parse_bind(spec)
         bindings[name] = _load_binding(path)
-    result = evaluate(source, bindings=bindings)
+    result = evaluate(source, bindings=bindings, io=_io_policy(args))
     if args.format == "csv":
         if not isinstance(result, list) or not all(
             isinstance(row, dict) for row in result
@@ -346,6 +387,28 @@ def main(argv: list[str] | None = None) -> int:
         "--write",
         action="store_true",
         help="atomically replace source after validation",
+    )
+    parser.add_argument(
+        "--allow-net",
+        action="store_true",
+        help="permit Web.Contents/OData.Feed to reach the network (off by default)",
+    )
+    parser.add_argument(
+        "--allow-db",
+        action="store_true",
+        help="permit Sql.Database/Odbc/PostgreSQL/MySQL/Oracle connections",
+    )
+    parser.add_argument(
+        "--allow-private-net",
+        action="store_true",
+        help="also permit loopback/private/link-local addresses (off by default: "
+        "169.254.169.254 is the cloud metadata endpoint)",
+    )
+    parser.add_argument(
+        "--allow-host",
+        action="append",
+        metavar="HOST",
+        help="restrict --allow-net to this host (repeatable)",
     )
     parser.add_argument("--old")
     parser.add_argument("--new")

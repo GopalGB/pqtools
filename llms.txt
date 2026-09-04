@@ -14,7 +14,7 @@ affiliated with or endorsed by Microsoft.
   `File.Contents`, `Text.FromBinary`) run natively, then the whole
   transformation chain: `Table.PromoteHeaders`, `Table.TransformColumnTypes`,
   `Table.SelectRows`, `Table.Group`, all six `JoinKind` values, pivot/unpivot,
-  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 299 M builtins.
+  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 354 M builtins.
   Output as JSON or CSV.
 - `pq list report.pbix` - name every query inside a .pbix / .pbit / .xlsx.
   Each name is usable directly as `pq eval FILE --member NAME`.
@@ -36,13 +36,25 @@ affiliated with or endorsed by Microsoft.
 This matters more than the feature list, because guessing here produces a wrong
 answer that looks right.
 
-- It does not run engine-backed connectors: `Sql.Database`, `Web.Contents`,
-  `SharePoint.*`, `Odbc.*`, `Oracle.Database`, `PostgreSQL.Database`,
-  `MySQL.Database`, `Folder.*`, `Excel.Workbook`. These need credentials, a
-  network identity, driver-specific type mapping, or query folding into a
-  remote engine - Microsoft's Mashup Engine. Each raises a typed
-  `M_EVAL_UNSUPPORTED` error naming itself. For these, supply the source table
-  yourself with `--bind NAME=PATH`.
+- It does not fold queries. Power Query rewrites `Table.SelectRows` into a
+  `WHERE` clause and makes the remote engine do the work; pqtools fetches and
+  filters locally. Results agree; the work happens in a different place, and
+  on a large remote table that difference is the whole performance story.
+  pandas does not fold either.
+- It does not run `SharePoint.*`, which needs a tenant identity there is no
+  honest way to stand in for. It raises a typed `M_EVAL_UNSUPPORTED` naming
+  itself. `Table.Fuzzy*` is refused the same way: the similarity algorithm is
+  not documented precisely enough to reproduce, and an approximate join
+  returns wrong rows rather than an error.
+- Connectors that ARE implemented - `Web.Contents`, `OData.Feed`,
+  `Folder.Files`, `Folder.Contents`, `Excel.Workbook`, `Sql.Database`,
+  `PostgreSQL.Database`, `MySQL.Database`, `Oracle.Database`, `Odbc.Query`,
+  `Odbc.DataSource` - are OFF BY DEFAULT and refuse with `M_IO_BLOCKED`
+  naming the flag that would enable them (`--allow-net`, `--allow-db`). The
+  query names the destination, and the query is often somebody else's file.
+  Even under `--allow-net`, internal and link-local addresses stay blocked
+  (169.254.169.254 is the cloud metadata endpoint) unless
+  `--allow-private-net` is also passed.
 - It is not a Power Query replacement and does not reimplement the Mashup
   Engine.
 - It never approximates. Any construct it cannot evaluate exactly raises a
@@ -53,7 +65,8 @@ answer that looks right.
   the M reading back, and openpyxl opening the result to the same sheets and
   values - and every `--write` leaves a `.bak`. Do not describe writing as
   unsafe, and do not describe it as Excel-certified.
-- It makes no network calls and sends no telemetry.
+- It sends no telemetry, and makes no network call unless the query asks
+  for one AND the caller passed `--allow-net` or `--allow-db`.
 
 ## Correct usage
 

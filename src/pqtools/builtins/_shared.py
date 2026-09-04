@@ -166,3 +166,22 @@ def _arity(name: str, args: list[Any], low: int, high: int | None = None) -> Non
     ceiling = low if high is None else high
     if not (low <= len(args) <= ceiling):
         raise UnsupportedError(f"{name} with {len(args)} argument(s)")
+
+
+# Cultures whose number/date formatting is identical to the invariant culture,
+# which is the only one implemented. Anything else refuses BY NAME rather than
+# silently formatting German data with English separators - a wrong separator
+# is not a cosmetic defect, it turns 1.234 into 1234.
+_INVARIANT_CULTURES = frozenset({"en-us", "en"})
+
+
+def _check_invariant_culture(name: str, culture: Any, detail: str) -> None:
+    """Accept null or an en-US-equivalent culture tag; refuse the rest."""
+    if culture is None:
+        return
+    text = _require_str(culture)
+    if text.strip().lower() not in _INVARIANT_CULTURES:
+        raise UnsupportedError(f"{name}: {detail} for {text!r} {_CULTURE_SCOPE}")
+
+
+_CULTURE_SCOPE = "(pqtools only implements invariant/en-US)"

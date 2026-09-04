@@ -178,15 +178,36 @@ def test_text_from_binary_rejects_text() -> None:
         _call("Text.FromBinary", "already text")
 
 
-# --- the boundary that must still refuse --------------------------------
+# --- the boundary, as it actually stands now -----------------------------
+#
+# These used to assert that every connector refuses. That was the wrong
+# contract, and holding it was the reason the package told people to use
+# --bind for a database read that Python can just do. What is true now:
+# SharePoint still refuses (its auth flow would make this a credential
+# store), and the rest are permission-gated rather than absent.
 
 
-@pytest.mark.parametrize(
-    "name", ["Sql.Database", "Web.Contents", "SharePoint.Files", "Odbc.DataSource"]
-)
-def test_engine_backed_sources_still_refuse(name: str) -> None:
+@pytest.mark.parametrize("name", ["SharePoint.Files", "SharePoint.Tables"])
+def test_auth_bound_sources_still_refuse(name: str) -> None:
     with pytest.raises(UnsupportedError, match="connector"):
         evaluate(f'let Source = {name}("x") in Source')
+
+
+@pytest.mark.parametrize("name", ["Sql.Database", "Odbc.DataSource"])
+def test_database_sources_are_gated_not_absent(name: str) -> None:
+    from pqtools.io import IOBlockedError
+
+    # The distinction matters to the reader: "not supported" sends you looking
+    # for a missing feature, "not permitted" sends you to a flag.
+    with pytest.raises(IOBlockedError, match="--allow-db"):
+        evaluate(f'let Source = {name}("x", "y") in Source')
+
+
+def test_web_contents_is_gated_not_absent() -> None:
+    from pqtools.io import IOBlockedError
+
+    with pytest.raises(IOBlockedError, match="--allow-net"):
+        evaluate('let Source = Web.Contents("https://example.com") in Source')
 
 
 # --- the whole point: a real query, end to end, with no --bind ----------

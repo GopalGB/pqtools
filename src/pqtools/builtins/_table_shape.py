@@ -1082,6 +1082,20 @@ def _hash_table(args: list[Any], ctx: _Ctx) -> Any:
     return _table_from_rows([rows] if columns is None else [rows, columns], ctx)
 
 
+def _table_column(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.Column(table, column)`` - one column's values as a list.
+
+    The list-shaped counterpart to ``Table.SelectColumns``, and the way a
+    navigation step reaches a nested table: ``Table.Column(Source, "Data"){0}``.
+    """
+    _arity("Table.Column", args, 2)
+    table = _require_table(args[0])
+    column = _require_str(args[1])
+    if table and column not in table[0]:
+        raise EvalError(f"Table.Column: column not found: {column}")
+    return [row.get(column) for row in table]
+
+
 def _table_to_rows(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Table.ToRows", args, 1)
     table = _require_table(args[0])
@@ -1240,6 +1254,7 @@ BUILTINS: dict[str, Any] = {
     "Table.FromColumns": _table_from_columns,
     "Table.ToColumns": _table_to_columns,
     "Table.FromRows": _table_from_rows,
+    "Table.Column": _table_column,
     "#table": _hash_table,
     "Table.ToRows": _table_to_rows,
     "Table.FromValue": _table_from_value,
@@ -1257,3 +1272,207 @@ BUILTINS: dict[str, Any] = {
     "ExtraValues.Error": "ExtraValues.Error",
     "ExtraValues.List": "ExtraValues.List",
 }
+
+
+# --------------------------------------------------------------------------
+# Row-set predicates, slicing, and schema - the Table.* gaps found by
+# checking the registry against the functions real queries actually use.
+# --------------------------------------------------------------------------
+
+
+def _table_contains(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.Contains", args, 2, 3)
+    table = _require_table(args[0])
+    row = _require_record(args[1])
+    return any(all(_m_equal(r.get(k), v) for k, v in row.items()) for r in table)
+
+
+def _table_position_of(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.PositionOf(table, row, occurrence)`` - -1 when absent, as M does."""
+    _arity("Table.PositionOf", args, 2, 4)
+    table = _require_table(args[0])
+    row = _require_record(args[1])
+    hits = [
+        index
+        for index, r in enumerate(table)
+        if all(_m_equal(r.get(k), v) for k, v in row.items())
+    ]
+    if not hits:
+        return -1
+    occurrence = args[2] if len(args) >= 3 else None
+    if occurrence is None or occurrence == 0:
+        return hits[0]
+    if occurrence == 1:
+        return hits[-1]
+    return hits
+
+
+def _row_predicate(name: str, predicate: Any, row: Any, ctx: _Ctx) -> bool:
+    """Run a row predicate, insisting on a logical result.
+
+    Table.SelectRows sets this convention: a predicate that returns a non
+    logical is a bug in the query, and coercing it would hide the bug behind
+    a plausible row count.
+    """
+    keep = ctx.invoke(predicate, [row], ctx)
+    if not isinstance(keep, bool):
+        raise EvalError(f"{name}: condition must return a logical value")
+    return keep
+
+
+def _table_matches_any_rows(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.MatchesAnyRows", args, 2)
+    table = _require_table(args[0])
+    return any(
+        _row_predicate("Table.MatchesAnyRows", args[1], row, ctx) for row in table
+    )
+
+
+def _table_matches_all_rows(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.MatchesAllRows", args, 2)
+    table = _require_table(args[0])
+    return all(
+        _row_predicate("Table.MatchesAllRows", args[1], row, ctx) for row in table
+    )
+
+
+def _table_remove_matching_rows(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.RemoveMatchingRows", args, 2, 3)
+    table = _require_table(args[0])
+    targets = [_require_record(r) for r in _require_list(args[1])]
+    return [
+        row
+        for row in table
+        if not any(all(_m_equal(row.get(k), v) for k, v in t.items()) for t in targets)
+    ]
+
+
+def _table_insert_rows(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.InsertRows", args, 3)
+    table = _require_table(args[0])
+    offset = _require_int(args[1])
+    if not 0 <= offset <= len(table):
+        raise EvalError(f"Table.InsertRows: offset {offset} is outside the table")
+    rows = [_require_record(r) for r in _require_list(args[2])]
+    return [*table[:offset], *rows, *table[offset:]]
+
+
+def _table_split_at(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.SplitAt(table, count)`` - the two halves, as a list of tables."""
+    _arity("Table.SplitAt", args, 2)
+    table = _require_table(args[0])
+    count = _require_int(args[1])
+    return [table[:count], table[count:]]
+
+
+def _table_alternate_rows(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.AlternateRows(table, offset, skip, take)``: drop then keep, repeating."""
+    _arity("Table.AlternateRows", args, 4)
+    table = _require_table(args[0])
+    offset, skip, take = (_require_int(a) for a in args[1:4])
+    if skip < 0 or take < 0:
+        raise EvalError("Table.AlternateRows: skip and take must not be negative")
+    kept = list(table[:offset])
+    index = offset
+    period = skip + take
+    if period == 0:
+        return kept + list(table[offset:])
+    while index < len(table):
+        index += skip
+        kept.extend(table[index : index + take])
+        index += take
+    return kept
+
+
+def _table_schema(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.Schema(table)`` - one row per column.
+
+    Only the fields this evaluator can actually determine are filled in. The
+    rest are null rather than guessed: a schema row claiming a precision or a
+    nominal type it never saw would be read as fact.
+    """
+    _arity("Table.Schema", args, 1)
+    table = _require_table(args[0])
+    rows = []
+    for position, name in enumerate(_column_order(table)):
+        kinds = {
+            _type_name(row.get(name)) for row in table if row.get(name) is not None
+        }
+        kind = kinds.pop() if len(kinds) == 1 else "any"
+        rows.append(
+            {
+                "Name": name,
+                "Position": position,
+                "TypeName": kind,
+                "Kind": kind,
+                "IsNullable": any(row.get(name) is None for row in table),
+                "NumericPrecision": None,
+                "NumericScale": None,
+                "NativeTypeName": None,
+                "Description": None,
+            }
+        )
+    return rows
+
+
+def _table_profile(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.Profile(table)`` - per-column summary statistics."""
+    _arity("Table.Profile", args, 1, 2)
+    table = _require_table(args[0])
+    rows = []
+    for name in _column_order(table):
+        values = [row.get(name) for row in table]
+        present = [v for v in values if v is not None]
+        numbers = [
+            v
+            for v in present
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        ]
+        ordered = sorted(numbers) if numbers else []
+        rows.append(
+            {
+                "Column": name,
+                "Min": (
+                    min(ordered) if ordered else (min(present) if present else None)
+                ),
+                "Max": (
+                    max(ordered) if ordered else (max(present) if present else None)
+                ),
+                "Average": (sum(numbers) / len(numbers)) if numbers else None,
+                "StandardDeviation": _stdev(numbers),
+                "Count": len(values),
+                "NullCount": len(values) - len(present),
+                "DistinctCount": len({_hashable(v) for v in values}),
+            }
+        )
+    return rows
+
+
+def _stdev(numbers: list[Any]) -> Any:
+    if len(numbers) < 2:
+        return None
+    mean = sum(numbers) / len(numbers)
+    return (sum((n - mean) ** 2 for n in numbers) / (len(numbers) - 1)) ** 0.5
+
+
+def _hashable(value: Any) -> Any:
+    """A hashable stand-in, so DistinctCount can use a set on any column."""
+    if isinstance(value, (list, dict)):
+        return repr(value)
+    return value
+
+
+BUILTINS.update(
+    {
+        "Table.Contains": _table_contains,
+        "Table.PositionOf": _table_position_of,
+        "Table.MatchesAnyRows": _table_matches_any_rows,
+        "Table.MatchesAllRows": _table_matches_all_rows,
+        "Table.RemoveMatchingRows": _table_remove_matching_rows,
+        "Table.InsertRows": _table_insert_rows,
+        "Table.SplitAt": _table_split_at,
+        "Table.AlternateRows": _table_alternate_rows,
+        "Table.Schema": _table_schema,
+        "Table.Profile": _table_profile,
+    }
+)

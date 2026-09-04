@@ -11,6 +11,7 @@ zero behaviour change) - see PRD-0.5.0-builtins.md.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from ._shared import (
@@ -299,45 +300,196 @@ def _list_last_n(args: list[Any], ctx: _Ctx) -> Any:
     return result
 
 
+# --------------------------------------------------------------------------
+# equationCriteria - the "how is equality determined" argument shared by
+# List.ContainsAny/ContainsAll/Difference/Intersect/Union/Mode/PositionOf/
+# PositionOfAny. Verified against the Microsoft Learn "Equation criteria"
+# reference (the "Parameter values" section of
+# https://learn.microsoft.com/en-us/powerquery-m/list-functions):
+#
+#   equationCriteria is one of
+#     1. a key-selector function of one argument,
+#     2. a comparer function of two arguments, or
+#     3. a two-item list {keySelector, comparer}.
+#
+#   "In most list functions, the comparer function ... must be one of the
+#   built-in comparer functions. In those list functions, using a custom
+#   comparer results in an error. However, [List.Contains, List.ContainsAll,
+#   List.ContainsAny, List.PositionOf and List.PositionOfAny] allow you to
+#   use a custom comparer."
+#
+# so every call site below passes `allow_custom_comparer` accordingly.
+# --------------------------------------------------------------------------
+
+
+def _equation_arity(value: Any) -> int | None:
+    """Best-effort M-visible arity of an equationCriteria function value.
+
+    An `each .../(params) => ...` closure is a `_Lambda` from evaluate.py -
+    not importable here (the same circular-import chain `_Ctx.invoke`'s
+    docstring above explains), so duck-type on its `params` slot, exactly
+    as `_table_shape.py`'s `_is_invocable` already does for the same
+    reason. `Comparer.Ordinal`/`Comparer.OrdinalIgnoreCase`/
+    `Comparer.FromCulture` (defined in the sibling `_text.py` module, this
+    project's owner of `Comparer.*`) are plain Python callables with no
+    `params` slot; they self-tag `m_is_builtin_comparer = True` at
+    definition so this module can recognise them without an import across
+    family modules (see builtins/__init__.py's docstring on why family
+    modules stay independent). Any OTHER bare function reference (some
+    other builtin used without `each`) has no discoverable M arity here -
+    None means "can't tell", and callers must refuse rather than guess
+    which role it plays.
+    """
+    if hasattr(value, "params"):
+        return len(value.params)
+    if getattr(value, "m_is_builtin_comparer", False):
+        return 2
+    return None
+
+
+def _is_builtin_comparer(value: Any) -> bool:
+    """True only for this project's own Comparer.* functions - never for a
+    user-written two-argument lambda (a `_Lambda` has a `params` slot,
+    which these do not). Used to enforce the "custom comparer results in
+    an error" restriction quoted above for the list functions that do not
+    allow one.
+    """
+    return not hasattr(value, "params") and getattr(
+        value, "m_is_builtin_comparer", False
+    )
+
+
+def _equation_match_result(raw: Any, fn_name: str) -> bool:
+    """Interpret a comparer/equationCriteria function's return value as
+    equal/not-equal.
+
+    Verified against two different Microsoft Learn worked examples:
+    List.Distinct passing Comparer.OrdinalIgnoreCase (returns -1/0/1, the
+    Comparer.* convention - equal iff 0) and List.PositionOf's own example
+    passing a bare `(x, y) => Number.Abs(x - y) <= 2` lambda that returns a
+    plain logical directly. Both shapes are real, so both are honoured;
+    anything else is neither.
+    """
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return raw == 0
+    raise EvalError(
+        f"{fn_name}: equationCriteria function must return a logical or a "
+        "number (-1, 0, or 1)"
+    )
+
+
+def _equation_criteria_predicate(
+    criteria: Any,
+    ctx: _Ctx,
+    fn_name: str,
+    *,
+    allow_custom_comparer: bool,
+) -> Callable[[Any, Any], bool]:
+    """Resolve `equationCriteria` to an ``(a, b) -> bool`` equality test."""
+    if isinstance(criteria, list):
+        if len(criteria) != 2:
+            raise UnsupportedError(
+                f"{fn_name}: equationCriteria list must have exactly two "
+                "items (a key selector and a comparer)"
+            )
+        selector, comparer = criteria
+        if not allow_custom_comparer and not _is_builtin_comparer(comparer):
+            raise UnsupportedError(
+                f"{fn_name}: equationCriteria comparer must be "
+                "Comparer.Ordinal or Comparer.OrdinalIgnoreCase here (a "
+                "custom comparer is refused, matching real Power Query)"
+            )
+
+        def pair_predicate(a: Any, b: Any) -> bool:
+            key_a = ctx.invoke(selector, [a], ctx)
+            key_b = ctx.invoke(selector, [b], ctx)
+            return _equation_match_result(
+                ctx.invoke(comparer, [key_a, key_b], ctx), fn_name
+            )
+
+        return pair_predicate
+
+    arity = _equation_arity(criteria)
+    if arity == 1:
+
+        def selector_predicate(a: Any, b: Any) -> bool:
+            return _m_equal(
+                ctx.invoke(criteria, [a], ctx), ctx.invoke(criteria, [b], ctx)
+            )
+
+        return selector_predicate
+    if arity == 2:
+        if not allow_custom_comparer and not _is_builtin_comparer(criteria):
+            raise UnsupportedError(
+                f"{fn_name}: equationCriteria with a custom comparer is not "
+                "supported here (only Comparer.Ordinal or "
+                "Comparer.OrdinalIgnoreCase, matching real Power Query)"
+            )
+
+        def comparer_predicate(a: Any, b: Any) -> bool:
+            return _equation_match_result(ctx.invoke(criteria, [a, b], ctx), fn_name)
+
+        return comparer_predicate
+    raise UnsupportedError(
+        f"{fn_name}: equationCriteria function of unknown arity (expected a "
+        "1-argument key selector or a 2-argument comparer; wrap a bare "
+        "builtin reference in `each` if it is meant as a key selector)"
+    )
+
+
 def _list_contains_any(args: list[Any], ctx: _Ctx) -> Any:
     _arity("List.ContainsAny", args, 2, 3)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("List.ContainsAny: equationCriteria argument")
     items = _require_list(args[0])
     values = _require_list(args[1])
+    if len(args) == 3 and args[2] is not None:
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "List.ContainsAny", allow_custom_comparer=True
+        )
+        return any(any(equal(item, value) for item in items) for value in values)
     return any(any(_m_equal(item, value) for item in items) for value in values)
 
 
 def _list_contains_all(args: list[Any], ctx: _Ctx) -> Any:
     _arity("List.ContainsAll", args, 2, 3)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("List.ContainsAll: equationCriteria argument")
     items = _require_list(args[0])
     values = _require_list(args[1])
+    if len(args) == 3 and args[2] is not None:
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "List.ContainsAll", allow_custom_comparer=True
+        )
+        return all(any(equal(item, value) for item in items) for value in values)
     return all(any(_m_equal(item, value) for item in items) for value in values)
 
 
 def _list_difference(args: list[Any], ctx: _Ctx) -> Any:
     _arity("List.Difference", args, 2, 3)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("List.Difference: equationCriteria argument")
     items1 = _require_list(args[0])
     items2 = _require_list(args[1])
+    if len(args) == 3 and args[2] is not None:
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "List.Difference", allow_custom_comparer=False
+        )
+        return [x for x in items1 if not any(equal(x, y) for y in items2)]
     return [x for x in items1 if not any(_m_equal(x, y) for y in items2)]
 
 
 def _list_intersect(args: list[Any], ctx: _Ctx) -> Any:
     _arity("List.Intersect", args, 1, 2)
-    if len(args) == 2 and args[1] is not None:
-        raise UnsupportedError("List.Intersect: equationCriteria argument")
     sublists = [_require_list(lst) for lst in _require_list(args[0])]
     if not sublists:
         return []
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 2 and args[1] is not None:
+        equal = _equation_criteria_predicate(
+            args[1], ctx, "List.Intersect", allow_custom_comparer=False
+        )
     result: list[Any] = []
     for item in sublists[0]:
-        if any(_m_equal(item, seen) for seen in result):
+        if any(equal(item, seen) for seen in result):
             continue
-        if all(any(_m_equal(item, x) for x in lst) for lst in sublists[1:]):
+        if all(any(equal(item, x) for x in lst) for lst in sublists[1:]):
             result.append(item)
     return result
 
@@ -346,12 +498,15 @@ def _list_union(args: list[Any], ctx: _Ctx) -> Any:
     # List.Union dedupes across all input lists (verified: List.Union({{1,
     # 1, 2}, {2, 3}}) = {1, 2, 3}), unlike List.Combine which keeps dupes.
     _arity("List.Union", args, 1, 2)
+    equal: Callable[[Any, Any], bool] = _m_equal
     if len(args) == 2 and args[1] is not None:
-        raise UnsupportedError("List.Union: equationCriteria argument")
+        equal = _equation_criteria_predicate(
+            args[1], ctx, "List.Union", allow_custom_comparer=False
+        )
     result: list[Any] = []
     for sublist in _require_list(args[0]):
         for item in _require_list(sublist):
-            if not any(_m_equal(item, seen) for seen in result):
+            if not any(equal(item, seen) for seen in result):
                 result.append(item)
     return result
 
@@ -389,19 +544,28 @@ def _list_median(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _list_mode(args: list[Any], ctx: _Ctx) -> Any:
-    # List.Mode: on a frequency tie, the LAST tied value wins (verified
-    # against the MS docs example: {"A",1,2,3,3,4,5,5} -> 5, not 3 - both
-    # appear twice, 5's occurrences finish later in the list).
+    # List.Mode: on a frequency tie, the tied value whose FIRST occurrence is
+    # latest wins. The MS docs example ({"A",1,2,3,3,4,5,5} -> 5, where 3 and
+    # 5 both appear twice) proves a tie resolves to a later value, but not
+    # which sense of "later": {5,3,3,5} gives 3 under this rule and 5 under
+    # "whose last occurrence is latest", and no documented example separates
+    # them. The rule below is the choice this package makes, pinned by a test
+    # on that discriminating case so it cannot drift silently. Do not restate
+    # it as verified - it satisfies every published example, which is a
+    # weaker claim than matching the engine on every input.
     _arity("List.Mode", args, 1, 2)
-    if len(args) == 2 and args[1] is not None:
-        raise UnsupportedError("List.Mode: equationCriteria argument")
     items = _require_list(args[0])
     if not items:
         raise EvalError("List.Mode: list must not be empty")
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 2 and args[1] is not None:
+        equal = _equation_criteria_predicate(
+            args[1], ctx, "List.Mode", allow_custom_comparer=False
+        )
     groups: list[list[Any]] = []  # [value, count] pairs, first-occurrence order
     for item in items:
         for group in groups:
-            if _m_equal(group[0], item):
+            if equal(group[0], item):
                 group[1] += 1
                 break
         else:
@@ -542,9 +706,47 @@ def _list_position_of(args: list[Any], ctx: _Ctx) -> Any:
                 "List.PositionOf: occurrence must be Occurrence.First (0), "
                 "Occurrence.Last (1), or Occurrence.All (2)"
             )
+    equal: Callable[[Any, Any], bool] = _m_equal
     if len(args) == 4 and args[3] is not None:
-        raise UnsupportedError("List.PositionOf: equationCriteria argument")
-    positions = [i for i, item in enumerate(items) if _m_equal(item, value)]
+        equal = _equation_criteria_predicate(
+            args[3], ctx, "List.PositionOf", allow_custom_comparer=True
+        )
+    positions = [i for i, item in enumerate(items) if equal(item, value)]
+    if occurrence == 2:
+        return positions
+    if not positions:
+        return -1
+    return positions[0] if occurrence == 0 else positions[-1]
+
+
+def _list_position_of_any(args: list[Any], ctx: _Ctx) -> Any:
+    # List.PositionOfAny(list as list, values as list, optional occurrence
+    # as nullable number, optional equationCriteria as any) as any - not
+    # implemented anywhere in this evaluator before now (verified: no
+    # `raise UnsupportedError` site and no BUILTINS entry existed for it).
+    # Signature, occurrence semantics, and equationCriteria handling
+    # verified against Microsoft Learn's List.PositionOfAny page, and
+    # mirror List.PositionOf above (same function, `any of values` instead
+    # of a single `value`).
+    _arity("List.PositionOfAny", args, 2, 4)
+    items = _require_list(args[0])
+    values = _require_list(args[1])
+    occurrence = 0
+    if len(args) >= 3 and args[2] is not None:
+        occurrence = _require_int(args[2])
+        if occurrence not in (0, 1, 2):
+            raise UnsupportedError(
+                "List.PositionOfAny: occurrence must be Occurrence.First (0), "
+                "Occurrence.Last (1), or Occurrence.All (2)"
+            )
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 4 and args[3] is not None:
+        equal = _equation_criteria_predicate(
+            args[3], ctx, "List.PositionOfAny", allow_custom_comparer=True
+        )
+    positions = [
+        i for i, item in enumerate(items) if any(equal(item, value) for value in values)
+    ]
     if occurrence == 2:
         return positions
     if not positions:
@@ -619,6 +821,7 @@ BUILTINS: dict[str, Any] = {
     "List.Buffer": _list_buffer,
     "List.Generate": _list_generate,
     "List.PositionOf": _list_position_of,
+    "List.PositionOfAny": _list_position_of_any,
     "List.InsertRange": _list_insert_range,
     "List.ReplaceValue": _list_replace_value,
 }

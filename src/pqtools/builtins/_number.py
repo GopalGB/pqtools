@@ -6,9 +6,11 @@ zero behaviour change) - see PRD-0.5.0-builtins.md.
 
 from __future__ import annotations
 
+import decimal
 import json as _json
 import math
 import random as _random
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +18,7 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _check_invariant_culture,
     _format_number,
     _parse_numeric_literal,
     _require_int,
@@ -26,6 +29,40 @@ from ._shared import (
 
 if TYPE_CHECKING:
     from ..evaluate import _Ctx
+
+# Culture handling for Number.ToText - mirrors _datetime.py's convention
+# exactly (same set, same "null culture behaves like en-US" rule) rather
+# than inventing a separate policy for numbers: `null` and an en-US-
+# equivalent tag both render with the same (invariant-as-en-US) data this
+# module hand-writes below; anything else names the culture and refuses.
+
+# Precision.Double / Precision.Decimal enum members (Number.IntegerDivide's
+# and Number.Mod's optional third argument). Verified against Power Query's
+# own docs: Precision.Double = 0, Precision.Decimal = 1 - exposed as plain
+# ints via BUILTINS, the same mechanism _datetime.py uses for Day.Sunday
+# etc (see that module's BUILTINS comment for why this works uncalled).
+_PRECISION_DOUBLE = 0
+_PRECISION_DECIMAL = 1
+
+# A standard .NET numeric format string is exactly one letter optionally
+# followed by a precision-digit run (e.g. "F2", "N", "X4") - anything else
+# (custom picture formats like "#,##0.00") is out of scope, per the task
+# brief's "never approximate" rule, and falls through to the UnsupportedError
+# in _number_to_text naming the format verbatim.
+_STANDARD_FORMAT_RE = re.compile(r"^([A-Za-z])(\d*)$")
+
+# Letters whose OUTPUT does not depend on input case in real .NET (no
+# case-sensitive character appears anywhere in the rendered string), so
+# both cases are accepted and mapped onto the one implementation below.
+# E, G and X are deliberately excluded: .NET's E/X let the input case pick
+# the case of the exponent/hex-digit letters in the output, and G's case
+# only matters when it happens to fall back to scientific notation - a
+# second, unverified rendering path this module does not implement, so
+# lowercase e/g/x stay refused rather than silently rendering with the
+# wrong (or inconsistently-right) case. (This also keeps
+# Number.ToText(4, "e") a refusal, matching the pre-existing pinned test
+# in tests/test_builtins_scalar.py, which this task does not own.)
+_CASE_INSENSITIVE_FORMAT_LETTERS = frozenset("CDFNP")
 
 
 def _consume_budget(ctx: _Ctx, count: int) -> None:
@@ -51,6 +88,43 @@ def _number_from(args: list[Any], ctx: _Ctx) -> Any:
         except ValueError as error:
             raise EvalError(f"Number.From: not a number: {value!r}") from error
     raise EvalError(f"Number.From: unsupported value type: {_type_name(value)}")
+
+
+def _from_text(name: str, delegate: Any) -> Any:
+    """Build ``X.FromText`` from the module's own ``X.From``.
+
+    Delegating rather than re-parsing is the point: a second parser for the
+    same family is a second set of edge cases, and the day they disagree the
+    symptom is a value that converts one way through a column type and
+    another way through an explicit call. M draws the text-only line too, so
+    ``Number.FromText(1)`` is an error there as well - accepting it would let
+    a column that never held text report a successful text conversion.
+    """
+
+    def run(args: list[Any], ctx: _Ctx) -> Any:
+        _arity(name, args, 1, 2)
+        _check_invariant_culture(
+            name, args[1] if len(args) == 2 else None, "culture-specific parsing"
+        )
+        value = args[0]
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise EvalError(f"{name}: expected text, got {_type_name(value)}")
+        try:
+            return delegate([value], ctx)
+        except EvalError as error:
+            # The delegate reports itself, so a failed Number.FromText would
+            # otherwise say "Number.From: not a number" and send the reader
+            # looking for a call that is not in their query.
+            message = str(error)
+            prefix = f"{name.split('Text')[0]}: "
+            if message.startswith(prefix):
+                message = f"{name}: {message[len(prefix) :]}"
+            raise EvalError(message) from error
+
+    run.__name__ = f"_{name.replace('.', '_').lower()}"
+    return run
 
 
 def _number_round(args: list[Any], ctx: _Ctx) -> Any:
@@ -101,13 +175,50 @@ def _logical_from(args: list[Any], ctx: _Ctx) -> Any:
     raise EvalError(f"Logical.From: unsupported value type: {_type_name(value)}")
 
 
+def _resolve_precision(name: str, value: Any) -> int:
+    # `null` (argument omitted or explicitly null) means Precision.Double -
+    # verified: Value.Divide's docs state "by default Precision.Double is
+    # used", and Number.IntegerDivide/Number.Mod share that same optional
+    # precision parameter. `_require_int` already rejects bool, matching
+    # every other enum-style argument check in this codebase.
+    if value is None:
+        return _PRECISION_DOUBLE
+    resolved = _require_int(value)
+    if resolved not in (_PRECISION_DOUBLE, _PRECISION_DECIMAL):
+        raise EvalError(
+            f"{name}: precision must be Precision.Double or Precision.Decimal"
+        )
+    return resolved
+
+
+def _decimal_truncate_divide(number1: int | float, number2: int | float) -> int:
+    # `str(x)` recovers the shortest decimal text that round-trips to the
+    # Python float `x` (Python 3's float repr already computes that), which
+    # is the only faithful way to hand a *decimal* value to `decimal.Decimal`
+    # from a value this evaluator has already stored as a binary float -
+    # `Decimal(0.1)` instead would just spell out 0.1's binary imprecision
+    # in base 10, defeating the entire point of Precision.Decimal.
+    d1 = decimal.Decimal(str(number1))
+    d2 = decimal.Decimal(str(number2))
+    quotient = (d1 / d2).to_integral_value(rounding=decimal.ROUND_DOWN)
+    return int(quotient)
+
+
+def _decimal_truncate_mod(number: int | float, divisor: int | float) -> float:
+    d1 = decimal.Decimal(str(number))
+    d2 = decimal.Decimal(str(divisor))
+    quotient = (d1 / d2).to_integral_value(rounding=decimal.ROUND_DOWN)
+    return float(d1 - quotient * d2)
+
+
 def _number_integer_divide(args: list[Any], ctx: _Ctx) -> Any:
     # Number.IntegerDivide(number1, number2, optional precision) - integer
     # portion of number1/number2, TRUNCATED toward zero (verified: 8.3/3 =
     # 2, matching Python's math.trunc, not floor division).
     _arity("Number.IntegerDivide", args, 2, 3)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("Number.IntegerDivide: precision argument")
+    precision = _resolve_precision(
+        "Number.IntegerDivide", args[2] if len(args) == 3 else None
+    )
     number1, number2 = args[0], args[1]
     if number1 is None or number2 is None:
         return None
@@ -115,6 +226,8 @@ def _number_integer_divide(args: list[Any], ctx: _Ctx) -> Any:
     number2 = _require_number(number2)
     if number2 == 0:
         raise EvalError("Number.IntegerDivide: division by zero")
+    if precision == _PRECISION_DECIMAL:
+        return _decimal_truncate_divide(number1, number2)
     return math.trunc(number1 / number2)
 
 
@@ -124,8 +237,7 @@ def _number_mod(args: list[Any], ctx: _Ctx) -> Any:
     # Number.Mod(-7, 3) is -1 in real PQ, NOT the 2 that -7 % 3 gives in
     # Python. math.fmod matches PQ's truncation convention exactly.
     _arity("Number.Mod", args, 2, 3)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("Number.Mod: precision argument")
+    precision = _resolve_precision("Number.Mod", args[2] if len(args) == 3 else None)
     number, divisor = args[0], args[1]
     if number is None or divisor is None:
         return None
@@ -133,7 +245,10 @@ def _number_mod(args: list[Any], ctx: _Ctx) -> Any:
     divisor = _require_number(divisor)
     if divisor == 0:
         raise EvalError("Number.Mod: division by zero")
-    result = math.fmod(number, divisor)
+    if precision == _PRECISION_DECIMAL:
+        result = _decimal_truncate_mod(number, divisor)
+    else:
+        result = math.fmod(number, divisor)
     if isinstance(number, int) and isinstance(divisor, int):
         return int(result)
     return result
@@ -283,26 +398,198 @@ def _number_round_toward_zero(args: list[Any], ctx: _Ctx) -> Any:
     return _round_scaled(value, digits, math.trunc)
 
 
+def _check_number_culture(name: str, culture: Any) -> None:
+    # `null` passes (treated as en-US, per this module's docstring note
+    # above); any other tag must name en-US/en. Shared with _datetime.py and
+    # _type.py - it was copied into two modules before, which is how a rule
+    # like this drifts.
+    _check_invariant_culture(name, culture, "culture-specific number formatting")
+
+
+def _require_whole_number(name: str, letter: str, value: int | float) -> int:
+    # "D" and "X" are documented as integral-types-only in real .NET
+    # (a fractional Double raises a FormatException there too) - this is a
+    # genuine data/format mismatch, not a missing feature, so it is an
+    # EvalError rather than an UnsupportedError.
+    if isinstance(value, float) and not value.is_integer():
+        raise EvalError(
+            f"{name}: format {letter!r} requires a whole number, got {value!r}"
+        )
+    return int(value)
+
+
+def _render_decimal_format(name: str, value: int | float, precision: int | None) -> str:
+    n = _require_whole_number(name, "D", value)
+    negative = n < 0
+    digits = str(abs(n))
+    if precision is not None and len(digits) < precision:
+        digits = digits.zfill(precision)
+    return f"-{digits}" if negative else digits
+
+
+def _render_fixed_format(value: int | float, precision: int | None) -> str:
+    return f"{value:.{2 if precision is None else precision}f}"
+
+
+def _render_grouped_format(value: int | float, precision: int | None) -> str:
+    return f"{value:,.{2 if precision is None else precision}f}"
+
+
+def _render_scientific_format(value: int | float, precision: int | None) -> str:
+    # .NET's "E" always uses a MINIMUM of 3 exponent digits (verified
+    # against the docs' own worked example: 1052.0329112756 ("E", en-US)
+    # -> "1.052033E+003"). Python's own `E` presentation type only pads to
+    # 2, so the exponent is re-padded by hand after formatting.
+    p = 6 if precision is None else precision
+    text = f"{float(value):.{p}E}"
+    mantissa, exp_part = text.split("E")
+    sign, digits = exp_part[0], exp_part[1:]
+    return f"{mantissa}E{sign}{digits.zfill(3)}"
+
+
+def _render_percent_format(value: int | float, precision: int | None) -> str:
+    p = 2 if precision is None else precision
+    return f"{value * 100:,.{p}f} %"
+
+
+def _render_currency_format(value: int | float, precision: int | None) -> str:
+    # en-US's default CurrencyNegativePattern wraps negative amounts in
+    # parentheses rather than a leading minus sign - verified against the
+    # docs' own worked example: -123.456 ("C3", en-US) -> "($123.456)".
+    p = 2 if precision is None else precision
+    negative = value < 0
+    body = f"${abs(value):,.{p}f}"
+    return f"({body})" if negative else body
+
+
+def _render_hex_format(name: str, value: int | float, precision: int | None) -> str:
+    n = _require_whole_number(name, "X", value)
+    if n < 0:
+        # Real .NET two's-complements a negative integral value to its
+        # declared bit width (sbyte/short/int/long all give a DIFFERENT
+        # hex string for -1). pqtools' M numbers carry no such width, so
+        # there is no faithful choice here - refuse by name rather than
+        # picking one arbitrarily.
+        raise UnsupportedError(
+            f"{name}: format 'X' on a negative number (the two's-complement "
+            "bit width is ambiguous for pqtools' arbitrary-precision numbers)"
+        )
+    digits = format(n, "X")
+    if precision is not None and len(digits) < precision:
+        digits = digits.zfill(precision)
+    return digits
+
+
+def _general_digits_and_exponent(
+    magnitude: float, precision: int | None
+) -> tuple[str, int]:
+    """Significant digits (as text) and the base-10 scientific exponent.
+
+    `precision=None` uses the shortest decimal string that round-trips back
+    to `magnitude` - Python's own `repr()` for a float already computes
+    exactly that, the same guarantee .NET Core 3.0+'s Double formatting
+    makes for a bare "G" (see the docstring note in _number_to_text).
+    """
+    base = decimal.Decimal(repr(magnitude))
+    if precision is not None:
+        with decimal.localcontext() as ctx:
+            ctx.prec = max(precision, 1)
+            ctx.rounding = decimal.ROUND_HALF_EVEN
+            base = +base
+    _sign, digit_tuple, exponent = base.as_tuple()
+    assert isinstance(exponent, int)  # `magnitude` is always finite here
+    digits = list(digit_tuple)
+    # "trailing zeros after the decimal point are omitted" (docs) - true of
+    # both the fixed and scientific renderings, so strip them once, here,
+    # on the shared digit sequence rather than in each render branch.
+    while len(digits) > 1 and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    return "".join(str(d) for d in digits), len(digits) - 1 + exponent
+
+
+def _render_general_format(value: int | float, precision: int | None) -> str:
+    # General ("G") format specifier - see the docs section quoted in the
+    # module notes: fixed-point when the scientific exponent is in
+    # (-5, precision), otherwise scientific with a MINIMUM of 2 exponent
+    # digits (not 3, unlike "E" - verified, this is a documented difference
+    # between the two format specifiers).
+    if value == 0:
+        return "0"
+    negative = value < 0
+    digit_str, exponent = _general_digits_and_exponent(abs(float(value)), precision)
+    p = len(digit_str) if precision is None else precision
+    if -5 < exponent < p:
+        if exponent >= 0:
+            int_len = exponent + 1
+            if len(digit_str) <= int_len:
+                text = digit_str.ljust(int_len, "0")
+            else:
+                text = f"{digit_str[:int_len]}.{digit_str[int_len:]}"
+        else:
+            text = f"0.{'0' * (-exponent - 1)}{digit_str}"
+    else:
+        mantissa = (
+            digit_str if len(digit_str) == 1 else f"{digit_str[0]}.{digit_str[1:]}"
+        )
+        sign = "+" if exponent >= 0 else "-"
+        text = f"{mantissa}E{sign}{str(abs(exponent)).zfill(2)}"
+    return f"-{text}" if negative else text
+
+
 def _number_to_text(args: list[Any], ctx: _Ctx) -> Any:
-    # Number.ToText(number, optional format, optional culture). Full
-    # .NET-style custom/standard numeric format strings are a large
-    # surface; only the no-format default and the common "F<n>" fixed-
-    # decimal format are implemented. Anything else raises UnsupportedError
-    # naming the format rather than approximating it.
+    # Number.ToText(number, optional format, optional culture). `format` is
+    # a .NET standard numeric format string (a single letter + optional
+    # precision digits, e.g. "F2", "N", "X4") - the custom-picture surface
+    # ("#,##0.00" and friends) is out of scope and still refuses by name.
+    #
+    # NaN/Infinity render the same way under every standard format in real
+    # .NET (they come from NumberFormatInfo.NaNSymbol/*InfinitySymbol*, not
+    # from the format specifier), so they short-circuit before any format
+    # parsing - this reuses the exact strings the no-format path already
+    # produces, rather than a second, separately-verified rendering.
     _arity("Number.ToText", args, 1, 3)
     value = args[0]
     if value is None:
         return None
     value = _require_number(value)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("Number.ToText: culture argument")
-    if len(args) >= 2 and args[1] is not None:
-        fmt = _require_str(args[1])
-        if fmt[:1] in ("F", "f") and (fmt[1:] == "" or fmt[1:].isdigit()):
-            precision = int(fmt[1:]) if fmt[1:] else 2
-            return f"{value:.{precision}f}"
+    if len(args) == 3:
+        _check_number_culture("Number.ToText", args[2])
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return _format_number(value)
+    if len(args) < 2 or args[1] is None:
+        return _format_number(value)
+    fmt = _require_str(args[1])
+    match = _STANDARD_FORMAT_RE.match(fmt)
+    if match is None:
         raise UnsupportedError(f"Number.ToText: format {fmt!r}")
-    return _format_number(value)
+    letter, digit_text = match.groups()
+    precision = int(digit_text) if digit_text else None
+    upper = letter.upper()
+    if letter != upper and upper not in _CASE_INSENSITIVE_FORMAT_LETTERS:
+        # E/G/X: case picks a genuinely different (unverified) rendering
+        # path in real .NET - see _CASE_INSENSITIVE_FORMAT_LETTERS.
+        raise UnsupportedError(f"Number.ToText: format {fmt!r}")
+    if upper == "D":
+        return _render_decimal_format("Number.ToText", value, precision)
+    if upper == "F":
+        return _render_fixed_format(value, precision)
+    if upper == "N":
+        return _render_grouped_format(value, precision)
+    if upper == "E":
+        return _render_scientific_format(value, precision)
+    if upper == "P":
+        return _render_percent_format(value, precision)
+    if upper == "C":
+        return _render_currency_format(value, precision)
+    if upper == "X":
+        return _render_hex_format("Number.ToText", value, precision)
+    if upper == "G":
+        # "the precision specifier is omitted OR ZERO" both mean default -
+        # unlike every other format above, where an explicit 0 is a real,
+        # honoured precision (e.g. "F0" really does mean zero decimals).
+        return _render_general_format(value, None if precision == 0 else precision)
+    raise UnsupportedError(f"Number.ToText: format {fmt!r}")
 
 
 def _number_is_nan(args: list[Any], ctx: _Ctx) -> Any:
@@ -393,6 +680,8 @@ def _number_random_between(args: list[Any], ctx: _Ctx) -> Any:
 # nowhere else - no central file to edit, and no merge conflict when several
 # families are implemented in parallel.
 BUILTINS: dict[str, Any] = {
+    "Number.FromText": _from_text("Number.FromText", _number_from),
+    "Logical.FromText": _from_text("Logical.FromText", _logical_from),
     "Number.From": _number_from,
     "Number.Round": _number_round,
     "Number.Abs": _number_abs,
@@ -421,4 +710,6 @@ BUILTINS: dict[str, Any] = {
     "Number.Factorial": _number_factorial,
     "Number.Random": _number_random,
     "Number.RandomBetween": _number_random_between,
+    "Precision.Double": _PRECISION_DOUBLE,
+    "Precision.Decimal": _PRECISION_DECIMAL,
 }

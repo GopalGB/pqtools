@@ -94,6 +94,15 @@ def _record_to_list(args: list[Any], ctx: _Ctx) -> Any:
     return list(_require_record(args[0]).values())
 
 
+def _record_field_values(args: list[Any], ctx: _Ctx) -> Any:
+    # Record.FieldValues(record) as list - "a list of the field values",
+    # in field order (learn.microsoft.com/en-us/powerquery-m/record-fieldvalues).
+    # Same shape as Record.ToList; kept as its own entry because it is the
+    # name the docs (and real queries) actually use.
+    _arity("Record.FieldValues", args, 1)
+    return list(_require_record(args[0]).values())
+
+
 def _record_from_list(args: list[Any], ctx: _Ctx) -> Any:
     # Record.FromList(list, fields) - `fields` can be a list of names or a
     # record type. Record types parse as `TypePrimaryType`/`PrimitiveType`
@@ -284,6 +293,7 @@ BUILTINS: dict[str, Any] = {
     "Record.AddField": _record_add_field,
     "Record.RemoveFields": _record_remove_fields,
     "Record.ToList": _record_to_list,
+    "Record.FieldValues": _record_field_values,
     "Record.FromList": _record_from_list,
     "Record.Combine": _record_combine,
     "Record.SelectFields": _record_select_fields,

@@ -162,17 +162,27 @@ def test_try_otherwise_recovers_from_runtime_error():
 
 def test_try_otherwise_never_swallows_unsupported_error():
     with pytest.raises(UnsupportedError):
-        evaluate('try Web.Contents("x") otherwise -1')
+        evaluate("try SharePoint.Files(1) otherwise -1")
 
 
-def test_try_without_otherwise_is_unsupported():
-    with pytest.raises(UnsupportedError, match="try without otherwise"):
-        evaluate("try 1 / 0")
+def test_try_otherwise_never_swallows_a_policy_block():
+    # The dangerous version of the same bug: if `otherwise` catches a blocked
+    # connector, the caller silently receives the fallback value and never
+    # learns the fetch did not happen.
+    from pqtools.io import IOBlockedError
+
+    with pytest.raises(IOBlockedError):
+        evaluate('try Web.Contents("https://example.com") otherwise -1')
 
 
-def test_try_catch_is_unsupported():
-    with pytest.raises(UnsupportedError, match="catch"):
-        evaluate("try 1 / 0 catch (e) => 0")
+def test_bare_try_returns_the_error_record():
+    # Was refused until 0.9.0. `try x` is a value in M - the record that says
+    # whether x failed - and without it every caller has to invent a sentinel.
+    assert evaluate("try 1 + 1") == {"HasError": False, "Value": 2}
+
+
+def test_try_catch_runs_the_handler_with_the_error():
+    assert evaluate('try ("a" + 1) catch (e) => e[Reason]') == "Expression.Error"
 
 
 def test_implicit_field_shorthand_outside_each_errors():
@@ -233,29 +243,18 @@ def test_bind_prepopulates_top_level_scope_even_without_a_let():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "Web.Contents",
-        "Sql.Database",
-        "Excel.Workbook",
-        "SharePoint.Files",
-        "Odbc.DataSource",
-        "PostgreSQL.Database",
-        "Folder.Files",
-    ],
-)
-def test_connectors_raise_unsupported_naming_the_fabric_or_pqtest_host(name):
-    # File.Contents and Csv.Document deliberately left this list: they are
-    # implemented natively now (builtins/_connectors.py). What remains needs
-    # credentials, a network identity, or query folding into a remote engine -
-    # things no local approximation can honestly stand in for.
+@pytest.mark.parametrize("name", ["SharePoint.Files", "SharePoint.Tables"])
+def test_auth_bound_connectors_still_name_the_host(name):
+    # Web.Contents, Sql.Database, Excel.Workbook, Folder.Files and the DB
+    # family left this list in 0.9.0: they are implemented natively now
+    # (builtins/_sources.py) behind a permission gate. SharePoint remains,
+    # because completing its OAuth flow would mean holding the user's tokens.
     with pytest.raises(UnsupportedError, match="Fabric or PQTest"):
         evaluate(f"{name}(1)")
 
 
-def test_hash_shared_is_unsupported():
-    with pytest.raises(UnsupportedError, match="#shared"):
+def test_hash_shared_names_what_it_needs():
+    with pytest.raises(UnsupportedError, match="section document"):
         evaluate("#shared")
 
 
@@ -294,14 +293,19 @@ def test_type_value_evaluates_to_a_type():
     assert evaluate("type text") is not evaluate("type number")
 
 
-def test_parameter_type_ascription_is_unsupported():
-    with pytest.raises(UnsupportedError, match="type ascription"):
-        evaluate("((x as number) => x)(1)")
+def test_parameter_type_ascription_is_checked_not_ignored():
+    # Accepting the declaration and then not enforcing it would be worse than
+    # refusing it: a type error the author expected to catch becomes a wrong
+    # value further down the chain.
+    assert evaluate("((x as number) => x)(1)") == 1
+    with pytest.raises(EvalError, match="expected number, got text"):
+        evaluate('((x as number) => x)("a")')
 
 
-def test_function_return_type_ascription_is_unsupported():
-    with pytest.raises(UnsupportedError, match="type ascription"):
-        evaluate("((x) as number => x)(1)")
+def test_function_return_type_ascription_is_checked_not_ignored():
+    assert evaluate("((x) as number => x)(1)") == 1
+    with pytest.raises(EvalError, match="return value: expected text"):
+        evaluate("((x) as text => x)(1)")
 
 
 def test_field_projection_is_unsupported():
@@ -315,22 +319,22 @@ def test_unknown_identifier_is_unsupported():
 
 
 def test_unknown_builtin_style_identifier_is_unsupported():
-    """Uses a CONNECTOR as the example of a name that will never resolve.
+    """A name that is not in the registry must say so, not resolve to null.
 
-    This previously used `Table.AddIndexColumn`, which 0.5.0 implemented - so the
-    test broke for the good reason that the gap it relied on had closed. A
-    connector is the durable choice: running one needs Microsoft's Mashup Engine,
-    so it is out of scope permanently by design, not merely unimplemented yet.
+    The example used to be a connector, on the reasoning that connectors were
+    permanently out of scope. 0.9.0 implemented them, so that choice broke -
+    twice now, since it had already broken once when Table.AddIndexColumn was
+    implemented. A fictional namespace cannot be overtaken by a later release.
     """
-    with pytest.raises(UnsupportedError, match="Sql.Database"):
-        evaluate('Sql.Database("server", "db")')
+    with pytest.raises(UnsupportedError, match="unknown identifier"):
+        evaluate("Nonexistent.Function(1)")
 
 
-def test_outer_scope_at_identifier_is_unsupported():
-    # Lazy, so the binding must actually be forced (referenced from the
-    # body) for the @A inside it to ever be evaluated.
-    with pytest.raises(UnsupportedError, match="outer-scope"):
-        evaluate("let A = @A in A")
+def test_outer_scope_at_identifier_resolves_the_enclosing_binding():
+    # `@name` exists to name the enclosing binding when a record field would
+    # shadow it. Scopes here are already lexical, so the two spellings agree.
+    source = "let f = (n) => if n <= 1 then 1 else n * @f(n - 1) in f(5)"
+    assert evaluate(source) == 120
 
 
 def test_section_document_points_at_member_flag():

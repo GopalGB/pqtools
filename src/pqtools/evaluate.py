@@ -37,8 +37,9 @@ from .builtins._shared import (
     _require_number,
     _type_name,
 )
-from .builtins._type import _PRIMITIVE_TYPES, _MType
+from .builtins._type import _PRIMITIVE_TYPES, _classify, _MType
 from .core import ast as _parse_ast
+from .io import DENY_ALL, IOBlockedError, IOPolicy
 
 _MAX_STEPS_DEFAULT = 1_000_000
 
@@ -85,12 +86,25 @@ class _Thunk:
 class _Lambda:
     """A closure created by ``each ...`` or ``(params) => ...``."""
 
-    __slots__ = ("params", "body", "scope")
+    __slots__ = ("params", "body", "scope", "param_types", "return_type")
 
-    def __init__(self, params: list[str], body: dict[str, Any], scope: _Scope) -> None:
+    def __init__(
+        self,
+        params: list[str],
+        body: dict[str, Any],
+        scope: _Scope,
+        param_types: list[str | None] | None = None,
+        return_type: str | None = None,
+    ) -> None:
         self.params = params
         self.body = body
         self.scope = scope
+        # Declared types are enforced, not decorative. M raises when an
+        # argument does not match, and a query that relies on that error is
+        # relying on a real guarantee - accepting anything here would turn a
+        # caught type error into a wrong result further down the chain.
+        self.param_types = param_types or [None] * len(params)
+        self.return_type = return_type
 
 
 class _Budget:
@@ -124,17 +138,19 @@ class _Ctx:
     call the bare ``_invoke(callee, args, ctx)``.
     """
 
-    __slots__ = ("bindings", "budget", "invoke")
+    __slots__ = ("bindings", "budget", "invoke", "io")
 
     def __init__(
         self,
         bindings: dict[str, Any],
         budget: _Budget,
         invoke: Callable[[Any, list[Any], _Ctx], Any],
+        io: IOPolicy = DENY_ALL,
     ) -> None:
         self.bindings = bindings
         self.budget = budget
         self.invoke = invoke
+        self.io = io
 
 
 # Re-exported from _shared so callers have one import site for the evaluator's
@@ -147,6 +163,7 @@ def evaluate(
     *,
     bindings: dict[str, Any] | None = None,
     max_steps: int = _MAX_STEPS_DEFAULT,
+    io: IOPolicy = DENY_ALL,
 ) -> Any:
     """Evaluate an M transformation chain against caller-supplied data.
 
@@ -175,7 +192,7 @@ def evaluate(
     # (e.g. `Table.RowCount(Source)` with no enclosing `let Source = ...`)
     # must still resolve it.
     scope.vars.update(resolved_bindings)
-    ctx = _Ctx(resolved_bindings, _Budget(max_steps), _invoke)
+    ctx = _Ctx(resolved_bindings, _Budget(max_steps), _invoke, io)
     return _eval(tree, scope, ctx)
 
 
@@ -241,10 +258,71 @@ def _binop_parts(node: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, A
 # --------------------------------------------------------------------------
 
 
+# M's character escapes. `""` is handled separately (it is a doubled
+# delimiter, not a `#(...)` sequence).
+_TEXT_ESCAPES = {"cr": "\r", "lf": "\n", "tab": "\t", "#": "#"}
+
+
+def _decode_escape(inner: str, token: str) -> str:
+    """Decode the body of one ``#(...)`` sequence.
+
+    Comma-separated, so `#(cr,lf)` is one sequence producing two characters -
+    which is how every M query that wants a Windows line ending writes it.
+    """
+    if not inner:
+        raise EvalError(f"empty escape sequence #() in text literal {token}")
+    out = []
+    for item in inner.split(","):
+        if item in _TEXT_ESCAPES:
+            out.append(_TEXT_ESCAPES[item])
+            continue
+        if len(item) in (4, 8) and all(c in "0123456789abcdefABCDEF" for c in item):
+            code = int(item, 16)
+            if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
+                raise EvalError(
+                    f"escape #({item}) is not a Unicode code point, in {token}"
+                )
+            out.append(chr(code))
+            continue
+        raise EvalError(
+            f"unknown escape #({item}) in text literal {token}: expected cr, lf, "
+            "tab, #, or 4 or 8 hex digits"
+        )
+    return "".join(out)
+
+
 def _parse_text_literal(token: str) -> str:
+    """Decode an M text literal, escapes included.
+
+    Until 0.9.0 this returned the body with only `""` collapsed, so `#(lf)`
+    arrived downstream as the six literal characters `#(lf)`. That is not a
+    cosmetic gap: `Csv.Document(text, [Delimiter=","], "#(lf)")` and
+    `Text.Split(x, "#(lf)")` are how M queries name a line feed, so the split
+    silently never matched and the query returned one long row instead of
+    failing. Same shape as the `#table` gap - an idiom every real query uses
+    and no fixture did.
+    """
     if len(token) < 2 or token[0] != '"' or token[-1] != '"':
         raise EvalError("malformed text literal")
-    return token[1:-1].replace('""', '"')
+    body = token[1:-1]
+    out: list[str] = []
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == '"' and body[index + 1 : index + 2] == '"':
+            out.append('"')
+            index += 2
+        elif char == "#" and body[index + 1 : index + 2] == "(":
+            close = body.find(")", index + 2)
+            if close == -1:
+                raise EvalError(f"unterminated escape sequence in {token}")
+            out.append(_decode_escape(body[index + 2 : close], token))
+            index = close + 1
+        else:
+            # A bare `#` is an ordinary character in M unless `(` follows it.
+            out.append(char)
+            index += 1
+    return "".join(out)
 
 
 def _eval_literal(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -320,20 +398,76 @@ def _eval_list(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     return [_eval(_semantic(csv)[0], scope, ctx) for csv in _children(array_wrapper)]
 
 
+def _ascribed_type_name(node: dict[str, Any]) -> str | None:
+    """The primitive type named by an `as <type>` clause.
+
+    The parser models this as a PrimitiveType node holding the type name, and
+    marks `as nullable T` with a "nullable" Constant beside it. A nullable
+    ascription returns None - "declared but not checked" - because the only
+    thing it changes is that null is allowed, and this checker's whole job on
+    a nullable is therefore to stay out of the way.
+
+    None is also the answer for a type this evaluator does not model (a table
+    type, a function type). Refusing the function outright would be worse: a
+    parameter list is not the place to lose a query over a type the checker
+    cannot yet read.
+    """
+    for candidate in _descendants(node, "Constant"):
+        if str(candidate.get("value", "")) == "nullable":
+            return None
+    for candidate in _descendants(node, "PrimitiveType"):
+        name = str(candidate.get("value", ""))
+        if name in _PRIMITIVE_TYPES:
+            return name
+    if node.get("kind") == "PrimitiveType":
+        name = str(node.get("value", ""))
+        if name in _PRIMITIVE_TYPES:
+            return name
+    return None
+
+
+def _check_ascription(value: Any, declared: str | None, what: str) -> Any:
+    """Enforce an `as <type>` declaration, as M does at call time.
+
+    M raises when an argument does not match its declared type, and a query
+    can legitimately rely on that error. Accepting anything here would turn a
+    type error the author expected to catch into a wrong value further down.
+    """
+    if declared is None or declared in {"any", "none"}:
+        return value
+    if value is None:
+        raise EvalError(f"{what}: expected {declared}, got null")
+    actual = _classify(value)
+    if actual is None:
+        # Lists, records, tables and functions share one runtime shape here,
+        # so there is nothing to check against. Silence beats a wrong verdict.
+        return value
+    if actual != declared:
+        raise EvalError(f"{what}: expected {declared}, got {actual}")
+    return value
+
+
 def _eval_function(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     parts = _semantic(node)
+    return_type: str | None = None
     if len(parts) == 3:
-        raise UnsupportedError("type ascription (function return type)")
-    parameter_list, body = parts
+        parameter_list, return_type_node, body = parts
+        return_type = _ascribed_type_name(return_type_node)
+    else:
+        parameter_list, body = parts
     (params_wrapper,) = _semantic(parameter_list)
     names: list[str] = []
+    types: list[str | None] = []
     for csv in _children(params_wrapper):
         (parameter,) = _semantic(csv)
         parameter_children = _semantic(parameter)
-        if len(parameter_children) != 1:
-            raise UnsupportedError("type ascription (parameter type)")
         names.append(_identifier_text(parameter_children[0]))
-    return _Lambda(names, body, scope)
+        types.append(
+            _ascribed_type_name(parameter_children[1])
+            if len(parameter_children) > 1
+            else None
+        )
+    return _Lambda(names, body, scope, types, return_type)
 
 
 def _eval_each(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -423,13 +557,54 @@ def _invoke(callee: Any, args: list[Any], ctx: _Ctx) -> Any:
                 f"function expects {len(callee.params)} argument(s), got {len(args)}"
             )
         child = callee.scope.child()
-        for name, value in zip(callee.params, args, strict=True):
-            child.vars[name] = value
-        return _eval(callee.body, child, ctx)
+        for name, value, declared in zip(
+            callee.params, args, callee.param_types, strict=True
+        ):
+            child.vars[name] = _check_ascription(value, declared, f"argument {name!r}")
+        return _check_ascription(
+            _eval(callee.body, child, ctx), callee.return_type, "return value"
+        )
     if callable(callee):
         result: Any = callee(args, ctx)
         return result
     raise EvalError(f"{_type_name(callee)} value is not a function")
+
+
+def _match_row(base: list[Any], key: dict[str, Any], optional: bool) -> Any:
+    """``table{[Field=value, ...]}`` - select the one row matching every field.
+
+    This is how Power Query's own generated M navigates, and it is not a
+    corner case: every query the Excel and Power BI UI writes against a
+    workbook opens with
+
+        Source = Excel.Workbook(File.Contents(path), null, true),
+        Sheet  = Source{[Item="Colors", Kind="Sheet"]}[Data]
+
+    Until now the selector reached `_require_int` and the query died with
+    "expected a number, got record" - an error about the wrong thing, on the
+    second line of nearly every real workbook query in existence. The suite
+    missed it because fixtures written by hand reach for Table.SelectRows.
+
+    A key matching several rows is an error even under `?`. `?` means "this
+    key may be absent", not "pick one of the matches for me"; guessing there
+    would return a different row as the data grows.
+    """
+    matches = [
+        row
+        for row in base
+        if isinstance(row, dict)
+        and all(
+            name in row and _m_equal(row[name], value) for name, value in key.items()
+        )
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    rendered = ", ".join(f"{name}={value!r}" for name, value in key.items())
+    if not matches:
+        if optional:
+            return None
+        raise EvalError(f"no row matches [{rendered}]")
+    raise EvalError(f"{len(matches)} rows match [{rendered}], expected exactly one")
 
 
 def _list_index(base: Any, index: Any, optional: bool) -> Any:
@@ -437,6 +612,8 @@ def _list_index(base: Any, index: Any, optional: bool) -> Any:
         if optional:
             return None
         raise EvalError(f"cannot index into a {_type_name(base)} value")
+    if isinstance(index, dict):
+        return _match_row(base, index, optional)
     position = _require_int(index)
     if -len(base) <= position < len(base):
         return base[position]
@@ -502,23 +679,65 @@ def _eval_recursive(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     return base
 
 
+def _error_record(error: EvalError) -> dict[str, Any]:
+    """M's error record: what `try` exposes and what `catch` receives.
+
+    Power Query builds this from the failing operation. The fields are fixed
+    by the language (Reason/Message/Detail), so code that reads
+    ``[Message]`` off a caught error keeps working.
+    """
+    return {
+        "Reason": "Expression.Error",
+        "Message": str(error),
+        "Detail": None,
+    }
+
+
 def _eval_try(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     handler_kind = node.get("handlerKind")
     parts = _semantic(node)
+
     if len(parts) == 1:
-        raise UnsupportedError("try without otherwise")
+        # Bare `try x` is a value, not a statement: a record saying whether
+        # the expression failed. Refusing it used to force every caller into
+        # `try x otherwise <sentinel>`, which cannot distinguish a real
+        # sentinel value in the data from a failure.
+        try:
+            return {"HasError": False, "Value": _eval(parts[0], scope, ctx)}
+        except (UnsupportedError, IOBlockedError):
+            raise
+        except EvalError as error:
+            return {"HasError": True, "Error": _error_record(error)}
+
     protected, handler = parts
-    if handler_kind == "Catch":
-        raise UnsupportedError("try ... catch ...")
-    if handler_kind != "Otherwise":
+    if handler_kind not in {"Otherwise", "Catch"}:
         raise UnsupportedError(f"try handler: {handler_kind}")
-    (otherwise_expr,) = _semantic(handler)
+
     try:
         return _eval(protected, scope, ctx)
-    except UnsupportedError:
+    except (UnsupportedError, IOBlockedError):
+        # Neither is a data error, so neither may be swallowed. `try ...
+        # otherwise 0` around a blocked Web.Contents would hand back 0 and
+        # never mention that the connector was refused - the user would read
+        # a policy decision as a value. IOBlockedError does not derive from
+        # EvalError today, so this is belt and braces, but the property is
+        # too important to leave resting on a base-class choice.
         raise
-    except EvalError:
-        return _eval(otherwise_expr, scope, ctx)
+    except EvalError as error:
+        if handler_kind == "Otherwise":
+            (otherwise_expr,) = _semantic(handler)
+            return _eval(otherwise_expr, scope, ctx)
+        # Catch: the handler is a function of the error record. M allows the
+        # zero-argument form too, for a handler that ignores the detail.
+        (function_node,) = _semantic(handler)
+        function = _eval(function_node, scope, ctx)
+        record = _error_record(error)
+        try:
+            return ctx.invoke(function, [record], ctx)
+        except EvalError as handler_error:
+            if "argument" not in str(handler_error):
+                raise
+            return ctx.invoke(function, [], ctx)
 
 
 # --------------------------------------------------------------------------
@@ -660,20 +879,15 @@ def _eval_unary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 # remote engine. File.Contents and Csv.Document used to sit here too - they
 # were removed once implemented natively (builtins/_connectors.py), because
 # reading a local CSV needs none of the above.
+# Connectors that are still refused. Everything previously in this set that
+# pqtools can actually open now lives in builtins/_sources.py; what remains
+# needs an auth flow (OAuth device code, tenant consent) that a library cannot
+# complete without becoming a credential store.
 _CONNECTOR_NAMES = frozenset(
     {
-        "Web.Contents",
-        "Sql.Database",
-        "Excel.Workbook",
-        "OData.Feed",
         "SharePoint.Files",
         "SharePoint.Tables",
-        "Odbc.DataSource",
-        "Oracle.Database",
-        "PostgreSQL.Database",
-        "MySQL.Database",
-        "Folder.Files",
-        "Folder.Contents",
+        "SharePoint.Contents",
     }
 )
 
@@ -689,12 +903,11 @@ def _is_connector(name: str) -> bool:
 
 def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     children = _children(node)
-    if len(children) != 1:
-        # The `@name` outer-scope-reference form: an extra leading Constant
-        # ("@") child. Only meaningful for recursive record self-reference,
-        # which this evaluator does not implement.
-        raise UnsupportedError("@ outer-scope identifier operator")
-    name = _identifier_text(children[0])
+    # `@name` carries an extra leading Constant ("@"). The operator exists to
+    # name the enclosing binding when a record field would otherwise shadow
+    # it; this evaluator's scopes are already lexical, so the two spellings
+    # resolve identically and `@f` inside a recursive f simply finds f.
+    name = _identifier_text(children[-1])
     found, value = scope.lookup(name)
     if found:
         return _force(value, ctx)

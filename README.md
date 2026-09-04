@@ -1,26 +1,29 @@
 # pqtools - run, lint and format Power Query M without Power BI
 
-**pqtools runs a Power Query `.pq` query end to end on your own CSV files, in
-pure Python, with no Power BI, no Excel and no dependencies.** It is also a
-linter, a formatter and a safe renamer for M source - `ruff` and `black` for
-Power Query - and it reads the queries already stored inside `.pbix`, `.pbit`
-and `.xlsx` files.
+**pqtools runs a Power Query `.pq` query end to end - fetching its own data
+from a CSV, a web URL or a SQL database - in pure Python, with no Power BI and
+no Excel.** It is also a linter, a formatter and a safe renamer for M source -
+`ruff` and `black` for Power Query - and it reads, edits and writes the queries
+stored inside `.pbix`, `.pbit` and `.xlsx` files.
 
 ```bash
 pip install pqtools
-pq list  report.pbix         # what queries are in this file?
-pq eval  report.pbix --member Sales   # run one of them
-pq eval  report.pq           # or run a .pq directly
-pq format report.pq          # format it
-pq check report.pq           # lint it in CI
+pq list  report.pbix                    # what queries are in this file?
+pq eval  report.pbix --member Sales     # run one of them
+pq eval  report.pq                      # or run a .pq directly
+pq eval  report.pq --allow-net          # ...including its Web.Contents source
+pq format report.pq                     # format it
+pq check  report.pq                     # lint it in CI
 ```
 
 What it is for, in one line each:
 
-- **Run a query offline.** Paste a query out of Power Query's Advanced Editor.
-  If its source is a local CSV, `pq eval` runs the whole thing - `Csv.Document`,
-  `Table.PromoteHeaders`, type conversion, filters, `Table.Group`, joins, pivots
-  - and prints JSON or CSV.
+- **Run a real query, source and all.** Paste a query out of Power Query's
+  Advanced Editor and `pq eval` runs the whole thing - `Csv.Document`,
+  `Web.Contents`, `Excel.Workbook`, `Sql.Database`, `Table.PromoteHeaders`,
+  type conversion, filters, `Table.Group`, joins, pivots - and prints JSON or
+  CSV. Network and database sources are off until you pass `--allow-net` /
+  `--allow-db`, because the query names the destination, not you.
 - **Lint and format M in CI.** `pq check` and `pq format` give Power Query the
   code-review tooling every other language already has. Exit codes are CI-shaped.
 - **Test a transformation without opening Power BI.** Swap the real data source
@@ -33,11 +36,13 @@ What it is for, in one line each:
   `pq add` puts a brand-new query in. See
   [Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
 
-> **Unofficial.** Not affiliated with or endorsed by Microsoft. Not a Power Query
-> runtime - `pq eval` runs the transformation chain of a query locally; it never
-> runs an engine-backed connector (`Web.Contents`, `Sql.Database`, ...). Local
-> files it does read: `Csv.Document(File.Contents(...))` runs natively. See
-> [Running M](#running-m) below.
+> **Unofficial.** Not affiliated with or endorsed by Microsoft, and not a
+> reimplementation of the Mashup Engine. What that engine still owns is **query
+> folding** - rewriting a chain of steps into one remote SQL statement so the
+> work happens on the server. pqtools does not fold: it pulls, then transforms
+> locally. Same rows, more bytes over the wire. pandas settles it the same way
+> (`read_sql` then `groupby`), and nobody calls pandas an approximation of SQL.
+> See [Connectors](#connectors) below.
 
 > **Renamed.** Published as `mquery-toolkit` 0.1.0 on 2026-09-03 and renamed the
 > same day to `pqtools` to avoid a CLI name collision with the existing `mquery`
@@ -141,12 +146,23 @@ authoring machine's `C:\Users\...` path - supply the source table yourself:
 pq eval report.pq --bind Source=data.csv
 ```
 
-`--bind NAME=PATH` loads `PATH` (a `.csv`, read as a list of records with
-`csv.DictReader` - every value stays text, or a `.json` file, loaded as
-whatever it holds) and, wherever `NAME` is used as a `let` binding in the
-query, substitutes it directly - the binding's own right-hand-side expression
-(the connector call) is never evaluated, which is exactly what makes it
-irrelevant that `pqtools` cannot run it.
+`--bind NAME=PATH` reads `PATH` into whatever `pqtools` would get from that
+file, then substitutes it wherever `NAME` is used as a `let` binding. The
+binding's own right-hand side - the connector call - is never evaluated, which
+is what makes it irrelevant whether `pqtools` could have run it:
+
+| `PATH` | bound value |
+|---|---|
+| `.csv` | list of records via `csv.DictReader`; every value stays text |
+| `.json` | whatever the document holds |
+| `.xlsx`, `.xlsm`, `.xlsb` | the `Excel.Workbook` navigation table, with `useHeaders` false to match `Excel.Workbook`'s own default - the query calls `Table.PromoteHeaders` itself, exactly as Power Query generates it |
+| anything else | raw bytes, which is what `File.Contents` returns |
+
+So a workbook query authored on someone else's machine runs here unchanged:
+
+```bash
+pq eval report.xlsx --member BaseData --bind Source=./local-copy.xlsx
+```
 
 A **table** is simply `list[dict[str, Any]]` - a list of records. A record is
 `dict[str, Any]`. A list is `list[Any]`. That is the whole data model.
@@ -198,7 +214,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 299 builtins.
+and calling them; `try ... otherwise ...`; and these 354 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -206,90 +222,116 @@ silently drift, which a hand-maintained list can and did:
 ```
 Text.AfterDelimiter Text.At Text.BeforeDelimiter Text.BetweenDelimiters
 Text.Clean Text.Combine Text.Contains Text.End Text.EndsWith Text.From
-Text.Insert Text.Length Text.Lower Text.Middle Text.NewGuid Text.PadEnd
-Text.PadStart Text.PositionOf Text.PositionOfAny Text.Proper Text.Remove
-Text.Repeat Text.Replace Text.Reverse Text.Select Text.Split Text.SplitAny
-Text.Start Text.StartsWith Text.ToList Text.Trim Text.TrimEnd Text.TrimStart
-Text.Type Text.Upper
+Text.FromBinary Text.Insert Text.Length Text.Lower Text.Middle Text.NewGuid
+Text.PadEnd Text.PadStart Text.PositionOf Text.PositionOfAny Text.Proper
+Text.Remove Text.Repeat Text.Replace Text.Reverse Text.Select Text.Split
+Text.SplitAny Text.Start Text.StartsWith Text.ToList Text.Trim Text.TrimEnd
+Text.TrimStart Text.Type Text.Upper
 Number.Abs Number.BitwiseAnd Number.BitwiseOr Number.BitwiseXor Number.Exp
-Number.Factorial Number.From Number.IntegerDivide Number.IsEven Number.IsNaN
-Number.IsOdd Number.Ln Number.Log Number.Log10 Number.Mod Number.Power
-Number.Random Number.RandomBetween Number.Round Number.RoundAwayFromZero
-Number.RoundDown Number.RoundTowardZero Number.RoundUp Number.Sign Number.Sqrt
-Number.ToText Number.Type
+Number.Factorial Number.From Number.FromText Number.IntegerDivide
+Number.IsEven Number.IsNaN Number.IsOdd Number.Ln Number.Log Number.Log10
+Number.Mod Number.Power Number.Random Number.RandomBetween Number.Round
+Number.RoundAwayFromZero Number.RoundDown Number.RoundTowardZero
+Number.RoundUp Number.Sign Number.Sqrt Number.ToText Number.Type
+Logical.From Logical.FromText Logical.Type
 List.Accumulate List.AllTrue List.AnyTrue List.Average List.Buffer
 List.Combine List.Contains List.ContainsAll List.ContainsAny List.Count
 List.Difference List.Distinct List.First List.FirstN List.Generate
 List.InsertRange List.Intersect List.IsEmpty List.Last List.LastN List.Max
-List.Median List.Min List.Mode List.NonNullCount List.Numbers List.Percentile
-List.PositionOf List.Positions List.Range List.RemoveItems List.RemoveNulls
-List.Repeat List.ReplaceValue List.Reverse List.Select List.Skip List.Sort
-List.Split List.StandardDeviation List.Sum List.Transform List.Union List.Zip
+List.Median List.Min List.Mode List.NonNullCount List.Numbers
+List.Percentile List.PositionOf List.PositionOfAny List.Positions List.Range
+List.RemoveItems List.RemoveNulls List.Repeat List.ReplaceValue List.Reverse
+List.Select List.Skip List.Sort List.Split List.StandardDeviation List.Sum
+List.Transform List.Union List.Zip
 Record.AddField Record.Combine Record.Field Record.FieldCount
-Record.FieldNames Record.FieldOrDefault Record.FromList Record.HasFields
-Record.RemoveFields Record.RenameFields Record.ReorderFields
-Record.SelectFields Record.ToList Record.ToTable Record.TransformFields
-Table.AddColumn Table.AddIndexColumn Table.Buffer Table.ColumnCount
-Table.ColumnNames Table.Combine Table.DemoteHeaders Table.Distinct
-Table.DuplicateColumn Table.ExpandListColumn Table.ExpandRecordColumn
-Table.ExpandTableColumn
+Record.FieldNames Record.FieldOrDefault Record.FieldValues Record.FromList
+Record.HasFields Record.RemoveFields Record.RenameFields
+Record.ReorderFields Record.SelectFields Record.ToList Record.ToTable
+Record.TransformFields
+Table.AddColumn Table.AddIndexColumn Table.AlternateRows Table.Buffer
+Table.Column Table.ColumnCount Table.ColumnNames Table.Combine
+Table.Contains Table.DemoteHeaders Table.Distinct Table.DuplicateColumn
+Table.ExpandListColumn Table.ExpandRecordColumn Table.ExpandTableColumn
 Table.FillDown Table.FillUp Table.FirstN Table.FromColumns Table.FromList
-Table.FromRecords Table.FromRows Table.FromValue Table.Group Table.HasColumns
-Table.IsEmpty Table.Join Table.LastN Table.Max Table.Min Table.NestedJoin
-Table.Pivot Table.PromoteHeaders Table.Range Table.RemoveColumns
-Table.RemoveRowsWithErrors Table.RenameColumns Table.Repeat
-Table.ReorderColumns Table.ReplaceErrorValues Table.ReplaceValue
-Table.ReverseRows Table.RowCount Table.SelectColumns Table.SelectDuplicates
-Table.SelectRows Table.SelectRowsWithErrors Table.Skip Table.Sort
-Table.SplitColumn Table.ToColumns
-Table.ToList Table.ToRecords Table.ToRows Table.TransformColumnNames
-Table.TransformColumnTypes Table.TransformColumns Table.Transpose
-Table.Unpivot Table.UnpivotOtherColumns #table
-Csv.Document File.Contents Text.FromBinary Binary.FromText Binary.ToText
-Binary.Decompress Binary.Length BinaryEncoding.Base64 BinaryEncoding.Hex
-Compression.None Compression.Deflate Compression.GZip #binary
+Table.FromRecords Table.FromRows Table.FromValue Table.Group
+Table.HasColumns Table.InsertRows Table.IsEmpty Table.Join Table.LastN
+Table.MatchesAllRows Table.MatchesAnyRows Table.Max Table.Min
+Table.NestedJoin Table.Pivot Table.PositionOf Table.Profile
+Table.PromoteHeaders Table.Range Table.RemoveColumns
+Table.RemoveMatchingRows Table.RemoveRowsWithErrors Table.RenameColumns
+Table.ReorderColumns Table.Repeat Table.ReplaceErrorValues
+Table.ReplaceValue Table.ReverseRows Table.RowCount Table.Schema
+Table.SelectColumns Table.SelectDuplicates Table.SelectRows
+Table.SelectRowsWithErrors Table.Skip Table.Sort Table.SplitAt
+Table.SplitColumn Table.ToColumns Table.ToList Table.ToRecords Table.ToRows
+Table.TransformColumnNames Table.TransformColumnTypes Table.TransformColumns
+Table.Transpose Table.Unpivot Table.UnpivotOtherColumns
+Type.Is
+Value.Compare Value.Equals Value.Is Value.Type
 Date.AddDays Date.AddMonths Date.AddWeeks Date.AddYears Date.Day
 Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.EndOfMonth
-Date.EndOfWeek Date.EndOfYear Date.From Date.IsInCurrentMonth
+Date.EndOfWeek Date.EndOfYear Date.From Date.FromText Date.IsInCurrentMonth
 Date.IsInCurrentYear Date.Month Date.MonthName Date.QuarterOfYear
 Date.StartOfMonth Date.StartOfWeek Date.StartOfYear Date.ToText Date.Type
 Date.WeekOfYear Date.Year
 DateTime.AddZone DateTime.Date DateTime.FixedLocalNow DateTime.From
-DateTime.LocalNow DateTime.Time DateTime.ToText DateTime.Type
-Duration.Days Duration.From Duration.Hours Duration.Minutes Duration.Seconds
-Duration.ToText Duration.TotalDays Duration.TotalHours Duration.TotalMinutes
-Duration.TotalSeconds
-Time.From Time.Hour Time.Minute Time.Second Time.ToText
+DateTime.FromText DateTime.LocalNow DateTime.Time DateTime.ToText
+DateTime.Type
+Time.From Time.FromText Time.Hour Time.Minute Time.Second Time.ToText
+Duration.Days Duration.From Duration.FromText Duration.Hours
+Duration.Minutes Duration.Seconds Duration.ToText Duration.TotalDays
+Duration.TotalHours Duration.TotalMinutes Duration.TotalSeconds
+Csv.Document
+Json.Document Json.FromValue
+Lines.FromBinary Lines.FromText Lines.ToBinary Lines.ToText
+File.Contents
+Folder.Contents Folder.Files
+Excel.Workbook
+Web.Contents
+OData.Feed
+Sql.Database
+Odbc.DataSource Odbc.Query
+PostgreSQL.Database
+MySQL.Database
+Oracle.Database
+Uri.BuildQueryString Uri.Combine Uri.EscapeDataString Uri.Parts
+Uri.UnescapeDataString
+Binary.Buffer Binary.Combine Binary.Decompress Binary.FromText Binary.Length
+Binary.ToText
+BinaryEncoding.Base64 BinaryEncoding.Hex
+Compression.Deflate Compression.GZip Compression.None
+Character.FromNumber Character.ToNumber
+Guid.From
 Splitter.SplitTextByCharacterTransition Splitter.SplitTextByDelimiter
-Splitter.SplitTextByEachDelimiter Splitter.SplitTextByPositions
+Splitter.SplitTextByEachDelimiter Splitter.SplitTextByLengths
+Splitter.SplitTextByPositions
+Combiner.CombineTextByDelimiter Combiner.CombineTextByEachDelimiter
+Combiner.CombineTextByLengths Combiner.CombineTextByPositions
 Replacer.ReplaceText Replacer.ReplaceValue
-Value.Compare Value.Equals Value.Is Value.Type
-Type.Is
-Json.Document
-Logical.From Logical.Type
+Comparer.FromCulture Comparer.Ordinal Comparer.OrdinalIgnoreCase
+Precision.Decimal Precision.Double
 Order.Ascending Order.Descending
-Occurrence.All Occurrence.First Occurrence.Last
-MissingField.Error MissingField.Ignore MissingField.UseNull
-RelativePosition.FromEnd RelativePosition.FromStart
 JoinKind.FullOuter JoinKind.Inner JoinKind.LeftAnti JoinKind.LeftOuter
 JoinKind.RightAnti JoinKind.RightOuter
-GroupKind.Global GroupKind.Local
-Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
-Day.Wednesday
-Any.Type
-Byte.Type
-Currency.Type
-Decimal.Type
-Double.Type
+MissingField.Error MissingField.Ignore MissingField.UseNull
+Occurrence.All Occurrence.First Occurrence.Last
 ExtraValues.Error ExtraValues.Ignore ExtraValues.List
+QuoteStyle.Csv QuoteStyle.None
+GroupKind.Global GroupKind.Local
+Int8.Type
 Int16.Type
 Int32.Type
 Int64.Type
-Int8.Type
-Percentage.Type
-QuoteStyle.Csv QuoteStyle.None
 Single.Type
-#date #datetime #datetimezone #duration #time
+Double.Type
+Decimal.Type
+Currency.Type
+Byte.Type
+Any.Type
+Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
+Day.Wednesday Percentage.Type RelativePosition.FromEnd
+RelativePosition.FromStart
+#binary #date #datetime #datetimezone #duration #table #time
 ```
 
 Also supported: the M **type system** (`type text`, `type date`, `Int64.Type`
@@ -324,15 +366,100 @@ caller either.
 whole transformation chain; for anything that needs a live engine it stops and
 says so, rather than guessing at what that engine would have returned.
 
+## Connectors
+
+A query's `Source` step names where the data comes from. pqtools runs those
+steps rather than making you replace them.
+
+| Source | Status | Needs |
+|---|---|---|
+| `Csv.Document`, `File.Contents`, `Json.Document`, `Lines.*` | works | nothing |
+| `Folder.Files`, `Folder.Contents` | works | nothing |
+| `Excel.Workbook` | works | `pip install 'pqtools[excel]'` |
+| `Web.Contents`, `OData.Feed` | works | `--allow-net` |
+| `Sql.Database`, `Odbc.Query`, `Odbc.DataSource` | works | `--allow-db` + `pqtools[sql]` |
+| `PostgreSQL.Database` | works | `--allow-db` + `pqtools[postgres]` |
+| `MySQL.Database` | works | `--allow-db` + `pqtools[mysql]` |
+| `Oracle.Database` | works | `--allow-db` + `pqtools[oracle]` |
+| `SharePoint.*` | refuses, by name | - |
+
+Drivers are optional extras, the way pandas keeps psycopg and SQLAlchemy
+optional. `pip install 'pqtools[all]'` gets the lot.
+
+```bash
+# the pandas equivalent of pd.read_csv(url).groupby(...)
+pq eval titanic.pq --allow-net --format csv
+```
+
+```
+let
+    Source   = Csv.Document(Web.Contents("https://.../titanic.csv")),
+    Promoted = Table.PromoteHeaders(Source),
+    Adults   = Table.SelectRows(Promoted, each [Age] <> "" and
+                                Number.From([Age]) >= 18),
+    Grouped  = Table.Group(Adults, {"Pclass"},
+                 {{"Adults", each Table.RowCount(_), Int64.Type}})
+in
+    Grouped
+```
+
+**SharePoint is the one that still refuses.** Completing its OAuth flow would
+mean holding your tokens, which is a different product. It raises an error
+naming itself rather than returning something plausible.
+
+### Why network and database access are off by default
+
+pandas never has to ask this question: you type `read_sql` yourself, so the
+destination is always yours. Here **the query names the destination**, and the
+query often came from a workbook somebody else wrote. Running it unasked would
+make `pq eval report.pbix` an SSRF primitive and, with a URL built by string
+concatenation, an exfiltration one.
+
+So:
+
+- `--allow-net` permits HTTP(S). `--allow-db` permits database connections.
+- Even with `--allow-net`, **loopback, private and link-local addresses stay
+  blocked**. `169.254.169.254` is the cloud instance-metadata endpoint on AWS,
+  GCP and Azure; reading it hands over the host's credentials. `--allow-private-net`
+  lifts that when you actually mean to reach an intranet.
+- `--allow-host HOST` narrows a run to named hosts.
+- Non-HTTP schemes never pass the network gate, so `file://` cannot turn a
+  fetch into a local-file read.
+- `try ... otherwise` and `try ... catch` **never swallow a blocked connector**.
+  A permission decision must not arrive at the caller disguised as a value.
+
+From Python the same policy is an argument:
+
+```python
+from pqtools import evaluate
+from pqtools.io import IOPolicy
+
+evaluate(source, io=IOPolicy(allow_net=True, hosts=frozenset({"api.example.com"})))
+```
+
+Credentials come from the environment (`PQTOOLS_SQL_USER`, `PQTOOLS_SQL_PASSWORD`,
+`PQTOOLS_PG_*`, `PQTOOLS_MYSQL_*`, `PQTOOLS_ORACLE_*`) rather than from the M
+file, because a password written into a query gets committed.
+
+### What is still not folded
+
+Power Query pushes `Table.SelectRows`/`Table.Group` down into the remote engine
+as SQL. pqtools does not. A query that would fold in Power BI still returns the
+same rows here; it just fetches more of them first. If a table is too large to
+pull, put the filter in a `[Query="SELECT ..."]` option and let the server do it.
+
 ## Frequently asked
 
 ### Can I run Power Query without Power BI or Excel?
 
-For local-file sources, yes. `pq eval report.pq` runs `Csv.Document`,
-`File.Contents` and the entire `Table.*` / `List.*` / `Text.*` transformation
-chain in Python. For sources that need a live engine - `Sql.Database`,
-`Web.Contents`, `SharePoint.*`, `Odbc.*` - no tool outside Microsoft's Mashup
-Engine can, and `pqtools` says so with a typed error instead of guessing.
+Yes. `pq eval report.pq` runs the whole query - the `Source` step included.
+Local files work with no flags; `Web.Contents`, `Sql.Database`, `Odbc.*`,
+`PostgreSQL`/`MySQL`/`Oracle` and `Excel.Workbook` work behind `--allow-net` /
+`--allow-db` (see [Connectors](#connectors)). `SharePoint.*` still refuses,
+with a typed error naming itself.
+
+What does not happen is **query folding** - your filters run here, not on the
+server. Same rows, more bytes fetched.
 
 ### Is there a linter or formatter for Power Query M?
 
@@ -343,11 +470,20 @@ the syntax Power Query accepts, not a reimplementation that drifts.
 
 ### Is pqtools the pandas of Power Query?
 
-For the transformation half, that is a fair description: 299 M builtins, real
-`Table.Group` aggregations, all six `JoinKind` values, pivot/unpivot, the type
-system and date/time handling. The difference from pandas is the boundary -
-pandas has no equivalent of a `Sql.Database` connector that only a proprietary
-engine can open, and where pqtools meets one it stops rather than approximating.
+That is the goal, and it now holds on both halves.
+
+**Transformation:** M builtins covering `Table.*` aggregation and joins (all
+six `JoinKind` values), pivot/unpivot, the type system, date/time handling.
+
+**Getting the data:** `read_csv` has `Csv.Document`; `read_excel` has
+`Excel.Workbook`; `read_sql` has `Sql.Database` / `Odbc.Query` /
+`PostgreSQL.Database`; a URL has `Web.Contents`. Drivers are optional extras
+exactly as pandas keeps psycopg optional.
+
+Two honest differences. pandas does not fold queries into the database either,
+so that is parity, not a gap - but Power Query *does*, so a query that folds in
+Power BI moves more bytes here. And pqtools asks permission before reaching the
+network, because in pandas you type the URL and here the query supplies it.
 
 ### How do I test a Power Query transformation?
 
@@ -377,8 +513,12 @@ See [Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
 
 ### Does it send my data anywhere?
 
-No. There is no network call in the runtime, no telemetry, and no runtime
-dependency. See [Safety model](#safety-model).
+No telemetry, ever, and no network call you did not ask for. The runtime makes
+an outbound request only when a query contains `Web.Contents`/`OData.Feed`
+**and** you passed `--allow-net`, and it will still refuse loopback, private
+and link-local addresses unless you also pass `--allow-private-net`. Default
+behaviour with no flags is exactly what it was: nothing leaves the machine.
+See [Safety model](#safety-model).
 
 ## Safety model
 
@@ -408,6 +548,24 @@ dependency. See [Safety model](#safety-model).
 - This is **not mandatory locking** - no OS provides a portable mandatory
   lock, and the advisory lock is not itself the correctness guard. Use
   source control or external exclusive ownership for concurrent editors.
+- **Outbound access is default-deny.** A query's connectors do not run until
+  the caller passes `--allow-net` / `--allow-db`, because the M source names
+  the destination and that source is often somebody else's file. Even then,
+  loopback, private, link-local, reserved and multicast addresses are refused
+  unless `--allow-private-net` is also given - `169.254.169.254` is the cloud
+  instance-metadata endpoint, and a read of it hands over the host's
+  credentials. Hostnames are resolved before the check, so one DNS record
+  pointing inward does not slip past; `--allow-host` is the airtight version.
+- **Only `http` and `https` pass the network gate**, so `file://` cannot turn
+  a permitted fetch into an arbitrary local-file read.
+- **A blocked connector is never swallowed by `try`.** Neither
+  `try ... otherwise` nor `try ... catch` catches a policy refusal, so a
+  permission decision cannot reach the caller disguised as a fallback value.
+- **Credentials come from the environment**, not from the M file
+  (`PQTOOLS_SQL_USER`, `PQTOOLS_PG_PASSWORD`, ...), because a password typed
+  into a query gets committed.
+- **`Expression.Evaluate` is deliberately not implemented.** It would be an
+  eval sink reachable from file content.
 
 ## Limits
 

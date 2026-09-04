@@ -6,6 +6,7 @@ zero behaviour change) - see PRD-0.5.0-builtins.md.
 
 from __future__ import annotations
 
+import re
 import uuid as _uuid
 from typing import TYPE_CHECKING, Any
 
@@ -71,8 +72,22 @@ def _text_combine(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _text_contains(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Contains", args, 2)
-    return _require_str(args[1]) in _require_str(args[0])
+    # Text.Contains(text as nullable text, substring as text, optional
+    # comparer as nullable function) as nullable logical - `text` IS
+    # nullable in the real signature (verified against MS docs: "If the
+    # first argument is null, this function returns null"), which the
+    # prior 2-arg-only form here never propagated - fixed alongside adding
+    # `comparer` since both are the same signature correction.
+    _arity("Text.Contains", args, 2, 3)
+    text = args[0]
+    if text is None:
+        return None
+    text = _require_str(text)
+    substring = _require_str(args[1])
+    if len(args) == 3 and args[2] is not None:
+        if _resolve_text_comparer(args[2], "Text.Contains"):
+            return re.search(re.escape(substring), text, re.IGNORECASE) is not None
+    return substring in text
 
 
 def _text_replace(args: list[Any], ctx: _Ctx) -> Any:
@@ -357,15 +372,162 @@ def _text_reverse(args: list[Any], ctx: _Ctx) -> Any:
     return _require_str(text)[::-1]
 
 
+# --------------------------------------------------------------------------
+# Comparer.* - the `comparer` argument Text.Contains/StartsWith/EndsWith/
+# PositionOf accept. Comparer.Ordinal(x, y)/Comparer.OrdinalIgnoreCase(x, y)
+# are themselves invokable 2-argument comparer functions in real M (verified
+# against MS docs: `Comparer.OrdinalIgnoreCase("Abc", "abc")` -> `0`), not
+# opaque enum tags - registered here as ordinary builtins the same way any
+# other function is. `m_is_builtin_comparer` is a plain attribute tag (not an
+# M-visible name) so List.*'s equationCriteria handling in the sibling
+# _list.py module can recognise these two specific values without an
+# import across family modules - see builtins/__init__.py's docstring on
+# why family modules stay independent of each other.
+# --------------------------------------------------------------------------
+
+
+def _ordinal_sign(left: str, right: str) -> int:
+    if left < right:
+        return -1
+    if left > right:
+        return 1
+    return 0
+
+
+def _comparer_ordinal(args: list[Any], ctx: _Ctx) -> Any:
+    # Comparer.Ordinal(x as any, y as any) as number. Scoped to text: an
+    # "Ordinal" comparison is a raw codepoint comparison, which is a text
+    # concept, and every verified MS docs example compares text - there is
+    # no confirmed non-text behaviour to implement (Rule: never
+    # approximate). Python's `<`/`>` on `str` already compares by codepoint,
+    # which is exactly Ordinal semantics.
+    _arity("Comparer.Ordinal", args, 2)
+    return _ordinal_sign(_require_str(args[0]), _require_str(args[1]))
+
+
+_comparer_ordinal.m_is_builtin_comparer = True  # type: ignore[attr-defined]
+
+
+def _comparer_ordinal_ignore_case(args: list[Any], ctx: _Ctx) -> Any:
+    # Case-insensitive Ordinal comparison (verified:
+    # Comparer.OrdinalIgnoreCase("Abc", "abc") -> 0). `casefold()` is
+    # Python's own recommended normalisation specifically for caseless
+    # comparison - applying Ordinal's codepoint rule to the case-folded
+    # text is the literal reading of "Ordinal, ignoring case", not a guess
+    # at a different algorithm.
+    _arity("Comparer.OrdinalIgnoreCase", args, 2)
+    left = _require_str(args[0]).casefold()
+    right = _require_str(args[1]).casefold()
+    return _ordinal_sign(left, right)
+
+
+_comparer_ordinal_ignore_case.m_is_builtin_comparer = True  # type: ignore[attr-defined]
+
+
+# Shared between _comparer_from_culture (reached if it is actually called,
+# e.g. `Comparer.FromCulture("en-US")`) and _resolve_text_comparer (reached
+# if the bare, uninvoked identifier is passed as a `comparer` argument
+# instead) so the two call paths give one identical message rather than
+# two that could drift apart.
+_FROM_CULTURE_MESSAGE = (
+    "Comparer.FromCulture: culture-aware comparison is not implemented "
+    "(no locale/collation data is available here - use Comparer.Ordinal or "
+    "Comparer.OrdinalIgnoreCase instead)"
+)
+
+
+def _comparer_from_culture(args: list[Any], ctx: _Ctx) -> Any:
+    # Comparer.FromCulture(culture as text, optional ignoreCase as
+    # nullable logical) as function - real PQ returns a comparer curried
+    # over `culture`. Collation tables are locale data this evaluator does
+    # not ship, and guessing at one culture's sort/fold order would be
+    # exactly the wrong-answer-shaped-right failure this package refuses
+    # to make, so this refuses unconditionally instead of half-implementing
+    # it. Still registered (rather than left as an unknown identifier) so
+    # the refusal names itself precisely instead of "unknown identifier".
+    _arity("Comparer.FromCulture", args, 1, 2)
+    raise UnsupportedError(_FROM_CULTURE_MESSAGE)
+
+
+_comparer_from_culture.m_is_builtin_comparer = True  # type: ignore[attr-defined]
+
+
+def _resolve_text_comparer(value: Any, fn_name: str) -> bool:
+    """True if the optional `comparer` argument requests case-insensitive
+    matching; False for exact/no comparer.
+
+    Only Comparer.Ordinal (exact - the default, so a no-op here) and
+    Comparer.OrdinalIgnoreCase (case-insensitive) are implemented. A call
+    expression like `Comparer.FromCulture("en-US")` never reaches this
+    function at all - M evaluates call arguments eagerly, so
+    `_comparer_from_culture` above has already raised before `comparer`
+    is bound here. Only the bare, uninvoked `Comparer.FromCulture`
+    identifier reaches this branch. Any other function value is refused
+    outright - guessing at an unrecognised comparer's semantics is the
+    wrong-answer-shaped-right failure this package refuses to make.
+    """
+    if value is _comparer_ordinal:
+        return False
+    if value is _comparer_ordinal_ignore_case:
+        return True
+    if value is _comparer_from_culture:
+        raise UnsupportedError(_FROM_CULTURE_MESSAGE)
+    raise UnsupportedError(
+        f"{fn_name}: comparer must be Comparer.Ordinal or Comparer.OrdinalIgnoreCase"
+    )
+
+
+def _text_find_all(text: str, substring: str, ignore_case: bool) -> list[int]:
+    """All non-overlapping match positions of `substring` in `text`, left
+    to right - mirrors the case-sensitive path's original `str.find`-loop
+    stepping exactly (a zero-length substring still advances by at least
+    one position each step), verified equivalent for `ignore_case=False`
+    since `re.escape` + a literal pattern searches identically to
+    `str.find`.
+    """
+    pattern = re.compile(re.escape(substring), re.IGNORECASE if ignore_case else 0)
+    positions: list[int] = []
+    start = 0
+    while True:
+        match = pattern.search(text, start)
+        if match is None:
+            break
+        positions.append(match.start())
+        start = match.start() + max(len(substring), 1)
+    return positions
+
+
+def _find_last_ci(text: str, substring: str) -> int:
+    """Case-insensitive equivalent of `str.rfind` - the rightmost start
+    position, OVERLAPPING matches allowed. Deliberately not built on
+    `_text_find_all`'s non-overlapping stepping: `str.rfind` finds the true
+    rightmost occurrence even where it overlaps an earlier one (e.g.
+    `"aaaaa".rfind("aa")` -> `3`, not `2`), so an occurrence-preserving
+    case-insensitive version has to allow that too, by scanning candidate
+    start positions from the end rather than reusing the left-to-right
+    non-overlapping scan used for Occurrence.All.
+    """
+    if not substring:
+        return len(text)
+    folded = substring.casefold()
+    for start in range(len(text) - len(substring), -1, -1):
+        if text[start : start + len(substring)].casefold() == folded:
+            return start
+    return -1
+
+
 def _text_starts_with(args: list[Any], ctx: _Ctx) -> Any:
     # as nullable logical - text is nullable and null propagates.
     _arity("Text.StartsWith", args, 2, 3)
     text = args[0]
     if text is None:
         return None
+    text = _require_str(text)
+    substring = _require_str(args[1])
     if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("Text.StartsWith: comparer argument")
-    return _require_str(text).startswith(_require_str(args[1]))
+        if _resolve_text_comparer(args[2], "Text.StartsWith"):
+            return re.match(re.escape(substring), text, re.IGNORECASE) is not None
+    return text.startswith(substring)
 
 
 def _text_ends_with(args: list[Any], ctx: _Ctx) -> Any:
@@ -373,9 +535,14 @@ def _text_ends_with(args: list[Any], ctx: _Ctx) -> Any:
     text = args[0]
     if text is None:
         return None
+    text = _require_str(text)
+    substring = _require_str(args[1])
     if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("Text.EndsWith: comparer argument")
-    return _require_str(text).endswith(_require_str(args[1]))
+        if _resolve_text_comparer(args[2], "Text.EndsWith"):
+            return (
+                re.search(re.escape(substring) + r"\Z", text, re.IGNORECASE) is not None
+            )
+    return text.endswith(substring)
 
 
 # Occurrence.First / Occurrence.Last / Occurrence.All are the real M enum
@@ -409,21 +576,32 @@ def _text_position_of(args: list[Any], ctx: _Ctx) -> Any:
                 "Text.PositionOf: occurrence must be Occurrence.First (0), "
                 "Occurrence.Last (1), or Occurrence.All (2)"
             )
+    ignore_case = False
     if len(args) == 4 and args[3] is not None:
-        raise UnsupportedError("Text.PositionOf: comparer argument")
-    if occurrence == _OCCURRENCE_FIRST:
-        return text.find(substring)
+        ignore_case = _resolve_text_comparer(args[3], "Text.PositionOf")
+    if not ignore_case:
+        # Unchanged from before comparer support - str.find/str.rfind
+        # exactly, so the no-comparer call shape is byte-identical to
+        # what it was.
+        if occurrence == _OCCURRENCE_FIRST:
+            return text.find(substring)
+        if occurrence == _OCCURRENCE_LAST:
+            return text.rfind(substring)
+        positions: list[int] = []
+        start = 0
+        while True:
+            pos = text.find(substring, start)
+            if pos == -1:
+                break
+            positions.append(pos)
+            start = pos + max(len(substring), 1)
+        return positions
     if occurrence == _OCCURRENCE_LAST:
-        return text.rfind(substring)
-    positions: list[int] = []
-    start = 0
-    while True:
-        pos = text.find(substring, start)
-        if pos == -1:
-            break
-        positions.append(pos)
-        start = pos + max(len(substring), 1)
-    return positions
+        return _find_last_ci(text, substring)
+    ci_positions = _text_find_all(text, substring, ignore_case=True)
+    if occurrence == _OCCURRENCE_ALL:
+        return ci_positions
+    return ci_positions[0] if ci_positions else -1
 
 
 def _text_position_of_any(args: list[Any], ctx: _Ctx) -> Any:
@@ -597,6 +775,9 @@ BUILTINS: dict[str, Any] = {
     "Text.EndsWith": _text_ends_with,
     "Text.PositionOf": _text_position_of,
     "Text.PositionOfAny": _text_position_of_any,
+    "Comparer.Ordinal": _comparer_ordinal,
+    "Comparer.OrdinalIgnoreCase": _comparer_ordinal_ignore_case,
+    "Comparer.FromCulture": _comparer_from_culture,
     "Text.Insert": _text_insert,
     "Text.Proper": _text_proper,
     "Text.Clean": _text_clean,

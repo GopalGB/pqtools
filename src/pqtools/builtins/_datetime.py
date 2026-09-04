@@ -103,7 +103,7 @@ from __future__ import annotations
 import calendar
 import math
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from ._shared import (
@@ -112,8 +112,10 @@ from ._shared import (
     _arity,
     _require_int,
     _require_number,
-    _require_str,
     _type_name,
+)
+from ._shared import (
+    _check_invariant_culture as _shared_check_culture,
 )
 
 if TYPE_CHECKING:
@@ -167,8 +169,6 @@ _DAY_NAMES_SUNDAY_FIRST = (
     "Saturday",
 )
 
-_INVARIANT_CULTURES = frozenset({"en-us", "en"})
-
 
 # --------------------------------------------------------------------------
 # Culture handling (trap #2) - invariant/English only, else UnsupportedError
@@ -176,14 +176,7 @@ _INVARIANT_CULTURES = frozenset({"en-us", "en"})
 
 
 def _check_invariant_culture(name: str, culture: Any) -> None:
-    if culture is None:
-        return
-    text = _require_str(culture)
-    if text.strip().lower() not in _INVARIANT_CULTURES:
-        raise UnsupportedError(
-            f"{name}: culture-specific formatting for {text!r} "
-            "(pqtools only implements invariant/en-US names)"
-        )
+    _shared_check_culture(name, culture, "culture-specific formatting")
 
 
 # --------------------------------------------------------------------------
@@ -438,13 +431,13 @@ def _add_months(name: str, d: date | datetime, months: int) -> date | datetime:
 # Custom ("yyyy-MM-dd"-style) text formatting for Date/DateTime/Time.ToText
 # --------------------------------------------------------------------------
 
-# Every letter RUN (maximal, e.g. "yyyy" or "QQQ") is scanned as a whole -
-# not just the known tokens - so an unrecognised specifier is rejected
-# rather than silently split into a known prefix plus leftover literal
-# letters (e.g. "yyy" must not silently render as "yy" + a stray "y", and
-# "QQQ" must not silently pass through as the literal text "QQQ").
-_FORMAT_LETTER_RUN_RE = re.compile(r"[A-Za-z]+")
-
+# A token is a maximal run of the SAME repeated letter (e.g. "yyyy" or
+# "QQQ") - matching real .NET's own custom-format tokenizer, which is why
+# "yyyyMMdd" with no separators parses as three tokens ("yyyy", "MM", "dd")
+# rather than one 8-letter blob. An unrecognised run (same-letter or not)
+# is still rejected as a whole, never silently split into a known prefix
+# plus leftover literal letters ("yyy" must not render as "yy" + stray "y",
+# "QQQ" must not pass through as literal text "QQQ").
 _KNOWN_FORMAT_TOKENS = frozenset(
     {
         "yyyy",
@@ -466,6 +459,7 @@ _KNOWN_FORMAT_TOKENS = frozenset(
         "ss",
         "s",
         "fff",
+        "fffffff",
         "tt",
     }
 )
@@ -473,6 +467,11 @@ _KNOWN_FORMAT_TOKENS = frozenset(
 _DATE_FORMAT_TOKENS = frozenset(
     {"yyyy", "yy", "MMMM", "MMM", "MM", "M", "dddd", "ddd", "dd", "d"}
 )
+
+# "zzz" (signed UTC offset, "+05:30") is neither a date nor a plain
+# hour/minute/second token - it needs the value's tzinfo, not its wall-clock
+# fields, so it is dispatched separately in `_format_custom` below.
+_ZONE_FORMAT_TOKENS = frozenset({"zzz"})
 
 
 def _render_date_token(token: str, d: date) -> str:
@@ -518,9 +517,26 @@ def _render_time_token(
         return str(second)
     if token == "fff":
         return f"{microsecond // 1000:03d}"
+    if token == "fffffff":
+        # 100-nanosecond "ticks" - a `datetime.time` only carries
+        # microsecond precision, so the 7th digit is always 0, not a guess.
+        return f"{microsecond * 10:07d}"
     # token == "tt" is the only possibility left: every member of
-    # _KNOWN_FORMAT_TOKENS not in _DATE_FORMAT_TOKENS is handled above.
+    # _KNOWN_FORMAT_TOKENS not in _DATE_FORMAT_TOKENS/_ZONE_FORMAT_TOKENS is
+    # handled above or by _render_zone_token.
     return "AM" if hour < 12 else "PM"
+
+
+def _render_zone_token(name: str, fmt: str, offset: timedelta | None) -> str:
+    if offset is None:
+        raise EvalError(
+            f"{name}: format {fmt!r} uses a time-zone specifier on a value "
+            "with no time zone"
+        )
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    total_minutes = abs(total_minutes)
+    return f"{sign}{total_minutes // 60:02d}:{total_minutes % 60:02d}"
 
 
 def _format_custom(name: str, value: date | datetime | time, fmt: str) -> str:
@@ -531,20 +547,62 @@ def _format_custom(name: str, value: date | datetime | time, fmt: str) -> str:
     minute = getattr(value, "minute", 0)
     second = getattr(value, "second", 0)
     microsecond = getattr(value, "microsecond", 0)
+    # `time` values never carry tzinfo in this module's value model (see
+    # _coerce_time_like) - the isinstance check still guards defensively
+    # rather than assuming that of every caller. A plain `date` has no
+    # `.utcoffset()` at all, hence the explicit type narrowing (not a bare
+    # `getattr`, which mypy cannot use to narrow `value`'s type).
+    utc_offset: timedelta | None = None
+    if isinstance(value, (datetime, time)) and value.tzinfo is not None:
+        utc_offset = value.utcoffset()
 
-    def render(match: re.Match[str]) -> str:
-        token = match.group(0)
-        if token not in _KNOWN_FORMAT_TOKENS:
-            raise UnsupportedError(f"{name}: format specifier {token!r}")
-        if token in _DATE_FORMAT_TOKENS:
-            if date_part is None:
-                raise EvalError(
-                    f"{name}: format {fmt!r} uses a date specifier on a time value"
-                )
-            return _render_date_token(token, date_part)
-        return _render_time_token(token, hour, minute, second, microsecond)
-
-    return _FORMAT_LETTER_RUN_RE.sub(render, fmt)
+    out: list[str] = []
+    i, n = 0, len(fmt)
+    while i < n:
+        ch = fmt[i]
+        if ch in ("'", '"'):
+            # A quoted run is literal text, verbatim, never scanned for
+            # tokens - the standard-format expansions below rely on this to
+            # spell a literal "T"/"Z"/"GMT" that would otherwise collide
+            # with a real token letter.
+            end = fmt.find(ch, i + 1)
+            if end == -1:
+                raise EvalError(f"{name}: unterminated literal in format {fmt!r}")
+            out.append(fmt[i + 1 : end])
+            i = end + 1
+            continue
+        if ch == "\\":
+            if i + 1 >= n:
+                raise EvalError(f"{name}: trailing '\\\\' in format {fmt!r}")
+            out.append(fmt[i + 1])
+            i += 2
+            continue
+        if ch.isalpha():
+            j = i
+            while j < n and fmt[j] == ch:
+                j += 1
+            token = fmt[i:j]
+            if token in _ZONE_FORMAT_TOKENS:
+                out.append(_render_zone_token(name, fmt, utc_offset))
+            elif token in _KNOWN_FORMAT_TOKENS:
+                if token in _DATE_FORMAT_TOKENS:
+                    if date_part is None:
+                        raise EvalError(
+                            f"{name}: format {fmt!r} uses a date specifier "
+                            "on a time value"
+                        )
+                    out.append(_render_date_token(token, date_part))
+                else:
+                    out.append(
+                        _render_time_token(token, hour, minute, second, microsecond)
+                    )
+            else:
+                raise UnsupportedError(f"{name}: format specifier {token!r}")
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def _resolve_to_text_options(name: str, rest: list[Any]) -> tuple[str | None, Any]:
@@ -577,6 +635,118 @@ def _resolve_to_text_options(name: str, rest: list[Any]) -> tuple[str | None, An
     if len(rest) >= 2 and rest[1] is not None:
         culture = rest[1]
     return fmt, culture
+
+
+# --------------------------------------------------------------------------
+# Standard ("d"/"D"/"F"/... single-letter) formats for Date/DateTime/Time.
+# ToText - a DIFFERENT feature from the custom patterns above: real .NET
+# treats a format string with exactly one character as a standard format
+# (selecting a whole culture-defined pattern), and anything longer as a
+# custom pattern scanned token-by-token - verified against "Standard date
+# and time format strings" in the .NET docs. Patterns below are this
+# module's own en-US data (module docstring point 6), expressed as the
+# custom tokens `_format_custom` already renders, so there is exactly one
+# rendering engine, not two.
+# --------------------------------------------------------------------------
+
+_STANDARD_DATETIME_PATTERNS: dict[str, str] = {
+    "d": "M/d/yyyy",
+    "D": "dddd, MMMM d, yyyy",
+    "f": "dddd, MMMM d, yyyy h:mm tt",
+    "F": "dddd, MMMM d, yyyy h:mm:ss tt",
+    "g": "M/d/yyyy h:mm tt",
+    "G": "M/d/yyyy h:mm:ss tt",
+    "m": "MMMM d",
+    "M": "MMMM d",
+    "t": "h:mm tt",
+    "T": "h:mm:ss tt",
+    "y": "MMMM yyyy",
+    "Y": "MMMM yyyy",
+}
+_STANDARD_DATE_ONLY_LETTERS = frozenset("dDmMyY")
+_STANDARD_TIME_ONLY_LETTERS = frozenset("tT")
+# Every standard letter this module knows about, datetime-only ones (f, F,
+# g, G, o, O, r, R, s, t is date+time already listed, u, U) included - used
+# only to distinguish "wrong shape for this value" from "not a real
+# specifier at all" in the error message below.
+_ALL_STANDARD_LETTERS = frozenset("dDfFgGmMoOrRstTuUyY")
+
+
+def _render_round_trip(name: str, value: datetime, fmt: str) -> str:
+    body = _format_custom(name, value, "yyyy-MM-dd'T'HH:mm:ss")
+    body += f".{value.microsecond * 10:07d}"
+    if value.tzinfo is None:
+        return body
+    offset = value.utcoffset()
+    if offset == timedelta(0):
+        return body + "Z"
+    return body + _render_zone_token(name, fmt, offset)
+
+
+def _render_rfc1123(name: str, value: datetime) -> str:
+    # Real .NET converts an offset-aware value to UTC first (verified: the
+    # docs' own DateTimeOffset example shows the hour shifting); a naive
+    # value is rendered as-is with a "GMT" label, no conversion.
+    rendered = value.astimezone(UTC) if value.tzinfo is not None else value
+    return _format_custom(name, rendered, "ddd, dd MMM yyyy HH:mm:ss 'GMT'")
+
+
+def _render_universal_sortable(name: str, value: datetime) -> str:
+    rendered = value.astimezone(UTC) if value.tzinfo is not None else value
+    return _format_custom(name, rendered, "yyyy-MM-dd HH:mm:ss'Z'")
+
+
+def _render_universal_full(name: str, value: datetime, fmt: str) -> str:
+    if value.tzinfo is None:
+        # Real .NET resolves this case using the MACHINE's local time zone
+        # (DateTimeKind.Unspecified is treated as local) - exactly the kind
+        # of host-dependent result this module refuses to produce (see the
+        # LocalNow/FixedLocalNow gap noted in point 7 above).
+        raise UnsupportedError(
+            f"{name}: format {fmt!r} on a value with no time zone (real "
+            ".NET falls back to the machine's local time zone here, which "
+            "pqtools deliberately never depends on)"
+        )
+    rendered = value.astimezone(UTC)
+    return _format_custom(name, rendered, "dddd, MMMM d, yyyy h:mm:ss tt")
+
+
+def _resolve_standard_format(
+    name: str, value: date | datetime | time, letter: str
+) -> str:
+    if isinstance(value, datetime):
+        pattern = _STANDARD_DATETIME_PATTERNS.get(letter)
+        if pattern is not None:
+            return _format_custom(name, value, pattern)
+        if letter == "s":
+            return _format_custom(name, value, "yyyy-MM-dd'T'HH:mm:ss")
+        if letter in ("o", "O"):
+            return _render_round_trip(name, value, letter)
+        if letter in ("r", "R"):
+            return _render_rfc1123(name, value)
+        if letter == "u":
+            return _render_universal_sortable(name, value)
+        if letter == "U":
+            return _render_universal_full(name, value, letter)
+        raise UnsupportedError(f"{name}: format {letter!r}")
+    if isinstance(value, date):
+        if letter in _STANDARD_DATE_ONLY_LETTERS:
+            return _format_custom(name, value, _STANDARD_DATETIME_PATTERNS[letter])
+        if letter in _ALL_STANDARD_LETTERS:
+            raise UnsupportedError(
+                f"{name}: format {letter!r} requires a time component, "
+                "which a date value does not have"
+            )
+        raise UnsupportedError(f"{name}: format {letter!r}")
+    # The only remaining shape is a bare `time`.
+    if letter in _STANDARD_TIME_ONLY_LETTERS:
+        return _format_custom(name, value, _STANDARD_DATETIME_PATTERNS[letter])
+    if letter in _ALL_STANDARD_LETTERS:
+        raise UnsupportedError(
+            f"{name}: format {letter!r} requires a date component, which a "
+            "time value does not have"
+        )
+    raise UnsupportedError(f"{name}: format {letter!r}")
 
 
 # --------------------------------------------------------------------------
@@ -693,6 +863,46 @@ def _date_from(args: list[Any], ctx: _Ctx) -> Any:
     if len(args) == 2:
         _check_invariant_culture("Date.From", args[1])
     return _coerce_date_like("Date.From", args[0])
+
+
+def _from_text(name: str, delegate: Any) -> Any:
+    """Build ``X.FromText`` from the module's own ``X.From``.
+
+    Delegating rather than re-parsing is the point: a second parser for the
+    same family is a second set of edge cases, and the day they disagree the
+    symptom is a value that converts one way through a column type and
+    another way through an explicit call. M draws the text-only line too, so
+    ``Number.FromText(1)`` is an error there as well - accepting it would let
+    a column that never held text report a successful text conversion.
+    """
+
+    def run(args: list[Any], ctx: _Ctx) -> Any:
+        _arity(name, args, 1, 2)
+        # "parsing", not the module default "formatting": this direction reads
+        # text, and a message about formatting sends the reader to the wrong
+        # half of the round trip.
+        _shared_check_culture(
+            name, args[1] if len(args) == 2 else None, "culture-specific parsing"
+        )
+        value = args[0]
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise EvalError(f"{name}: expected text, got {_type_name(value)}")
+        try:
+            return delegate([value], ctx)
+        except EvalError as error:
+            # The delegate reports itself, so a failed Number.FromText would
+            # otherwise say "Number.From: not a number" and send the reader
+            # looking for a call that is not in their query.
+            message = str(error)
+            prefix = f"{name.split('Text')[0]}: "
+            if message.startswith(prefix):
+                message = f"{name}: {message[len(prefix) :]}"
+            raise EvalError(message) from error
+
+    run.__name__ = f"_{name.replace('.', '_').lower()}"
+    return run
 
 
 def _date_year(args: list[Any], ctx: _Ctx) -> Any:
@@ -856,6 +1066,8 @@ def _date_to_text(args: list[Any], ctx: _Ctx) -> Any:
     _check_invariant_culture("Date.ToText", culture)
     if fmt is None:
         return d.isoformat()
+    if len(fmt) == 1:
+        return _resolve_standard_format("Date.ToText", d, fmt)
     return _format_custom("Date.ToText", d, fmt)
 
 
@@ -942,6 +1154,8 @@ def _datetime_to_text(args: list[Any], ctx: _Ctx) -> Any:
     _check_invariant_culture("DateTime.ToText", culture)
     if fmt is None:
         return dt.isoformat(sep=" ")
+    if len(fmt) == 1:
+        return _resolve_standard_format("DateTime.ToText", dt, fmt)
     return _format_custom("DateTime.ToText", dt, fmt)
 
 
@@ -1081,6 +1295,8 @@ def _time_to_text(args: list[Any], ctx: _Ctx) -> Any:
     _check_invariant_culture("Time.ToText", culture)
     if fmt is None:
         return t.isoformat()
+    if len(fmt) == 1:
+        return _resolve_standard_format("Time.ToText", t, fmt)
     return _format_custom("Time.ToText", t, fmt)
 
 
@@ -1094,6 +1310,10 @@ def _time_to_text(args: list[Any], ctx: _Ctx) -> Any:
 # special-cased directly in evaluate.py instead, but the BUILTINS path works
 # identically and is the only one this module can reach).
 BUILTINS: dict[str, Any] = {
+    "Date.FromText": _from_text("Date.FromText", _date_from),
+    "DateTime.FromText": _from_text("DateTime.FromText", _datetime_from),
+    "Time.FromText": _from_text("Time.FromText", _time_from),
+    "Duration.FromText": _from_text("Duration.FromText", _duration_from),
     "#date": _lit_date,
     "#datetime": _lit_datetime,
     "#datetimezone": _lit_datetimezone,

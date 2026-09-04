@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pqtools"
-version = "0.8.0"
+version = "0.9.0"
 description = "Run, lint and format Power Query M without Power BI. Executes a .pq query end to end on local CSV files in pure Python - like pandas for Power Query - plus a linter, formatter and safe rename for .pq and the queries inside .pbix/.xlsx"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -56,7 +56,26 @@ dependencies = []
 
 [project.optional-dependencies]
 fabric = ["pyarrow>=14"]
+# Connector drivers, kept optional the way pandas keeps psycopg and
+# SQLAlchemy optional: nobody installing a linter should pull an ODBC stack.
+excel = ["openpyxl>=3.1"]
+sql = ["pyodbc>=5"]
+postgres = ["psycopg[binary]>=3.1"]
+mysql = ["pymysql>=1.1"]
+oracle = ["oracledb>=2"]
+all = [
+    "openpyxl>=3.1",
+    "pyodbc>=5",
+    "psycopg[binary]>=3.1",
+    "pymysql>=1.1",
+    "oracledb>=2",
+]
 dev = [
+    "openpyxl>=3.1",
+    # An independent (Rust) xlsx reader. The container write path is verified
+    # by readers that share no code with ours or with each other; a second
+    # Python parser would be a weaker check than a second implementation.
+    "python-calamine>=0.2",
     "pytest>=8",
     "pytest-cov>=5",
     "pytest-xdist>=3",
@@ -97,6 +116,21 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 files = ["src"]
+
+# The optional driver extras ship no type stubs, and none exist on PyPI for
+# most of them. Each is imported lazily inside the one connector that needs
+# it, so an untyped import here costs nothing beyond that call boundary -
+# whereas `strict = false` would cost the whole package its checking.
+[[tool.mypy.overrides]]
+module = [
+    "openpyxl.*",
+    "pyodbc.*",
+    "psycopg2.*",
+    "pymysql.*",
+    "oracledb.*",
+    "python_calamine.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

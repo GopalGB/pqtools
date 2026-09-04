@@ -139,13 +139,48 @@ def test_cli_eval_format_csv_requires_a_table(tmp_path: Path, capsys):
     assert "table" in capsys.readouterr().err
 
 
-def test_cli_eval_bind_rejects_non_csv_json_extension(tmp_path: Path, capsys):
+def test_cli_eval_bind_falls_back_to_bytes_for_any_other_extension(
+    tmp_path: Path, capsys
+):
+    """No file type is refused any more.
+
+    `--bind` used to accept only .csv and .json, which meant the one file a
+    workbook-hosted query is most likely to reference - another .xlsx - was
+    also the one it would not take, even though Excel.Workbook is supported.
+    Anything without a structured reading now binds to bytes, which is
+    exactly what File.Contents returns for it.
+    """
     query = tmp_path / "q.pq"
-    query.write_text("let Source = 1 in Source", encoding="utf-8")
-    bad = tmp_path / "data.txt"
-    bad.write_text("x", encoding="utf-8")
-    assert main(["eval", str(query), "--bind", f"Source={bad}"]) == 2
-    assert ".csv or .json" in capsys.readouterr().err
+    query.write_text("let Source = 1 in Text.FromBinary(Source)", encoding="utf-8")
+    other = tmp_path / "data.txt"
+    other.write_text("hello", encoding="utf-8")
+    assert main(["eval", str(query), "--bind", f"Source={other}"]) == 0
+    assert "hello" in capsys.readouterr().out
+
+
+def test_cli_eval_bind_reads_a_workbook_as_the_excel_nav_table(tmp_path: Path, capsys):
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = "Sales"
+    for row in (["Region", "Amount"], ["North", 10], ["South", 32]):
+        sheet.append(row)
+    path = tmp_path / "book.xlsx"
+    book.save(path)
+
+    # Written the way Power Query generates it: the bind stands in for
+    # Excel.Workbook(...) with default options, so headers are NOT promoted
+    # during the bind and the query promotes them itself. Promoting in both
+    # places would silently eat the header row.
+    query = tmp_path / "q.pq"
+    query.write_text(
+        'let Source = 1, Sheet = Source{[Item="Sales",Kind="Sheet"]}[Data], '
+        "Promoted = Table.PromoteHeaders(Sheet) "
+        'in List.Sum(Table.Column(Promoted, "Amount"))',
+        encoding="utf-8",
+    )
+    assert main(["eval", str(query), "--bind", f"Source={path}"]) == 0
+    assert "42" in capsys.readouterr().out
 
 
 def test_cli_eval_bind_json(tmp_path: Path, capsys):

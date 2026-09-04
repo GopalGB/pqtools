@@ -459,14 +459,28 @@ def _table_transform_column_types(args: list[Any], ctx: _Ctx) -> Any:
         if column not in known_columns:
             raise EvalError(f"Table.TransformColumnTypes: column not found: {column}")
     result = []
-    for row in table:
+    for index, row in enumerate(table):
         new_row = dict(row)
         for column, convert in conversions:
             if column not in new_row:
                 raise EvalError(
                     f"Table.TransformColumnTypes: column not found: {column}"
                 )
-            new_row[column] = convert(new_row[column])
+            try:
+                new_row[column] = convert(new_row[column])
+            except EvalError as error:
+                # Power Query marks the individual cell as an error and keeps
+                # loading; this evaluator has no cell-error value, so it stops.
+                # Stopping without saying where is the unhelpful part: a real
+                # CSV has one bad cell in ten thousand rows, and "not a number:
+                # \'\'" alone gives the user nowhere to look.
+                raise EvalError(
+                    f"Table.TransformColumnTypes: row {index + 1}, column "
+                    f"{column!r}: {error}. Power Query would mark this one "
+                    "cell as an error and continue; replace the value first, "
+                    'e.g. Table.ReplaceValue(t, "", null, Replacer.'
+                    f"ReplaceValue, {{{column!r}}})"
+                ) from error
         result.append(new_row)
     return result
 
