@@ -14,7 +14,7 @@ affiliated with or endorsed by Microsoft.
   `File.Contents`, `Text.FromBinary`) run natively, then the whole
   transformation chain: `Table.PromoteHeaders`, `Table.TransformColumnTypes`,
   `Table.SelectRows`, `Table.Group`, all six `JoinKind` values, pivot/unpivot,
-  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 297 M builtins.
+  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 299 M builtins.
   Output as JSON or CSV.
 - `pq list report.pbix` - name every query inside a .pbix / .pbit / .xlsx.
   Each name is usable directly as `pq eval FILE --member NAME`.
@@ -27,9 +27,9 @@ affiliated with or endorsed by Microsoft.
 - `pq rename report.pq --from Old --to New` - rename a `let` binding without a
   find-and-replace hitting a matching string literal.
 - Reads `.pbix` / `.pbit` / `.xlsx` containers to analyse the M inside them.
-  `pq format` / `pq rename` on a container PRINT the edited M; they do not
-  write back into the file. Writing is deliberately not enabled in the CLI
-  (see below).
+  `pq format` / `pq rename` / `pq replace-source` print the edited M and
+  save it with `--write`. `pq add --name N --source '...' --write` adds a
+  brand-new query. Any `--write` on a container writes a `<file>.bak` first.
 
 ## What it deliberately does NOT do
 
@@ -47,11 +47,12 @@ answer that looks right.
   Engine.
 - It never approximates. Any construct it cannot evaluate exactly raises a
   typed error naming it, rather than returning a plausible wrong value.
-- It does not write modified queries back into a `.pbix` / `.xlsx`. The
-  rebuild path exists and re-reads its own output, rejecting any change
-  outside the M source, but it has not been validated against a workbook
-  Excel itself produced. Use `pq format FILE` to see the result, or call
-  `pqtools.containers.write_sections` directly and accept the risk.
+- Excel itself has never opened a workbook this rewrote (Excel was not
+  installed where the write path was validated). The rebuild is verified four
+  ways - CRC intact, every member except the DataMashup part byte-identical,
+  the M reading back, and openpyxl opening the result to the same sheets and
+  values - and every `--write` leaves a `.bak`. Do not describe writing as
+  unsafe, and do not describe it as Excel-certified.
 - It makes no network calls and sends no telemetry.
 
 ## Correct usage

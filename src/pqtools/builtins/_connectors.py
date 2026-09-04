@@ -388,7 +388,35 @@ def _binary_length(args: list[Any], ctx: _Ctx) -> Any:
     return len(value)
 
 
+def _hash_binary(args: list[Any], ctx: _Ctx) -> Any:
+    """``#binary(value)`` - M's binary literal.
+
+    Two accepted spellings, both local: a list of byte values, or base64 text
+    (the form Power Query itself emits for an "Enter Data" table). Text
+    delegates to the same base64 decode ``Binary.FromText`` uses, so the two
+    entry points cannot drift apart.
+    """
+    _arity("#binary", args, 1)
+    value = args[0]
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return _binary_from_text([value], ctx)
+    if isinstance(value, list):
+        out = bytearray()
+        for item in value:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                raise EvalError("#binary: a list argument must hold byte values")
+            byte = int(item)
+            if byte != item or not 0 <= byte <= 255:
+                raise EvalError(f"#binary: {item!r} is not a byte value (0-255)")
+            out.append(byte)
+        return bytes(out)
+    raise EvalError("#binary: expects a list of byte values or base64 text")
+
+
 BUILTINS: dict[str, Any] = {
+    "#binary": _hash_binary,
     "File.Contents": _file_contents,
     "Csv.Document": _csv_document,
     "Text.FromBinary": _text_from_binary,

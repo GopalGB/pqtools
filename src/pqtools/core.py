@@ -258,6 +258,25 @@ def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
     return response
 
 
+def unquote_identifier(text: str) -> str:
+    """``#"First Name"`` -> ``First Name``; anything else unchanged.
+
+    M spells an identifier that is not a bare name as ``#"..."``, with ``""``
+    for an embedded quote. The ``#"`` and ``"`` are syntax, not part of the
+    name.
+
+    This lives in core because two independent code paths read identifiers -
+    the evaluator (`evaluate._identifier_text`) and the section splitter
+    (`containers.split_shared`) - and both were wrong in the same way. Fixing
+    them separately would have let them drift apart again; the second one only
+    surfaced because a query added under a quoted name could not then be run
+    by that name.
+    """
+    if len(text) >= 3 and text.startswith('#"') and text.endswith('"'):
+        return text[2:-1].replace('""', '"')
+    return text
+
+
 def parse(source: str) -> dict[str, Any]:
     """Return a stable, JSON-safe view from Microsoft's pinned parser."""
     return _bridge(source, "parse")

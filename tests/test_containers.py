@@ -1,4 +1,5 @@
 import base64
+import codecs
 import io
 import os
 import struct
@@ -8,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from pqtools import containers
-from pqtools.containers import ContainerError, QuerySection, read_sections, split_shared
+from pqtools.containers import (
+    ContainerError,
+    QuerySection,
+    read_sections,
+    split_shared,
+    write_sections,
+)
 from pqtools.core import MAX_BYTES, SafeWriteError
 
 REAL_SAMPLE = (
@@ -217,9 +224,14 @@ def test_split_shared_slices_exact_member_source():
 
 
 def test_split_shared_ignores_private_members_and_handles_quoted_names():
+    # The KEY is the member's name; the #"..." is M's spelling for a name that
+    # is not a bare identifier, not part of the name. Returning the raw token
+    # meant a query added as #"Top Colors" could not then be run by the name
+    # its author gave it. The SOURCE keeps M's spelling, because that text is
+    # written back into the container verbatim.
     source = 'section Section1;\nPrivate = 1;\nshared #"A B" = 2;\n'
     members = split_shared(source)
-    assert members == {'#"A B"': 'shared #"A B" = 2;'}
+    assert members == {"A B": 'shared #"A B" = 2;'}
 
 
 def test_split_shared_raises_container_error_on_unparseable_source():
@@ -610,17 +622,27 @@ def test_cli_format_on_container_previews_without_writing(tmp_path: Path, capsys
     assert path.read_bytes() == original
 
 
-def test_cli_write_into_a_container_still_refuses(tmp_path: Path, capsys):
+def test_cli_write_into_a_container_rewrites_it_and_keeps_a_backup(
+    tmp_path: Path, capsys
+):
+    # Enabled in 0.8.0 after the rebuild path was validated against real
+    # Excel-authored workbooks (openpyxl opens the result to the same sheets
+    # and values). The .bak is the safety net: this is the one command here
+    # that can destroy its input, and the damage would surface in Excel rather
+    # than in this process.
     from pqtools.cli import main
 
     path = tmp_path / "report.pbix"
     original = _pbix(_blob())
     path.write_bytes(original)
-    assert main(["format", str(path), "--write"]) == 2
-    err = capsys.readouterr().err
-    assert "M_CONTAINER_ERROR" in err
-    assert "not enabled" in err
-    assert path.read_bytes() == original
+    assert main(["format", str(path), "--write"]) == 0
+    capsys.readouterr()
+    backup = path.with_suffix(".pbix.bak")
+    assert backup.exists()
+    assert backup.read_bytes() == original
+    assert path.read_bytes() != original
+    # ...and the rewritten container still reads back.
+    assert read_sections(path)[0].source.strip() != ""
 
 
 def test_cli_rename_and_replace_source_on_container_preview(tmp_path: Path, capsys):
@@ -640,12 +662,13 @@ def test_cli_rename_and_replace_source_on_container_preview(tmp_path: Path, caps
     assert main(["rename", str(path), "--old", "Q1", "--new", "Q2"]) == 2
     assert "M_RENAME_REFUSED" in capsys.readouterr().err
 
-    # ...and writing is still refused.
+    # ...and writing now succeeds, leaving the original beside it as .bak.
     assert (
         main(["replace-source", str(path), "--source", "let A = 1 in A", "--write"])
-        == 2
+        == 0
     )
-    assert path.read_bytes() == original
+    assert path.with_suffix(".pbix.bak").read_bytes() == original
+    assert path.read_bytes() != original
 
 
 def test_cli_dependencies_on_container(tmp_path: Path, capsys):
@@ -721,3 +744,69 @@ def test_write_sections_real_pbix_sample_preserves_opaque_segments_on_change(
         if name == "DataMashup":
             continue
         assert original_zip.read(name) == new_zip.read(name), name
+
+
+# --------------------------------------------------------------------------
+# UTF-16 customXml - what real Excel actually writes
+# --------------------------------------------------------------------------
+
+
+def _xlsx_utf16(blob: bytes, extra: dict[str, bytes] | None = None) -> bytes:
+    """An .xlsx whose DataMashup part is UTF-16 LE with a BOM.
+
+    This is how every workbook Excel saves looks. The UTF-8 `_xlsx` helper
+    above is what the tests used to build, which is precisely why the bug it
+    guards went unnoticed: a bytes regex for `<DataMashup` cannot match
+    `<\\x00D\\x00a\\x00...`, so every real workbook reported "no DataMashup
+    part found" while every fixture passed.
+    """
+    encoded = base64.b64encode(blob).decode("ascii")
+    xml = (
+        '<?xml version="1.0" encoding="utf-16"?>'
+        f'<DataMashup xmlns="http://schemas.microsoft.com/DataMashup">'
+        f"{encoded}</DataMashup>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+        archive.writestr(
+            "customXml/item1.xml", codecs.BOM_UTF16_LE + xml.encode("utf-16-le")
+        )
+        for name, data in (extra or {}).items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def test_read_sections_finds_utf16_datamashup(tmp_path: Path):
+    path = tmp_path / "book.xlsx"
+    path.write_bytes(_xlsx_utf16(_blob()))
+    sections = read_sections(path)
+    assert len(sections) == 1
+    assert "shared" in sections[0].source
+
+
+def test_write_sections_roundtrips_through_utf16(tmp_path: Path):
+    path = tmp_path / "book.xlsx"
+    original = _xlsx_utf16(_blob())
+    path.write_bytes(original)
+    new_source = "section Section1;\nshared Q1 = 2;\n"
+    write_sections(path, new_source, write=True)
+    assert read_sections(path)[0].source == new_source
+    # The rewritten part must still be UTF-16 with its BOM: writing ASCII
+    # base64 back into a UTF-16 document would corrupt it for Excel while
+    # still round-tripping through this module.
+    member = zipfile.ZipFile(io.BytesIO(path.read_bytes())).read("customXml/item1.xml")
+    assert member.startswith(codecs.BOM_UTF16_LE)
+    assert b"D\x00a\x00t\x00a\x00M\x00a\x00s\x00h\x00u\x00p\x00" in member
+
+
+def test_utf16_write_changes_only_the_datamashup_member(tmp_path: Path):
+    path = tmp_path / "book.xlsx"
+    original = _xlsx_utf16(_blob(), extra={"xl/styles.xml": b"<styles/>"})
+    path.write_bytes(original)
+    write_sections(path, "section Section1;\nshared Q1 = 3;\n", write=True)
+    before = zipfile.ZipFile(io.BytesIO(original))
+    after = zipfile.ZipFile(io.BytesIO(path.read_bytes()))
+    assert before.namelist() == after.namelist()
+    differing = [n for n in before.namelist() if before.read(n) != after.read(n)]
+    assert differing == ["customXml/item1.xml"]

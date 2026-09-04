@@ -26,6 +26,7 @@ import datetime
 from collections.abc import Callable
 from typing import Any
 
+from . import core as _core
 from .builtins import BUILTINS
 from .builtins._shared import (
     EvalError,
@@ -226,11 +227,7 @@ def _identifier_text(node: dict[str, Any]) -> str:
     reported "field not found". Column names with spaces are everywhere in
     real queries, so this hit nearly every one of them.
     """
-    text = str(node["value"])
-    if text.startswith('#"') and text.endswith('"') and len(text) >= 3:
-        # `""` is M's escape for a literal quote inside a quoted identifier.
-        return text[2:-1].replace('""', '"')
-    return text
+    return _core.unquote_identifier(str(node["value"]))
 
 
 def _binop_parts(node: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
@@ -704,8 +701,15 @@ def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) 
     builtin = BUILTINS.get(name)
     if builtin is not None:
         return builtin
-    if name == "#shared":
-        raise UnsupportedError("#shared")
+    if name in {"#shared", "#sections"}:
+        # Both hand back the *document's* members, so they need a whole
+        # section document rather than the expression being evaluated.
+        # "unknown identifier" would read like a typo; it is a scope limit.
+        raise UnsupportedError(
+            f"{name} needs the enclosing section document, which this "
+            "expression evaluator does not have - use `pq list FILE` to see "
+            "a container's members, or `pq eval FILE --member NAME` to run one"
+        )
     if _is_connector(name):
         raise UnsupportedError(
             f"{name} is a connector - Power Query's Mashup Engine runs it "

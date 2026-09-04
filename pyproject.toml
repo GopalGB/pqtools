@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pqtools"
-version = "0.7.0"
+version = "0.8.0"
 description = "Run, lint and format Power Query M without Power BI. Executes a .pq query end to end on local CSV files in pure Python - like pandas for Power Query - plus a linter, formatter and safe rename for .pq and the queries inside .pbix/.xlsx"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -139,6 +139,82 @@ def _print_csv(rows: list[dict[str, Any]]) -> None:
         writer.writerow(row)
 
 
+def _container_backup(path: Path) -> Path:
+    """Copy ``path`` to ``path.bak`` before it is rewritten.
+
+    Editing a binary container is the one thing here that destroys the input
+    if it goes wrong, and the failure would surface in Excel rather than in
+    this process. A sidecar copy makes that recoverable without asking the
+    user to have thought of it first.
+    """
+    backup = path.with_suffix(path.suffix + ".bak")
+    backup.write_bytes(path.read_bytes())
+    return backup
+
+
+def _write_container_transform(args: argparse.Namespace) -> int:
+    """Apply a transform to a container's M and write it back into the file."""
+    sections = containers.read_sections(args.file)
+    if len(sections) != 1:
+        raise ContainerError(
+            f"{args.file}: --write supports a container with exactly one "
+            f"section, found {len(sections)}"
+        )
+    transform = _transform_for(args)
+    new_source = transform(sections[0].source)
+    backup = _container_backup(args.file)
+    diff = containers.write_sections(args.file, new_source, write=True)
+    if args.json:
+        _print({"backup": str(backup), "diff": diff}, True)
+    else:
+        print(diff or "(no change)", end="" if diff else "\n")
+        print(f"// backup: {backup}", file=sys.stderr)
+    return 0
+
+
+def _run_add(args: argparse.Namespace) -> int:
+    """Add a new ``shared`` query to a container or section document."""
+    if args.name is None or args.source is None:
+        raise MQueryError("add requires --name and --source")
+    if not _is_container(args.file):
+        raise MQueryError("add currently supports .xlsx/.pbix/.pbit containers")
+    sections = containers.read_sections(args.file)
+    if len(sections) != 1:
+        raise ContainerError(
+            f"{args.file}: add supports a container with exactly one section, "
+            f"found {len(sections)}"
+        )
+    existing = containers.split_shared(sections[0].source, sections[0].container)
+    if args.name in existing:
+        raise MQueryError(
+            f"{args.file}: a query named {args.name!r} already exists - use "
+            "replace-source to change it"
+        )
+    body = args.source.rstrip()
+    if body.endswith(";"):
+        body = body[:-1].rstrip()
+    text = sections[0].source.rstrip()
+    new_source = f"{text}\n\nshared {_quote_identifier(args.name)} = {body};\n"
+    if not args.write:
+        print(new_source)
+        return 0
+    backup = _container_backup(args.file)
+    containers.write_sections(args.file, new_source, write=True)
+    print(f"// added {args.name}; backup: {backup}", file=sys.stderr)
+    return 0
+
+
+def _quote_identifier(name: str) -> str:
+    """``Name`` or ``#"Name With Spaces"`` - M's two identifier spellings."""
+    if (
+        name
+        and (name[0].isalpha() or name[0] == "_")
+        and all(ch.isalnum() or ch == "_" for ch in name)
+    ):
+        return name
+    return '#"' + name.replace('"', '""') + '"'
+
+
 def _preview_container_transform(args: argparse.Namespace) -> int:
     """Apply format/rename/replace-source to a container's M and print it.
 
@@ -261,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
             "replace-source",
             "eval",
             "list",
+            "add",
         ],
     )
     parser.add_argument("file", type=Path)
@@ -272,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--old")
     parser.add_argument("--new")
+    parser.add_argument("--name", help="name of the query to add (add)")
     parser.add_argument(
         "--source", help="complete replacement source for replace-source"
     )
@@ -294,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "list":
             return _run_list(args)
+        if args.command == "add":
+            return _run_add(args)
         if args.command == "eval":
             return _run_eval(args)
         if _is_container(args.file):
@@ -303,17 +383,7 @@ def main(argv: list[str] | None = None) -> int:
                 # would-be result is most of the value and none of the risk.
                 if not args.write:
                     return _preview_container_transform(args)
-                raise ContainerError(
-                    f"{args.file}: --write inside a container is not enabled in "
-                    "the CLI yet. The rebuild path (containers.write_sections) "
-                    "re-reads the result and rejects any change outside the M "
-                    "source, and it round-trips a real .pbix - but it has never "
-                    "been validated against a workbook Excel itself produced, "
-                    "and a container Excel refuses to reopen is not something "
-                    "to discover on your own file. Run without --write to "
-                    "preview, or use containers.write_sections directly if you "
-                    "accept that risk."
-                )
+                return _write_container_transform(args)
             sections = containers.read_sections(args.file)
             if args.command == "check":
                 diagnostics = [

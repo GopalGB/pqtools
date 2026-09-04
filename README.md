@@ -29,8 +29,9 @@ What it is for, in one line each:
   a find-and-replace touching a string literal that happens to match.
 - **Work with the queries inside a .pbix or .xlsx.** `pq list` names them,
   `pq eval --member` runs one, `pq check` lints them, and `pq format` /
-  `pq rename` print the edited M. Writing back into the container is not
-  enabled in the CLI yet - see [Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
+  `pq rename` print the edited M, and `--write` saves it back into the file.
+  `pq add` puts a brand-new query in. See
+  [Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
 
 > **Unofficial.** Not affiliated with or endorsed by Microsoft. Not a Power Query
 > runtime - `pq eval` runs the transformation chain of a query locally; it never
@@ -197,7 +198,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 297 builtins.
+and calling them; `try ... otherwise ...`; and these 299 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -243,10 +244,10 @@ Table.SelectRows Table.SelectRowsWithErrors Table.Skip Table.Sort
 Table.SplitColumn Table.ToColumns
 Table.ToList Table.ToRecords Table.ToRows Table.TransformColumnNames
 Table.TransformColumnTypes Table.TransformColumns Table.Transpose
-Table.Unpivot Table.UnpivotOtherColumns
+Table.Unpivot Table.UnpivotOtherColumns #table
 Csv.Document File.Contents Text.FromBinary Binary.FromText Binary.ToText
 Binary.Decompress Binary.Length BinaryEncoding.Base64 BinaryEncoding.Hex
-Compression.None Compression.Deflate Compression.GZip
+Compression.None Compression.Deflate Compression.GZip #binary
 Date.AddDays Date.AddMonths Date.AddWeeks Date.AddYears Date.Day
 Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.EndOfMonth
 Date.EndOfWeek Date.EndOfYear Date.From Date.IsInCurrentMonth
@@ -342,7 +343,7 @@ the syntax Power Query accepts, not a reimplementation that drifts.
 
 ### Is pqtools the pandas of Power Query?
 
-For the transformation half, that is a fair description: 288 M builtins, real
+For the transformation half, that is a fair description: 299 M builtins, real
 `Table.Group` aggregations, all six `JoinKind` values, pivot/unpivot, the type
 system and date/time handling. The difference from pandas is the boundary -
 pandas has no equivalent of a `Sql.Database` connector that only a proprietary
@@ -371,8 +372,8 @@ assert evaluate(query, bindings={"Source": [{"a": 1}]}) == [{"id": 1}]
 ### Can it read the queries inside a .pbix or .xlsx file?
 
 Yes - `pq check report.pbix` and `pq format book.xlsx` extract and analyse the M
-already stored in the container. Writing back is limited; see
-[Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
+already stored in the container, and `--write` saves changes back into it.
+See [Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
 
 ### Does it send my data anywhere?
 
@@ -461,15 +462,36 @@ pq check "Sales.pbip" --json
 pq dependencies workbook.xlsx
 ```
 
-**Not supported (yet):** writing back into a container. `pq format`,
-`pq rename` and `pq replace-source` refuse with a clear error on a
-container path. The underlying logic exists
-(`pqtools.containers.write_sections`) and is exercised in this repo's test
-suite against synthesized fixtures and a real Power BI Desktop sample - it
-rebuilds the container with only the M source changed, then re-reads its
-own output and verifies nothing else moved before ever touching disk - but
-it has not been validated against the wide range of real-world files this
-format can take, so it is deliberately kept out of the CLI.
+**Listing and adding:**
+
+```bash
+pq list report.pbix                      # name every query inside
+pq eval report.pbix --member Sales       # run one of them
+pq add  book.xlsx --name "Top Colors" \
+        --source 'let S = ... in S'      # preview a new query
+pq add  book.xlsx --name "Top Colors" \
+        --source 'let S = ... in S' --write   # ...and save it in
+```
+
+**Writing back:** `pq format`, `pq rename`, `pq replace-source` and `pq add`
+print the result by default and save it with `--write`. A `--write` on a
+container copies the original to `<file>.bak` first, because this is the one
+command here that can destroy its input and the damage would surface in Excel
+rather than in this process.
+
+The rebuild changes only the M source: every other zip member and all three
+opaque DataMashup segments are carried through byte-for-byte, and the result
+is re-read from scratch and verified before anything reaches disk. It has been
+validated against synthesized fixtures, a real Power BI `.pbix`, and real
+Excel-authored `.xlsx` workbooks - on those, **openpyxl (an independent xlsx
+parser) opens the rewritten file to the same sheets and cell values as the
+original**, which is the check that matters, since it is not this code
+agreeing with itself.
+
+**Residual risk, stated plainly:** Excel itself has not opened a rewritten
+workbook, because Excel was not installed where this was validated. The checks
+above are the strongest available substitute, not a replacement - hence the
+`.bak`.
 
 `pqtools` is not a Power BI or Excel client: `pq eval` runs a query's own
 transformation chain against data you supply (see [Running M](#running-m)) -

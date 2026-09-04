@@ -1068,6 +1068,20 @@ def _table_from_rows(args: list[Any], ctx: _Ctx) -> Any:
     return result
 
 
+def _hash_table(args: list[Any], ctx: _Ctx) -> Any:
+    """``#table(columns, rows)`` - M's table literal.
+
+    This is the same construction ``Table.FromRows`` performs with its two
+    arguments in the other order, so it delegates rather than growing a second
+    copy of the column-spec handling (list of names / a count / a table type).
+    ``null`` columns means "name them Column1..N", which is what
+    ``Table.FromRows`` already does when the spec is omitted.
+    """
+    _arity("#table", args, 2)
+    columns, rows = args
+    return _table_from_rows([rows] if columns is None else [rows, columns], ctx)
+
+
 def _table_to_rows(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Table.ToRows", args, 1)
     table = _require_table(args[0])
@@ -1226,6 +1240,7 @@ BUILTINS: dict[str, Any] = {
     "Table.FromColumns": _table_from_columns,
     "Table.ToColumns": _table_to_columns,
     "Table.FromRows": _table_from_rows,
+    "#table": _hash_table,
     "Table.ToRows": _table_to_rows,
     "Table.FromValue": _table_from_value,
     "Table.ReverseRows": _table_reverse_rows,

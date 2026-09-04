@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pqtools import evaluate
+from pqtools import evaluate, read_sections
 from pqtools.cli import main
 
 _SAMPLE = (
@@ -129,8 +129,142 @@ def test_format_previews_without_writing(capsys) -> None:
 
 
 @_needs_sample
-def test_write_into_a_container_is_still_refused(capsys) -> None:
-    before = _SAMPLE.read_bytes()
-    assert main(["format", str(_SAMPLE), "--write"]) == 2
-    assert "not enabled" in capsys.readouterr().err
-    assert _SAMPLE.read_bytes() == before
+def test_write_is_enabled_and_never_touches_the_original_without_a_backup(
+    tmp_path: Path, capsys
+) -> None:
+    # Operates on a COPY: the sample is a real Power BI file and the point of
+    # the test is that writing works, not that the fixture survives.
+    target = tmp_path / "copy.pbix"
+    original = _SAMPLE.read_bytes()
+    target.write_bytes(original)
+    # replace-source, not format: this sample's M is already formatted, so
+    # `format --write` is correctly a no-op and would prove nothing about
+    # whether writing works.
+    new = "section Section1;\nshared Added = 1;\n"
+    assert main(["replace-source", str(target), "--source", new, "--write"]) == 0
+    capsys.readouterr()
+    assert target.with_suffix(".pbix.bak").read_bytes() == original
+    assert target.read_bytes() != original
+    assert "Added" in read_sections(target)[0].source
+    assert _SAMPLE.read_bytes() == original, "the sample itself must be untouched"
+
+
+@_needs_sample
+def test_format_write_on_already_formatted_m_is_a_no_op(tmp_path: Path, capsys) -> None:
+    # Worth pinning: "nothing changed" must mean the bytes are untouched, not
+    # a silent rewrite that happens to round-trip.
+    target = tmp_path / "copy.pbix"
+    original = _SAMPLE.read_bytes()
+    target.write_bytes(original)
+    assert main(["format", str(target), "--write"]) == 0
+    capsys.readouterr()
+    assert target.read_bytes() == original
+
+
+# --- adding a query -----------------------------------------------------
+
+
+def _workbook(tmp_path: Path) -> Path:
+    """A minimal .xlsx shaped the way Excel writes one (UTF-16 customXml)."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_containers import _blob, _xlsx_utf16
+
+    path = tmp_path / "book.xlsx"
+    path.write_bytes(_xlsx_utf16(_blob()))
+    return path
+
+
+def test_add_previews_without_writing(tmp_path: Path, capsys) -> None:
+    path = _workbook(tmp_path)
+    before = path.read_bytes()
+    assert (
+        main(["add", str(path), "--name", "NewQuery", "--source", "let A = 1 in A"])
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "shared NewQuery" in out
+    assert path.read_bytes() == before
+
+
+def test_add_writes_the_query_into_the_workbook(tmp_path: Path, capsys) -> None:
+    path = _workbook(tmp_path)
+    original = path.read_bytes()
+    assert (
+        main(
+            [
+                "add",
+                str(path),
+                "--name",
+                "NewQuery",
+                "--source",
+                "let A = 1 in A",
+                "--write",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert path.with_suffix(".xlsx.bak").read_bytes() == original
+    assert main(["list", str(path)]) == 0
+    assert "NewQuery" in capsys.readouterr().out
+
+
+def test_added_query_is_runnable_by_the_name_it_was_given(
+    tmp_path: Path, capsys
+) -> None:
+    # The reason this matters: a name needing M's #"..." spelling must still
+    # be addressable as the plain name the user typed.
+    path = _workbook(tmp_path)
+    assert (
+        main(
+            [
+                "add",
+                str(path),
+                "--name",
+                "Top Colors",
+                "--source",
+                'let S = Table.FromRows({{"Red", 3}}, {"Colour", "N"}) in S',
+                "--write",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["eval", str(path), "--member", "Top Colors", "--format", "csv"]) == 0
+    out = capsys.readouterr().out
+    assert "Colour,N" in out
+    assert "Red,3" in out
+
+
+def test_added_query_written_with_a_table_literal_runs(tmp_path: Path, capsys) -> None:
+    # #table is how a person actually writes a literal table in M, and it is
+    # what `pq add` gets handed. Running the documented workflow on a real
+    # workbook is how the gap was found: the query saved fine and then failed
+    # with "unknown identifier: #table" at the point of running it, so the
+    # loop looked complete right up until the last step.
+    path = _workbook(tmp_path)
+    source = 'let S = #table({"Colour", "N"}, {{"Blue", 5}, {"Red", 3}}) in S'
+    assert (
+        main(["add", str(path), "--name", "Palette", "--source", source, "--write"])
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["eval", str(path), "--member", "Palette", "--format", "csv"]) == 0
+    out = capsys.readouterr().out
+    assert "Colour,N" in out
+    assert "Blue,5" in out
+    assert "Red,3" in out
+
+
+def test_add_refuses_to_shadow_an_existing_query(tmp_path: Path, capsys) -> None:
+    path = _workbook(tmp_path)
+    assert main(["add", str(path), "--name", "Q1", "--source", "let A = 1 in A"]) == 2
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_add_requires_a_name_and_a_source(tmp_path: Path, capsys) -> None:
+    path = _workbook(tmp_path)
+    assert main(["add", str(path), "--name", "X"]) == 2
+    assert "requires --name and --source" in capsys.readouterr().err

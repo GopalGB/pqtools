@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import codecs
 import difflib
 import io
 import re
@@ -43,9 +44,34 @@ from .core import FileSnapshot, MQueryError
 _CONTAINER_SUFFIXES = (".xlsx", ".pbix", ".pbit")
 _SEGMENT_NAMES = ("packageParts", "permissions", "metadata", "permissionBindings")
 _XML_DATAMASHUP = re.compile(
-    rb"<(?:[\w.\-]+:)?DataMashup\b[^>]*>(.*?)</(?:[\w.\-]+:)?DataMashup>",
+    r"<(?:[\w.\-]+:)?DataMashup\b[^>]*>(.*?)</(?:[\w.\-]+:)?DataMashup>",
     re.DOTALL,
 )
+
+# Real Excel writes customXml/item1.xml as UTF-16 LE with a BOM, so the
+# DataMashup element never matched a bytes pattern built for ASCII/UTF-8 and
+# every workbook Excel produced reported "no DataMashup part found". The XML
+# is decoded before matching, and the byte offsets the write path splices at
+# are recomputed in the same codec so the rebuilt member stays byte-identical
+# outside the base64 span.
+_BOMS: tuple[tuple[bytes, str], ...] = (
+    (codecs.BOM_UTF8, "utf-8"),
+    (codecs.BOM_UTF16_LE, "utf-16-le"),
+    (codecs.BOM_UTF16_BE, "utf-16-be"),
+)
+
+
+def _decode_xml(xml_bytes: bytes) -> tuple[str, str, int]:
+    """``(text, codec, bom_length)`` for an XML part in any of its encodings."""
+    for bom, codec in _BOMS:
+        if xml_bytes.startswith(bom):
+            return xml_bytes[len(bom) :].decode(codec), codec, len(bom)
+    # No BOM. UTF-16 without one still shows as NUL-interleaved ASCII.
+    if len(xml_bytes) >= 2 and xml_bytes[1] == 0 and xml_bytes[0] != 0:
+        return xml_bytes.decode("utf-16-le"), "utf-16-le", 0
+    return xml_bytes.decode("utf-8", "replace"), "utf-8", 0
+
+
 _TMDL_SOURCE = re.compile(
     r"source\s*=\s*\r?\n[ \t]*```\r?\n(.*?)\r?\n[ \t]*```",
     re.DOTALL,
@@ -84,8 +110,9 @@ class _Located:
     blob: MashupBlob
     m_text: str
     xml_bytes: bytes | None  # the xml member's raw bytes, "xml" shape only
-    match_start: int  # base64 text span within xml_bytes, "xml" shape only
+    match_start: int  # base64 BYTE span within xml_bytes, "xml" shape only
     match_end: int
+    xml_codec: str = "utf-8"  # the codec that span is expressed in
 
 
 def _parse_blob(blob: bytes, container_name: str) -> MashupBlob:
@@ -173,9 +200,15 @@ def _locate(data: bytes, container_name: str) -> _Located:
         if not name.lower().endswith(".xml"):
             continue
         xml_bytes = archive.read(name)
-        match = _XML_DATAMASHUP.search(xml_bytes)
+        try:
+            xml_text, xml_codec, bom_length = _decode_xml(xml_bytes)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        match = _XML_DATAMASHUP.search(xml_text)
         if not match:
             continue
+        byte_start = bom_length + len(xml_text[: match.start(1)].encode(xml_codec))
+        byte_end = bom_length + len(xml_text[: match.end(1)].encode(xml_codec))
         try:
             raw_blob = base64.b64decode(match.group(1), validate=False)
         except binascii.Error:
@@ -190,7 +223,7 @@ def _locate(data: bytes, container_name: str) -> _Located:
             xml_error = error
             continue
         return _Located(
-            name, "xml", blob, m_text, xml_bytes, match.start(1), match.end(1)
+            name, "xml", blob, m_text, xml_bytes, byte_start, byte_end, xml_codec
         )
 
     if direct_error is not None:
@@ -310,7 +343,8 @@ def split_shared(section_source: str, container: str = "<string>") -> dict[str, 
         ):
             start = int(token["start"])
             end = _member_end(tokens, index)
-            members[str(tokens[index + 1]["text"])] = section_source[start:end]
+            name = core.unquote_identifier(str(tokens[index + 1]["text"]))
+            members[name] = section_source[start:end]
     return members
 
 
@@ -353,9 +387,10 @@ def _rebuild(
         new_outer_bytes = new_blob_bytes
     else:
         assert located.xml_bytes is not None
+        encoded = base64.b64encode(new_blob_bytes).decode("ascii")
         new_outer_bytes = (
             located.xml_bytes[: located.match_start]
-            + base64.b64encode(new_blob_bytes)
+            + encoded.encode(located.xml_codec)
             + located.xml_bytes[located.match_end :]
         )
     return _replace_zip_member(
@@ -453,13 +488,19 @@ def write_sections(path: Path, new_source: str, *, write: bool = False) -> str:
     fsync'd atomic replace that `core.update_file` uses - so there is no
     second, less-tested write path for containers.
 
-    UNVALIDATED FOR PRODUCTION USE: the round-trip logic here is exercised
-    against synthesized fixtures and one real Power BI Desktop sample in
-    this repo's test suite (see ``tests/test_containers.py``), but it has
-    never been run against a workbook saved by real Excel, nor against the
-    wide range of real-world .xlsx/.pbit files this format can take. It is
-    deliberately kept out of the CLI (``pq format/rename/replace-source``
-    refuse on a container) until that validation exists.
+    VALIDATION: exercised against synthesized fixtures, a real Power BI
+    Desktop .pbix, and real Excel-authored .xlsx workbooks. On the Excel
+    workbooks the rebuilt file was checked four ways: every zip member's CRC
+    intact, every member except ``customXml/item1.xml`` byte-identical, the
+    edited M reading back through this module, and **openpyxl - an
+    independent xlsx parser - opening the result to the same sheets and cell
+    values as the original**. That last check is the point: it is not this
+    module agreeing with itself.
+
+    Residual risk, stated plainly: Excel itself has not opened a rewritten
+    workbook, because Excel is not installed where this was validated. The
+    checks above are the strongest available substitute, not a replacement.
+    ``--write`` therefore keeps a ``.bak`` beside the file it edits.
     """
     suffix = path.suffix.lower()
     if suffix not in _CONTAINER_SUFFIXES:
