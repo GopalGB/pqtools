@@ -1101,6 +1101,86 @@ def _table_from_value(args: list[Any], ctx: _Ctx) -> Any:
 # module's BUILTINS into one registry, so a new function is added HERE and
 # nowhere else - no central file to edit, and no merge conflict when several
 # families are implemented in parallel.
+
+
+def _table_reverse_rows(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.ReverseRows", args, 1)
+    return list(reversed(_require_table(args[0])))
+
+
+def _table_repeat(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.Repeat", args, 2)
+    rows = _require_table(args[0])
+    count = _require_int(args[1])
+    if count < 0:
+        raise EvalError(f"Table.Repeat: count must not be negative, got {count}")
+    return [dict(row) for _ in range(count) for row in rows]
+
+
+def _table_expand_list_column(args: list[Any], ctx: _Ctx) -> Any:
+    # An empty list KEEPS its row and nulls the cell - it does not drop the
+    # row. That is the documented behaviour of the left-outer-join-then-expand
+    # pattern, where an unmatched row survives with nulls rather than
+    # vanishing, and getting it backwards would silently delete real rows.
+    # A nested table needs no separate branch: the docs define expanding one
+    # as "treating them as lists of records", and a table already IS a list
+    # of records in this data model.
+    _arity("Table.ExpandListColumn", args, 2)
+    rows = _require_table(args[0])
+    column = _require_str(args[1])
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if column not in row:
+            raise EvalError(f"Table.ExpandListColumn: column not found: {column}")
+        value = row[column]
+        if value is None or (isinstance(value, list) and not value):
+            # null is folded into the empty-list case deliberately: both yield
+            # one row with a null cell, so neither can lose a row. Power
+            # Query's exact behaviour for a literal null here is not stated in
+            # the docs, and dropping the row would be the unrecoverable guess.
+            out.append({**row, column: None})
+        elif isinstance(value, list):
+            out.extend({**row, column: item} for item in value)
+        else:
+            raise EvalError(
+                "Table.ExpandListColumn: expected a list in column "
+                f"{column}, got {_type_name(value)}"
+            )
+    return out
+
+
+def _table_select_rows_with_errors(args: list[Any], ctx: _Ctx) -> Any:
+    # The exact dual of Table.RemoveRowsWithErrors above, and honest for the
+    # same reason: this evaluator raises the instant a formula errors, so an
+    # error value can never come to rest in a cell. There is structurally no
+    # row with an error to select, so the empty table is the exact answer -
+    # not an approximation, and not a silent pass-through of every row, which
+    # is the failure mode that would matter.
+    _arity("Table.SelectRowsWithErrors", args, 1, 2)
+    _require_table(args[0])
+    if len(args) == 2:
+        _field_name_list(args[1])
+    return []
+
+
+def _table_replace_error_values(args: list[Any], ctx: _Ctx) -> Any:
+    # Identity, for the same data-model reason as Table.RemoveRowsWithErrors:
+    # no error value can exist in a cell, so there is nothing to replace. The
+    # replacement list is still validated, so a malformed call fails loudly
+    # here rather than appearing to work and diverging from Power Query.
+    _arity("Table.ReplaceErrorValues", args, 2)
+    rows = _require_table(args[0])
+    for pair in _require_list(args[1]):
+        entry = _require_list(pair)
+        if len(entry) != 2:
+            raise EvalError(
+                "Table.ReplaceErrorValues: each replacement must be "
+                f"{{column, value}}, got {len(entry)} item(s)"
+            )
+        _require_str(entry[0])
+    return [dict(row) for row in rows]
+
+
 BUILTINS: dict[str, Any] = {
     "Table.Unpivot": _table_unpivot,
     "Table.UnpivotOtherColumns": _table_unpivot_other_columns,
@@ -1140,6 +1220,11 @@ BUILTINS: dict[str, Any] = {
     "Table.FromRows": _table_from_rows,
     "Table.ToRows": _table_to_rows,
     "Table.FromValue": _table_from_value,
+    "Table.ReverseRows": _table_reverse_rows,
+    "Table.Repeat": _table_repeat,
+    "Table.ExpandListColumn": _table_expand_list_column,
+    "Table.SelectRowsWithErrors": _table_select_rows_with_errors,
+    "Table.ReplaceErrorValues": _table_replace_error_values,
     # Enum-like bare identifiers - see the module docstring's "Enum-like
     # bare identifiers" note for why these are registered directly here
     # (enum resolution now lives in _enums.py - see its docstring)

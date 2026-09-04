@@ -151,7 +151,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 280 builtins.
+and calling them; `try ... otherwise ...`; and these 285 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -184,14 +184,17 @@ Record.RemoveFields Record.RenameFields Record.ReorderFields
 Record.SelectFields Record.ToList Record.ToTable Record.TransformFields
 Table.AddColumn Table.AddIndexColumn Table.Buffer Table.ColumnCount
 Table.ColumnNames Table.Combine Table.DemoteHeaders Table.Distinct
-Table.DuplicateColumn Table.ExpandRecordColumn Table.ExpandTableColumn
+Table.DuplicateColumn Table.ExpandListColumn Table.ExpandRecordColumn
+Table.ExpandTableColumn
 Table.FillDown Table.FillUp Table.FirstN Table.FromColumns Table.FromList
 Table.FromRecords Table.FromRows Table.FromValue Table.Group Table.HasColumns
 Table.IsEmpty Table.Join Table.LastN Table.Max Table.Min Table.NestedJoin
 Table.Pivot Table.PromoteHeaders Table.Range Table.RemoveColumns
-Table.RemoveRowsWithErrors Table.RenameColumns Table.ReorderColumns
-Table.ReplaceValue Table.RowCount Table.SelectColumns Table.SelectDuplicates
-Table.SelectRows Table.Skip Table.Sort Table.SplitColumn Table.ToColumns
+Table.RemoveRowsWithErrors Table.RenameColumns Table.Repeat
+Table.ReorderColumns Table.ReplaceErrorValues Table.ReplaceValue
+Table.ReverseRows Table.RowCount Table.SelectColumns Table.SelectDuplicates
+Table.SelectRows Table.SelectRowsWithErrors Table.Skip Table.Sort
+Table.SplitColumn Table.ToColumns
 Table.ToList Table.ToRecords Table.ToRows Table.TransformColumnNames
 Table.TransformColumnTypes Table.TransformColumns Table.Transpose
 Table.Unpivot Table.UnpivotOtherColumns
