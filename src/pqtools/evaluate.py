@@ -136,6 +136,11 @@ class _Ctx:
         self.invoke = invoke
 
 
+# Re-exported from _shared so callers have one import site for the evaluator's
+# public surface; declared here so the re-export is explicit to type checkers.
+__all__ = ["BUILTINS", "EvalError", "UnsupportedError", "evaluate"]
+
+
 def evaluate(
     source: str,
     *,
@@ -599,13 +604,25 @@ def _eval_unary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 # Identifiers - scope, builtins, and the honest boundary for connectors
 # --------------------------------------------------------------------------
 
+# Sources that genuinely need Microsoft's Mashup Engine: credentials, a
+# network identity, driver-specific type mapping, or query folding into a
+# remote engine. File.Contents and Csv.Document used to sit here too - they
+# were removed once implemented natively (builtins/_connectors.py), because
+# reading a local CSV needs none of the above.
 _CONNECTOR_NAMES = frozenset(
     {
         "Web.Contents",
         "Sql.Database",
-        "File.Contents",
         "Excel.Workbook",
-        "Csv.Document",
+        "OData.Feed",
+        "SharePoint.Files",
+        "SharePoint.Tables",
+        "Odbc.DataSource",
+        "Oracle.Database",
+        "PostgreSQL.Database",
+        "MySQL.Database",
+        "Folder.Files",
+        "Folder.Contents",
     }
 )
 

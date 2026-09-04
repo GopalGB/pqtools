@@ -23,9 +23,11 @@ from .core import (
     replace_source,
     update_file,
 )
+from .evaluate import EvalError, UnsupportedError, evaluate
 
 __all__ = [
     "AdapterError",
+    "EvalError",
     "ContainerError",
     "Diagnostic",
     "MQueryError",
@@ -34,8 +36,10 @@ __all__ = [
     "QuerySection",
     "RenameRefusal",
     "SafeWriteError",
+    "UnsupportedError",
     "check",
     "dependencies",
+    "evaluate",
     "format_source",
     "parse",
     "read_sections",

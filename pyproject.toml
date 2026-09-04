@@ -4,18 +4,40 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pqtools"
-version = "0.5.0"
-description = "Power Query M from Python: lint, format and refactor .pq or the queries inside .pbix/.xlsx, and run the transformation chain locally on your own data"
+version = "0.6.0"
+description = "Run, lint and format Power Query M without Power BI. Executes a .pq query end to end on local CSV files in pure Python - like pandas for Power Query - plus a linter, formatter and safe rename for .pq and the queries inside .pbix/.xlsx"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Gopal Bagaswar" }]
-keywords = ["power-query", "m-language", "power-bi", "fabric", "linter", "formatter", "pq"]
+keywords = [
+    "power-query",
+    "powerquery",
+    "power-query-m",
+    "m-language",
+    "power-bi",
+    "powerbi",
+    "fabric",
+    "mashup",
+    "linter",
+    "formatter",
+    "static-analysis",
+    "etl",
+    "data-engineering",
+    "csv",
+    "excel",
+    "pbix",
+    "dataframe",
+    "offline",
+    "pq",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -23,6 +45,12 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Utilities",
+    "Typing :: Typed",
 ]
 dependencies = []
 
@@ -41,6 +69,8 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/GopalGB/pqtools"
+Documentation = "https://github.com/GopalGB/pqtools#readme"
+Changelog = "https://github.com/GopalGB/pqtools/releases"
 Repository = "https://github.com/GopalGB/pqtools"
 Issues = "https://github.com/GopalGB/pqtools/issues"
 

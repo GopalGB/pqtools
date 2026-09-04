@@ -1,0 +1,77 @@
+# pqtools
+
+> Run, lint and format Power Query M without Power BI. pqtools executes a `.pq`
+> query end to end against local CSV files in pure Python (no dependencies), and
+> is also a linter, formatter and safe renamer for M source - including the
+> queries stored inside `.pbix`, `.pbit` and `.xlsx` files.
+
+Install with `pip install pqtools`. Python 3.11+. MIT. Unofficial; not
+affiliated with or endorsed by Microsoft.
+
+## What it does
+
+- `pq eval report.pq` - run a query. Local-file sources (`Csv.Document`,
+  `File.Contents`, `Text.FromBinary`) run natively, then the whole
+  transformation chain: `Table.PromoteHeaders`, `Table.TransformColumnTypes`,
+  `Table.SelectRows`, `Table.Group`, all six `JoinKind` values, pivot/unpivot,
+  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 288 M builtins.
+  Output as JSON or CSV.
+- `pq check report.pq` - lint, with CI-shaped exit codes.
+- `pq format report.pq` - format, via Microsoft's own pinned
+  `@microsoft/powerquery-formatter`.
+- `pq rename report.pq --from Old --to New` - rename a `let` binding without a
+  find-and-replace hitting a matching string literal.
+- Reads `.pbix` / `.pbit` / `.xlsx` containers to analyse the M inside them.
+
+## What it deliberately does NOT do
+
+This matters more than the feature list, because guessing here produces a wrong
+answer that looks right.
+
+- It does not run engine-backed connectors: `Sql.Database`, `Web.Contents`,
+  `SharePoint.*`, `Odbc.*`, `Oracle.Database`, `PostgreSQL.Database`,
+  `MySQL.Database`, `Folder.*`, `Excel.Workbook`. These need credentials, a
+  network identity, driver-specific type mapping, or query folding into a
+  remote engine - Microsoft's Mashup Engine. Each raises a typed
+  `M_EVAL_UNSUPPORTED` error naming itself. For these, supply the source table
+  yourself with `--bind NAME=PATH`.
+- It is not a Power Query replacement and does not reimplement the Mashup
+  Engine.
+- It never approximates. Any construct it cannot evaluate exactly raises a
+  typed error naming it, rather than returning a plausible wrong value.
+- It makes no network calls and sends no telemetry.
+
+## Correct usage
+
+Run a query whose source is a local CSV - nothing to supply:
+
+```bash
+pq eval report.pq --format csv
+```
+
+Run a query whose source needs an engine, or whose path belongs to the machine
+that authored it - bind the source step instead:
+
+```bash
+pq eval report.pq --bind Source=data.csv
+```
+
+From Python (this is the import that works; `evaluate` is exported at the
+package root):
+
+```python
+from pqtools import evaluate
+
+rows = evaluate(query_text, bindings={"Source": [{"a": 1}]})
+```
+
+A table is `list[dict[str, Any]]`. `Csv.Document` does NOT promote headers -
+it returns `Column1..ColumnN`, and `Table.PromoteHeaders` is a separate step,
+exactly as in Power Query.
+
+## Links
+
+- Source: https://github.com/GopalGB/pqtools
+- PyPI: https://pypi.org/project/pqtools/
+- README: https://github.com/GopalGB/pqtools#readme
+- Issues: https://github.com/GopalGB/pqtools/issues

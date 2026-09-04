@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from . import (
+    _connectors,
     _datetime,
     _enums,
     _list,
@@ -43,6 +44,7 @@ _Builtin = Callable[[list[Any], "_Ctx"], Any]
 # rather than resolved by import order.
 _MODULES = (
     _enums,
+    _connectors,
     _text,
     _number,
     _list,

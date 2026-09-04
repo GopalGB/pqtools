@@ -54,6 +54,8 @@ def _type_name(value: Any) -> str:
         return "number"
     if isinstance(value, str):
         return "text"
+    if isinstance(value, bytes):
+        return "binary"
     if isinstance(value, list):
         return "list"
     if isinstance(value, dict):

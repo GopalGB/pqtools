@@ -105,14 +105,18 @@ def test_cli_eval_with_bind_replaces_the_connector_step(tmp_path: Path, capsys):
     assert '"id": "2"' not in out
 
 
-def test_cli_eval_without_bind_reports_the_connector_and_never_reads_ignored_file(
+def test_cli_eval_without_bind_names_the_missing_file_and_creates_nothing(
     tmp_path: Path, capsys
 ):
+    # The demo query points at a file that does not exist. Since local-file
+    # connectors landed this is attempted rather than refused, so the contract
+    # is now: fail with the path named, suggest --bind, and never bring the
+    # file into existence as a side effect.
     query = _demo_query(tmp_path)
     assert main(["eval", str(query)]) == 2
     err = capsys.readouterr().err
-    assert "M_EVAL_UNSUPPORTED" in err
-    assert "Csv.Document" in err
+    assert "ignored.csv" in err
+    assert "--bind" in err
     assert not (tmp_path / "ignored.csv").exists()
 
 

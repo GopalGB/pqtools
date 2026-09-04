@@ -201,10 +201,27 @@ def test_bind_replaces_a_let_binding_without_evaluating_it():
     assert result == [{"id": "1", "b": "x"}, {"id": "3", "b": "z"}]
 
 
-def test_without_bind_the_connector_step_raises_naming_it():
+def test_without_bind_a_missing_local_file_names_the_path_and_bind():
+    # Behaviour changed when local-file connectors landed: this is no longer
+    # refused as a connector, it is attempted. A real query carries the
+    # authoring machine's path, so the error has to name both the path that
+    # is missing and --bind as the way forward.
     source = 'let Source = Csv.Document(File.Contents("ignored.csv")) in Source'
-    with pytest.raises(UnsupportedError, match="Csv.Document"):
+    with pytest.raises(EvalError) as excinfo:
         evaluate(source)
+    message = str(excinfo.value)
+    assert "ignored.csv" in message
+    assert "--bind" in message
+
+
+def test_a_local_csv_source_runs_with_no_bind_at_all(tmp_path):
+    csv = tmp_path / "s.csv"
+    csv.write_text("a,b\n1,x\n", encoding="utf-8")
+    source = (
+        f'let Source = Csv.Document(File.Contents("{csv.as_posix()}")), '
+        "Promoted = Table.PromoteHeaders(Source) in Promoted"
+    )
+    assert evaluate(source) == [{"a": "1", "b": "x"}]
 
 
 def test_bind_prepopulates_top_level_scope_even_without_a_let():
@@ -221,13 +238,19 @@ def test_bind_prepopulates_top_level_scope_even_without_a_let():
     [
         "Web.Contents",
         "Sql.Database",
-        "File.Contents",
         "Excel.Workbook",
-        "Csv.Document",
+        "SharePoint.Files",
+        "Odbc.DataSource",
+        "PostgreSQL.Database",
+        "Folder.Files",
         "Binary.FromText",
     ],
 )
 def test_connectors_raise_unsupported_naming_the_fabric_or_pqtest_host(name):
+    # File.Contents and Csv.Document deliberately left this list: they are
+    # implemented natively now (builtins/_connectors.py). What remains needs
+    # credentials, a network identity, or query folding into a remote engine -
+    # things no local approximation can honestly stand in for.
     with pytest.raises(UnsupportedError, match="Fabric or PQTest"):
         evaluate(f"{name}(1)")
 

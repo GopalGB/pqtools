@@ -51,3 +51,37 @@ def test_readme_states_the_real_builtin_count() -> None:
     assert f"and these {len(BUILTINS)} builtins" in text, (
         f"README's builtin count is stale; the registry now holds {len(BUILTINS)}"
     )
+
+
+def test_evaluate_is_importable_the_way_the_readme_documents_it() -> None:
+    # The README's FAQ tells readers `from pqtools import evaluate`. That is
+    # also the import anyone - or any code assistant - guesses first, so it
+    # has to be the one that works. It did not until 0.6.0.
+    from pqtools import EvalError, UnsupportedError, evaluate
+
+    assert callable(evaluate)
+    assert issubclass(UnsupportedError, EvalError)
+
+
+def test_readme_python_blocks_only_import_names_the_package_exports() -> None:
+    # A README example that cannot even be imported is worse than no example:
+    # it gets copied verbatim into someone's editor and fails on line 1.
+    import re
+
+    import pqtools
+
+    text = _README.read_text(encoding="utf-8")
+    for imported in re.findall(r"^from pqtools import (.+)$", text, re.MULTILINE):
+        for name in (part.strip() for part in imported.split(",")):
+            assert hasattr(pqtools, name), f"README imports missing name: {name}"
+
+
+def test_llms_txt_states_the_real_builtin_count() -> None:
+    # llms.txt exists so an assistant answering "how do I run Power Query in
+    # Python" quotes something true. A stale number there is repeated far more
+    # widely than a stale number in the README.
+    path = _README.parent / "llms.txt"
+    text = path.read_text(encoding="utf-8")
+    assert f"{len(BUILTINS)} M builtins" in text, (
+        f"llms.txt builtin count is stale; the registry now holds {len(BUILTINS)}"
+    )

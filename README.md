@@ -1,12 +1,35 @@
-# pqtools
+# pqtools - run, lint and format Power Query M without Power BI
 
-Offline command-line and Python tooling for Power Query M source: parse, format,
-lint (`check`), safely rename a `let` binding, and run (`eval`) the
-transformation chain of a query against data you supply.
+**pqtools runs a Power Query `.pq` query end to end on your own CSV files, in
+pure Python, with no Power BI, no Excel and no dependencies.** It is also a
+linter, a formatter and a safe renamer for M source - `ruff` and `black` for
+Power Query - and it reads the queries already stored inside `.pbix`, `.pbit`
+and `.xlsx` files.
+
+```bash
+pip install pqtools
+pq eval report.pq            # run the query, print the result
+pq format report.pq          # format it
+pq check report.pq           # lint it in CI
+```
+
+What it is for, in one line each:
+
+- **Run a query offline.** Paste a query out of Power Query's Advanced Editor.
+  If its source is a local CSV, `pq eval` runs the whole thing - `Csv.Document`,
+  `Table.PromoteHeaders`, type conversion, filters, `Table.Group`, joins, pivots
+  - and prints JSON or CSV.
+- **Lint and format M in CI.** `pq check` and `pq format` give Power Query the
+  code-review tooling every other language already has. Exit codes are CI-shaped.
+- **Test a transformation without opening Power BI.** Swap the real data source
+  for a fixture with `--bind` and assert on the result from `pytest`.
+- **Refactor safely.** `pq rename` renames a `let` binding across a query without
+  a find-and-replace touching a string literal that happens to match.
 
 > **Unofficial.** Not affiliated with or endorsed by Microsoft. Not a Power Query
 > runtime - `pq eval` runs the transformation chain of a query locally; it never
-> runs a connector (`Web.Contents`, `Sql.Database`, `Csv.Document`, ...). See
+> runs an engine-backed connector (`Web.Contents`, `Sql.Database`, ...). Local
+> files it does read: `Csv.Document(File.Contents(...))` runs natively. See
 > [Running M](#running-m) below.
 
 > **Renamed.** Published as `mquery-toolkit` 0.1.0 on 2026-09-03 and renamed the
@@ -86,13 +109,26 @@ when any diagnostic has severity `error`, `0` otherwise.
 
 ## Running M
 
-pandas does not run Excel's formulas; it replaces Excel's data connections with
-your data, in Python. `pq eval` does the same for Power Query. A real M query is
-a `Source = <connector>(...)` step followed by a chain of `Table.*`
-transformations. `pqtools` cannot run the connector step - that is Microsoft's
-proprietary Mashup Engine, and this project does not reimplement it. But if
-*you* supply the source table, the rest of the transformation chain runs
-locally, offline, in Python:
+pandas reads a CSV and transforms it. `pq eval` does the same for Power Query.
+A real M query is a `Source = <connector>(...)` step followed by a chain of
+`Table.*` transformations, and both halves now run locally:
+
+```bash
+pq eval report.pq          # the query reads its own CSV - nothing to supply
+```
+
+**Local-file sources run natively.** `Csv.Document`, `File.Contents` and
+`Text.FromBinary` are implemented in `pqtools` itself, in pure Python with no
+dependencies. A query copied verbatim out of Power Query's Advanced Editor -
+`Source` step included - evaluates without any help, as long as its file path
+exists on this machine.
+
+**Engine-backed sources do not, and will not.** `Sql.Database`, `Web.Contents`,
+`SharePoint.*`, `Odbc.*` and friends need credentials, a network identity,
+driver-specific type mapping, or query folding into a remote engine. Those are
+Microsoft's Mashup Engine, this project does not reimplement it, and each one
+raises a typed error naming itself. For those - and for any query carrying the
+authoring machine's `C:\Users\...` path - supply the source table yourself:
 
 ```bash
 pq eval report.pq --bind Source=data.csv
@@ -133,16 +169,20 @@ $ pq eval report.pq --bind Source=data.csv
 [{"b": "x", "id": "1"}, {"b": "z", "id": "3"}]
 ```
 
-`Csv.Document(File.Contents("ignored.csv"))` is never called - `ignored.csv` is
-never opened. `Source` is the CSV you bound, `Kept` drops the `b = "y"` row, and
-`Renamed` renames `a` to `id`. Without `--bind`, the same query fails with a
-typed, exit-`2` error naming the connector:
+`--bind` wins over the query's own `Source` expression, so
+`Csv.Document(File.Contents("ignored.csv"))` is never called and `ignored.csv`
+is never opened. `Source` is the CSV you bound, `Kept` drops the `b = "y"` row,
+and `Renamed` renames `a` to `id`.
+
+Drop the `--bind` and the query reads its own file instead. Here that file does
+not exist, so it fails with a typed, exit-`2` error naming the path and the way
+forward - it does not invent data and does not create the file:
 
 ```bash
 $ pq eval report.pq
-error M_EVAL_UNSUPPORTED: Csv.Document is a connector - Power Query's Mashup
-Engine runs it (Fabric or PQTest is the host that can); pqtools evaluates only
-the transformation chain after you supply its result table with --bind
+error M_EVAL_ERROR: File.Contents: no such file: ignored.csv - if this path came
+from the machine that authored the query, bind the step's result instead:
+--bind Source=<local file>
 ```
 
 **Supported:** number/text/logical/null literals; `+ - * /`; `= <> < <= > >=`;
@@ -151,7 +191,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 285 builtins.
+and calling them; `try ... otherwise ...`; and these 288 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -198,6 +238,7 @@ Table.SplitColumn Table.ToColumns
 Table.ToList Table.ToRecords Table.ToRows Table.TransformColumnNames
 Table.TransformColumnTypes Table.TransformColumns Table.Transpose
 Table.Unpivot Table.UnpivotOtherColumns
+Csv.Document File.Contents Text.FromBinary
 Date.AddDays Date.AddMonths Date.AddWeeks Date.AddYears Date.Day
 Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.EndOfMonth
 Date.EndOfWeek Date.EndOfYear Date.From Date.IsInCurrentMonth
@@ -252,9 +293,11 @@ and order by value, so date filters and date ranges behave.
 
 **Everything else raises a typed `UnsupportedError` (`M_EVAL_UNSUPPORTED`)
 naming the exact construct** - never approximated, never guessed at. That
-includes: any connector (`Web.Contents`, `Sql.Database`, `File.Contents`,
-`Excel.Workbook`, `Csv.Document`, `Binary.*` - the error names the construct
-and says it needs Fabric or PQTest, the two hosts that can actually run it);
+includes: any engine-backed connector (`Web.Contents`, `Sql.Database`,
+`Excel.Workbook`, `SharePoint.*`, `Odbc.*`, `Folder.*`, `Binary.*` - the error
+names the construct and says it needs Fabric or PQTest, the two hosts that can
+actually run it; `Csv.Document` and `File.Contents` are *not* in this list, they
+run natively);
 `#shared`; `meta`; `??`; field projection (`r[[a],[b]]`); culture-aware date and
 number parsing (a supplied culture is refused by name rather than silently
 parsed as en-US); `RoundingMode.*`, `TextEncoding.*` and `BinaryEncoding.*`
@@ -268,8 +311,65 @@ where. `max_steps` (default 1,000,000, an `evaluate()` keyword argument) bounds
 the total number of AST nodes visited, so a runaway query cannot hang the
 caller either.
 
-`pq eval` does not replace Power Query - it replaces the connector's *data*,
-the same trade pandas makes when it replaces a spreadsheet's data connections.
+`pq eval` does not replace Power Query. It runs local-file sources and the
+whole transformation chain; for anything that needs a live engine it stops and
+says so, rather than guessing at what that engine would have returned.
+
+## Frequently asked
+
+### Can I run Power Query without Power BI or Excel?
+
+For local-file sources, yes. `pq eval report.pq` runs `Csv.Document`,
+`File.Contents` and the entire `Table.*` / `List.*` / `Text.*` transformation
+chain in Python. For sources that need a live engine - `Sql.Database`,
+`Web.Contents`, `SharePoint.*`, `Odbc.*` - no tool outside Microsoft's Mashup
+Engine can, and `pqtools` says so with a typed error instead of guessing.
+
+### Is there a linter or formatter for Power Query M?
+
+That is what `pq check` and `pq format` are. Formatting is delegated to
+Microsoft's own `@microsoft/powerquery-formatter`, and parsing to Microsoft's
+`@microsoft/powerquery-parser`, both pinned - so the syntax pqtools accepts is
+the syntax Power Query accepts, not a reimplementation that drifts.
+
+### Is pqtools the pandas of Power Query?
+
+For the transformation half, that is a fair description: 288 M builtins, real
+`Table.Group` aggregations, all six `JoinKind` values, pivot/unpivot, the type
+system and date/time handling. The difference from pandas is the boundary -
+pandas has no equivalent of a `Sql.Database` connector that only a proprietary
+engine can open, and where pqtools meets one it stops rather than approximating.
+
+### How do I test a Power Query transformation?
+
+Bind the source step to a fixture and assert on the output:
+
+```python
+from pqtools import evaluate
+
+query = """
+let
+    Source = Csv.Document(File.Contents("live.csv")),
+    Renamed = Table.RenameColumns(Source, {{"a", "id"}})
+in
+    Renamed
+"""
+
+# --bind's Python equivalent: Source is substituted, so Csv.Document and
+# File.Contents are never called and live.csv is never opened.
+assert evaluate(query, bindings={"Source": [{"a": 1}]}) == [{"id": 1}]
+```
+
+### Can it read the queries inside a .pbix or .xlsx file?
+
+Yes - `pq check report.pbix` and `pq format book.xlsx` extract and analyse the M
+already stored in the container. Writing back is limited; see
+[Working inside .xlsx and .pbix](#working-inside-xlsx-and-pbix).
+
+### Does it send my data anywhere?
+
+No. There is no network call in the runtime, no telemetry, and no runtime
+dependency. See [Safety model](#safety-model).
 
 ## Safety model
 
