@@ -119,9 +119,45 @@ A table is `list[dict[str, Any]]`. `Csv.Document` does NOT promote headers -
 it returns `Column1..ColumnN`, and `Table.PromoteHeaders` is a separate step,
 exactly as in Power Query.
 
+## Error codes and exit status
+
+Every failure is a typed error - never a traceback, never a plausible wrong
+value. On the command line it prints as `error CODE: message` on stderr; with
+`--json` it is one object on stderr, `{"code": "...", "message": "..."}`.
+Exit status is 0 on success and 2 on any error, and 2 from `pq check` when a
+diagnostic of severity `error` exists (warnings alone exit 0). From Python the
+same classes are raised, each carrying the code as `.code`.
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `M_PARSE_ERROR` | The source is not valid M. It comes from Microsoft's own parser, so Power Query rejects it too. | Fix the query. |
+| `M_EVAL_ERROR` | The query parsed and a step failed: wrong arity, wrong type, a missing column, an argument a builtin refuses. The message names the function. | Fix the query, not the tool. |
+| `M_EVAL_UNSUPPORTED` | A deliberate refusal. The construct needs an outside system (a SharePoint tenant, the Mashup Engine, a credential store) or is not reproduced on purpose (`Table.Fuzzy*`, `Username`/`Password` inside an M record). The message names what it would need. | Do not retry, and do not approximate around it. Report it as unsupported here, not as broken M. |
+| `M_IO_BLOCKED` | Policy, not failure. The query names a network or database source and the caller did not pass `--allow-net` / `--allow-db`, or the address is private or link-local and `--allow-private-net` was not passed. | Pass a flag only when the human you work for intends that destination. The query names it; the caller does not. |
+| `M_IO_ERROR` | The operating system refused a read or write: a missing file, permissions, a directory where a file was expected. | Check the path. |
+| `M_CONTAINER_ERROR` | A `.pbix` / `.pbit` / `.xlsx` could not be read, or a rebuilt one failed its own verification. Nothing was written. | Report it; do not retry with `--write`. |
+| `M_SAFE_WRITE_REFUSED` | A `--write` was refused: the file changed under the lock, the lock could not be taken, the input exceeds 10 MiB, or it is not valid UTF-8. Nothing was written. | Re-run once the file is stable. Never work around it by writing the file yourself. |
+| `M_RENAME_REFUSED` | `pq rename` could not prove the rename safe: a reserved keyword, a collision with an existing binding, a target that already appears in the source, overlapping spans. Nothing was written. | Choose another name or edit by hand. Scope: SUPPORT-MATRIX.md, "Refactoring scope". |
+| `M_ADAPTER_ERROR` | The Fabric transport returned something malformed, empty, or over its 10 MiB limit. | Report it; nothing local is wrong. |
+| `NODE_ERROR` | Node.js 22 or newer was not found, or was refused (it will not run a `node` found in the current directory). Every command that parses M spawns Node to reach Microsoft's parser. | Install Node 22+, or point `MQUERY_NODE` at it. |
+| `MQUERY_ERROR` | The base code: any other typed failure. | Read the message. |
+
+## Credentials
+
+Database credentials come from the environment and only from the environment:
+`PQTOOLS_SQL_USER` / `PQTOOLS_SQL_PASSWORD` for `Sql.Database`, `PQTOOLS_PG_*`
+for `PostgreSQL.Database`, `PQTOOLS_MYSQL_*` for `MySQL.Database`,
+`PQTOOLS_ORACLE_*` for `Oracle.Database`. A `Username` or `Password` field in
+the M options record is refused by name with `M_EVAL_UNSUPPORTED`, not
+silently ignored, because a credential written into a query gets committed.
+Never put a credential into a query to make it run; ask for the variable to be
+set.
+
 ## Links
 
 - Source: https://github.com/GopalGB/pqtools
 - PyPI: https://pypi.org/project/pqtools/
 - README: https://github.com/GopalGB/pqtools#readme
 - Issues: https://github.com/GopalGB/pqtools/issues
+- Support matrix (authoritative, test-enforced): https://github.com/GopalGB/pqtools/blob/master/SUPPORT-MATRIX.md
+- For coding agents working in the repository: https://github.com/GopalGB/pqtools/blob/master/AGENTS.md

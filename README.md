@@ -16,6 +16,10 @@ pq format report.pq                     # format it
 pq check  report.pq                     # lint it in CI
 ```
 
+For AI assistants and coding agents there is an [`llms.txt`](llms.txt) - what
+this package does, what it refuses, its error codes and how to call it - and
+an [`AGENTS.md`](AGENTS.md) for working in this repository.
+
 <!-- coverage:start -->
 pqtools registers **547 of the 635 names** in Microsoft's Power Query M reference - 86% of NAMES, which is not a measure of semantic compatibility and should not be quoted as one. Each registered name's arity and nullability are checked against its own reference page, and 141 of Microsoft's worked examples reproduce their documented output exactly; see SUPPORT-MATRIX.md for what is and is not measured. Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
