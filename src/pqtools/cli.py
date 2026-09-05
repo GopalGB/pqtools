@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import io
 import json
+import os
+import stat
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -164,17 +167,67 @@ def _print_csv(rows: list[dict[str, Any]]) -> None:
         writer.writerow(row)
 
 
+# A container is rewritten in place, so its backup is the only copy of the
+# pre-edit state. That makes the backup itself a thing worth protecting:
+# neither an unrelated file nor an EARLIER backup may be destroyed to create
+# it. Both were possible - `Path.write_bytes` follows a symlink at the
+# destination and truncates whatever it finds, so a `book.xlsx.bak` symlink
+# pointed at someone else's file overwrote that file, and a second edit
+# silently replaced the original backup with the already-once-edited copy.
+_MAX_BACKUPS = 100
+
+
 def _container_backup(path: Path) -> Path:
-    """Copy ``path`` to ``path.bak`` before it is rewritten.
+    """Snapshot ``path`` to the first free ``path.bak[.N]``, or refuse.
 
     Editing a binary container is the one thing here that destroys the input
     if it goes wrong, and the failure would surface in Excel rather than in
     this process. A sidecar copy makes that recoverable without asking the
     user to have thought of it first.
+
+    Preservation-first: an existing backup is NEVER overwritten, because it
+    holds a state this run cannot reconstruct. The next free numbered sidecar
+    is used instead. The destination is opened with ``O_CREAT | O_EXCL``
+    (plus ``O_NOFOLLOW`` where the platform has it), which in one atomic
+    operation refuses a symlink, refuses an existing file, and settles the
+    race with anything creating the same name concurrently.
+
+    A backup that cannot be completed raises, and every caller creates the
+    backup BEFORE touching the container, so a failure here leaves the
+    original file untouched.
     """
-    backup = path.with_suffix(path.suffix + ".bak")
-    backup.write_bytes(path.read_bytes())
-    return backup
+    data = path.read_bytes()
+    base = path.with_suffix(path.suffix + ".bak")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    for index in range(_MAX_BACKUPS):
+        candidate = base if index == 0 else Path(f"{base}.{index}")
+        try:
+            handle = os.open(candidate, flags, 0o600)
+        except FileExistsError:
+            # Also the symlink case: O_EXCL fails on a symlink whatever it
+            # points at, so the target is never opened, let alone written.
+            continue
+        except OSError as error:
+            raise MQueryError(f"{candidate}: cannot create backup: {error}") from error
+        try:
+            with os.fdopen(handle, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except OSError as error:
+            # A half-written backup is worse than none - it looks recoverable.
+            with contextlib.suppress(OSError):
+                candidate.unlink()
+            raise MQueryError(
+                f"{candidate}: backup failed, {path} was not modified: {error}"
+            ) from error
+        with contextlib.suppress(OSError):
+            candidate.chmod(stat.S_IMODE(path.stat().st_mode))
+        return candidate
+    raise MQueryError(
+        f"{base} and {_MAX_BACKUPS - 1} numbered sidecars all exist; "
+        f"{path} was not modified. Move or delete the old backups first."
+    )
 
 
 def _write_container_transform(args: argparse.Namespace) -> int:
