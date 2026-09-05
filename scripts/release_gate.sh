@@ -33,7 +33,11 @@ $PY -c "from pqtools.evaluate import BUILTINS; print(f'  {len(BUILTINS)} builtin
 check $? "registry imports and merges cleanly"
 
 step "2. Test suite"
-$PY -m pytest -q -n auto >/tmp/pq-gate-tests.log 2>&1
+# -n auto by default. On a memory-constrained machine it spawns one worker per
+# core, each loading the full registry, and the run dies in swap rather than in
+# a test - so PQ_GATE_PYTEST_ARGS="" runs it sequentially instead.
+# shellcheck disable=SC2086
+$PY -m pytest -q ${PQ_GATE_PYTEST_ARGS-"-n auto"} >/tmp/pq-gate-tests.log 2>&1
 check $? "full suite (detail: /tmp/pq-gate-tests.log)"
 tail -1 /tmp/pq-gate-tests.log
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exact claude-opus-5 wrapper gate for mquery-toolkit, reproducible.
+# Exact claude-opus-5 wrapper gate for pqtools (formerly mquery-toolkit), reproducible.
 # Reviews BASE..HEAD with the 2.6 MB vendored bundle and the npm lockfile replaced by
 # 1-line stub blobs (so the diff fits the model and the reviewer still sees the files exist).
 # Usage: bash run-opus-gate.sh <base-sha> <head-sha> <out-file>
@@ -13,7 +13,14 @@ cd "$WT" || exit 1
 git read-tree "$HEAD"
 STUB_BRIDGE=$(printf '// vendored esbuild bundle of @microsoft/powerquery-parser 2.0.0 + powerquery-formatter 1.0.0 (2.6 MB, committed; excluded from review diff, reproducible via `npm run bundle`)\n' | git hash-object -w --stdin)
 STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3, pins parser 2.0.0 / formatter 1.0.0 / esbuild 0.28.2); excluded from review diff" }\n' | git hash-object -w --stdin)
-git update-index --cacheinfo "100644,$STUB_BRIDGE,src/mquery_toolkit/_bridge.cjs"
+# The package was renamed mquery_toolkit -> pqtools in 0.2.0. This line kept the
+# old path, so the stub landed on a file that does not exist and the real 2.6 MB
+# bundle went into the review diff unstubbed - a silent degradation, not an error.
+git update-index --cacheinfo "100644,$STUB_BRIDGE,src/pqtools/_bridge.cjs"
+git ls-files --error-unmatch src/pqtools/_bridge.cjs >/dev/null || {
+  echo "BLOCKED: src/pqtools/_bridge.cjs is not tracked; the stub path is stale again." >&2
+  exit 2
+}
 git update-index --cacheinfo "100644,$STUB_LOCK,package-lock.json"
 STAT=$(git diff --cached --stat | tail -1)
 {
