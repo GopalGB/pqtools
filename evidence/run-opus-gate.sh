@@ -16,16 +16,37 @@ STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3,
 # The package was renamed mquery_toolkit -> pqtools in 0.2.0. This line kept the
 # old path, so the stub landed on a file that does not exist and the real 2.6 MB
 # bundle went into the review diff unstubbed - a silent degradation, not an error.
-git update-index --cacheinfo "100644,$STUB_BRIDGE,src/pqtools/_bridge.cjs"
 git ls-files --error-unmatch src/pqtools/_bridge.cjs >/dev/null || {
   echo "BLOCKED: src/pqtools/_bridge.cjs is not tracked; the stub path is stale again." >&2
   exit 2
 }
-git update-index --cacheinfo "100644,$STUB_LOCK,package-lock.json"
+# Stub a file ONLY when it changed in BASE..HEAD. The index holds HEAD and the
+# worktree's commit is BASE, so stubbing an unchanged file replaces HEAD's blob
+# while BASE keeps the real one - and the diff shows the 2.6 MB bundle being
+# DELETED: 46,288 lines, "Prompt is too long", BLOCKED. Fixing the stale path
+# above is what exposed this; while the path was stale nothing was stubbed and
+# an unchanged bundle produced no diff at all, which was the right result by
+# accident.
+NOTES=""
+stub() {
+  if git diff --quiet "$BASE" "$HEAD" -- "$1"; then
+    NOTES="$NOTES# $1: unchanged in $BASE..$HEAD, not stubbed, not in the diff\n"
+  else
+    git update-index --cacheinfo "100644,$2,$1"
+    NOTES="$NOTES# $1: changed in $BASE..$HEAD, shown as a stub blob\n"
+  fi
+}
+stub src/pqtools/_bridge.cjs "$STUB_BRIDGE"
+stub package-lock.json "$STUB_LOCK"
 STAT=$(git diff --cached --stat | tail -1)
+if [ -n "${DRY_RUN:-}" ]; then
+  printf '%b' "$NOTES"; echo "DRY_RUN staged: $STAT"
+  cd "$REPO" && git worktree remove --force "$WT"; exit 0
+fi
 {
   echo "# Exact claude-opus-5 wrapper review - range $BASE..$HEAD (bundle + lockfile shown as stub blobs)"
   echo "# staged: $STAT"
+  printf '%b' "$NOTES"
   echo "# invoked $(date -u +%FT%TZ) via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)"
   echo
   timeout 900 bash "$HOME/.codex/skills/claude-review/bin/review.sh" --staged
