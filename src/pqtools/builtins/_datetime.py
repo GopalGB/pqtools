@@ -1370,21 +1370,28 @@ def _date_to_text(args: list[Any], ctx: _Ctx) -> Any:
     return _format_custom("Date.ToText", d, fmt)
 
 
+# These two shipped before the rest of the IsIn* family and read an aware
+# argument in the VALUE's own offset, while the other 38 normalise it to the
+# system's local wall clock first. That is not a stylistic difference: at
+# UTC+14, #datetimezone(2026,9,1,0,30,0,14,0) was reported as being in the
+# current month AND in the previous month at the same time, by two functions
+# answering the same question about the same value. They use the family's
+# anchor now.
 def _date_is_in_current_month(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Date.IsInCurrentMonth", args, 1)
-    d = _coerce_date_like("Date.IsInCurrentMonth", args[0])
+    d = _period_anchor_date("Date.IsInCurrentMonth", args[0])
     if d is None:
         return None
-    today = date.today()
+    today = _now_local().date()
     return d.year == today.year and d.month == today.month
 
 
 def _date_is_in_current_year(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Date.IsInCurrentYear", args, 1)
-    d = _coerce_date_like("Date.IsInCurrentYear", args[0])
+    d = _period_anchor_date("Date.IsInCurrentYear", args[0])
     if d is None:
         return None
-    return d.year == date.today().year
+    return d.year == _now_local().date().year
 
 
 def _date_week_of_year(args: list[Any], ctx: _Ctx) -> Any:

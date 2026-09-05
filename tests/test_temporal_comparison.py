@@ -84,3 +84,47 @@ def test_a_date_and_a_datetime_are_different_kinds() -> None:
     """datetime.datetime subclasses datetime.date in Python; M treats them as
     distinct types, so they must not compare equal by subclass accident."""
     assert evaluate("#date(2024,1,1) = #datetime(2024,1,1,0,0,0)") is False
+
+
+def test_the_is_in_family_answers_one_question_one_way() -> None:
+    """Date.IsInCurrentMonth and Date.IsInPreviousMonth used to both say yes.
+
+    The two oldest members of the family read an aware argument in the
+    VALUE's own offset; the 38 added later normalise it to the system's
+    local wall clock first, which is what "as determined by the current date
+    and time on the system" says to do. At a far-eastern offset the two
+    readings land in different months, and the family reported a single
+    value as being in the current month AND the previous one.
+
+    The test does not assert which month - that depends on today - only that
+    the family cannot contradict itself, which is true on every date.
+    """
+    import datetime as pydt
+
+    from pqtools.builtins import _datetime as module
+
+    far_east = "#datetimezone(2026,9,1,0,30,0,14,0)"
+    # Freeze the clock so the assertion is about the offset, not about when
+    # the suite happens to run.
+    local = pydt.datetime(2026, 9, 1, 10, 0, 0)
+    original = module._now_local
+    module._now_local = lambda: local  # type: ignore[assignment]
+    try:
+        current = evaluate(f"Date.IsInCurrentMonth({far_east})")
+        previous = evaluate(f"Date.IsInPreviousMonth({far_east})")
+    finally:
+        module._now_local = original  # type: ignore[assignment]
+    # Exact values, not just "not both true": asserting only the absence of
+    # the contradiction would pass by luck in any month where the old code
+    # also happened to say False.
+    assert (current, previous) == (False, True), (
+        "at UTC+14 this value is 2026-08-31 in system-local time, so with "
+        "the clock frozen to 2026-09-01 it is in the PREVIOUS month and not "
+        f"the current one; got current={current}, previous={previous}"
+    )
+
+
+def test_a_naive_value_is_unaffected_by_that_change() -> None:
+    # The normalisation only moves aware values; the ordinary case must not
+    # have shifted underneath anyone.
+    assert evaluate("Date.IsInCurrentYear(Date.From(DateTime.LocalNow()))") is True
