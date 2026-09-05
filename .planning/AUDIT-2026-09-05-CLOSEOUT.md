@@ -277,3 +277,86 @@ Forcing the value at the CLI was considered and rejected: that is exactly the
 read-every-table behaviour finding 3 removed. Both paths now refuse in the
 typed way and name the step to write instead.
 
+### Round 2b - the sibling the review did not name
+
+The reviewer found the credential leak on the `@odata.nextLink` hop. Asking
+whether the *other* way a request can change hosts had the same defect found
+that it did: a plain **HTTP 302** forwarded the caller's headers too, through
+`_http_fetch` - which every network connector shares, so this was
+`Web.Contents`'s defect as much as `OData.Feed`'s. Pre-existing, not
+introduced by the paging work.
+
+Reproduced: a server answering 302 to a second local origin received
+`Authorization: Bearer ...` in full. `_PolicyRedirectHandler` already
+re-checked the policy on every hop, which answers a different question -
+"may this request be made", not "may this server be told the caller's secret".
+
+Cross-origin redirects now drop the standard credential headers **and every
+header the query supplied**, because a credential does not have to be called
+`Authorization` and `X-API-Key` matches no fixed list. `Accept` is kept.
+Same-origin redirects are unchanged and have their own test, because a fix
+that broke ordinary authenticated services would otherwise have looked like a
+pass. Fixed in `a3faea2`.
+
+## Scope limits - what was NOT verified
+
+Local completion is reported separately from live verification on purpose.
+**Everything above was verified locally, against mock drivers, local HTTP
+servers, temporary files and checked-in fixtures.** None of the following was
+exercised, and no result here should be read as evidence about any of them:
+
+- **No live database.** Every SQL test injects a mock `pyodbc` (or asserts the
+  refusal before a driver is imported). The connection strings and timeouts
+  are asserted as *built* and *passed*, not as accepted by SQL Server,
+  PostgreSQL, MySQL or Oracle. `MultiSubnetFailover=Yes` and
+  `ApplicationIntent=ReadOnly` are written into the string because the page
+  says they should be; no cluster confirmed the failover behaviour.
+- **No credentials were used or inspected.** Every credential in the tests is
+  a dummy literal written for the test.
+- **No Fabric tenant, no Windows PQTest, no native Excel, no Power BI
+  refresh.** The container work was verified by rewriting fixtures and by
+  read-only `pq list` / `pq eval` against the local samples; Excel itself has
+  not opened a rewritten workbook on this machine, which the README already
+  states and which remains true.
+- **No live OData service.** Paging, cycles, the page ceiling, the byte
+  ceiling and the credential-stripping are all verified against local HTTP
+  servers on `127.0.0.1`.
+- **One platform, one interpreter.** macOS on this machine. CI declares three
+  operating systems and Python 3.11-3.13; nothing here speaks to the other
+  two OSes or the other interpreter versions.
+
+## Residual limitations, stated rather than closed
+
+1. **The backup has a narrow non-atomic window.** `_container_backup` creates
+   the sidecar with `O_CREAT|O_EXCL|O_NOFOLLOW` and fsyncs it, so the *create*
+   is atomic, an existing backup is never clobbered, a symlink is never
+   followed, and a failure raises before the container is touched. But if the
+   process is `SIGKILL`ed mid-write, a short `.bak` can remain. No data is
+   lost - the container is still untouched at that point, and the next run
+   moves to `.bak.1` - so the consequence is a confusing stray file, not
+   destruction. Closing it fully would mean writing to a temp file and
+   `os.link`ing it into place, which trades the window for a dependency on
+   hardlink support. Not done; recorded here as a deliberate choice.
+2. **`CommandTimeout`/`ConnectionTimeout` are not implemented for
+   PostgreSQL, MySQL or Oracle.** They refuse by name, which is compliant,
+   but the capability differs from `Sql.Database` and `Odbc.*`. The three
+   drivers express these differently enough that implementing them without a
+   live server to test against would be guessing.
+3. **`HierarchicalNavigation = true` is refused, not implemented.**
+   Microsoft's page does not specify the shape of the schema-grouped table,
+   and inventing one is the defect class this package's gates exist to catch.
+4. **`Table.RemoveRowsWithErrors` and `Table.ReplaceErrorValues` are not
+   implemented.** They refuse in the typed way and are recorded as genuine
+   gaps in `tests/test_doc_examples.py`, not as documentation defects.
+5. **Semantic compatibility is still unmeasured.** 141 of Microsoft's worked
+   examples reproducing their documented output is the strongest evidence
+   available here, and it is not a compatibility percentage. See
+   `SUPPORT-MATRIX.md`.
+6. **`semgrep` was not run** - it is not installed on this machine. `gitleaks`
+   was run over the branch range and found nothing; `pip-audit` reports no
+   known vulnerabilities.
+7. **`pq rename` remains narrow by design.** It refuses on most real Power
+   Query, because a record literal or field access anywhere in the file stops
+   it. The guard was documented, not loosened; narrowing it correctly needs
+   binding-aware analysis of the parse tree and its own regression proof.
+
