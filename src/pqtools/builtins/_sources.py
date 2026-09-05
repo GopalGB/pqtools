@@ -552,14 +552,16 @@ def _uri_combine(args: list[Any], ctx: _Ctx) -> Any:
     )
 
 
+# There is deliberately no `Uri.UnescapeDataString`. pqtools shipped one until
+# 0.10.0, but Microsoft documents exactly four Uri functions - BuildQueryString,
+# Combine, EscapeDataString, Parts - and that is not among them
+# (learn.microsoft.com/en-us/powerquery-m/uri-unescapedatastring is a 404).
+# Implementing a function M does not have is worse than a missing one: the
+# query runs here and then fails in Power Query, which inverts the only promise
+# this package makes. Use Uri.Parts, whose fields are already decoded.
 def _uri_escape(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Uri.EscapeDataString", args, 1)
     return urllib.parse.quote(_require_str(args[0]), safe="")
-
-
-def _uri_unescape(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Uri.UnescapeDataString", args, 1)
-    return urllib.parse.unquote(_require_str(args[0]))
 
 
 def _uri_build(args: list[Any], ctx: _Ctx) -> Any:
@@ -590,6 +592,5 @@ BUILTINS: dict[str, Any] = {
     "Uri.Parts": _uri_parts,
     "Uri.Combine": _uri_combine,
     "Uri.EscapeDataString": _uri_escape,
-    "Uri.UnescapeDataString": _uri_unescape,
     "Uri.BuildQueryString": _uri_build,
 }

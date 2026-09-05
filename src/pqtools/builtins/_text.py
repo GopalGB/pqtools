@@ -10,10 +10,12 @@ import re
 import uuid as _uuid
 from typing import TYPE_CHECKING, Any
 
+from ._connectors import _CODE_PAGES, _DEFAULT_ENCODING
 from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _check_invariant_culture,
     _format_number,
     _require_int,
     _require_list,
@@ -745,6 +747,195 @@ def _text_new_guid(args: list[Any], ctx: _Ctx) -> Any:
     return str(_uuid.uuid4()).upper()
 
 
+def _text_range(args: list[Any], ctx: _Ctx) -> Any:
+    # Text.Range(text as nullable text, offset as number, optional count as
+    # nullable number) as nullable text. Verified against the MS docs' own
+    # two worked examples: Text.Range("Hello World", 6) -> "World" and
+    # Text.Range("Hello World Hello", 6, 5) -> "World". Trap (verified from
+    # the docs' own words, "Raises an error if there aren't enough
+    # characters"): unlike Text.Middle, which silently CLAMPS an over-long
+    # start/count, Range throws instead - the two functions are not
+    # interchangeable at the boundary even though both slice text.
+    _arity("Text.Range", args, 2, 3)
+    text = args[0]
+    if text is None:
+        return None
+    text = _require_str(text)
+    offset = _require_int(args[1])
+    if offset < 0:
+        raise EvalError("Text.Range: offset must not be negative")
+    if offset > len(text):
+        raise EvalError("Text.Range: not enough characters")
+    if len(args) == 3 and args[2] is not None:
+        count = _require_int(args[2])
+        if count < 0:
+            raise EvalError("Text.Range: count must not be negative")
+        if offset + count > len(text):
+            raise EvalError("Text.Range: not enough characters")
+        return text[offset : offset + count]
+    return text[offset:]
+
+
+def _text_remove_range(args: list[Any], ctx: _Ctx) -> Any:
+    # Text.RemoveRange(text as nullable text, offset as number, optional
+    # count as nullable number) as nullable text. `count` defaults to 1
+    # (verified: the docs' example 1 omits count and removes exactly one
+    # character: Text.RemoveRange("ABCDE", 2) -> "ABDE"). Example 2:
+    # Text.RemoveRange("ABCDE", 1, 2) -> "ADE".
+    #
+    # This page does not give a worked example for an out-of-range
+    # offset/count, so raising here is a CHOICE, not a docs-verified fact
+    # for this specific function - it follows sibling Text.Range (which
+    # explicitly documents "raises an error if there aren't enough
+    # characters" for the identical offset+count shape) and .NET's own
+    # String.Remove(startIndex, count), which throws on the same condition,
+    # rather than silently clamping.
+    _arity("Text.RemoveRange", args, 2, 3)
+    text = args[0]
+    if text is None:
+        return None
+    text = _require_str(text)
+    offset = _require_int(args[1])
+    if offset < 0:
+        raise EvalError("Text.RemoveRange: offset must not be negative")
+    if offset > len(text):
+        raise EvalError("Text.RemoveRange: not enough characters")
+    count = 1
+    if len(args) == 3 and args[2] is not None:
+        count = _require_int(args[2])
+        if count < 0:
+            raise EvalError("Text.RemoveRange: count must not be negative")
+    if offset + count > len(text):
+        raise EvalError("Text.RemoveRange: not enough characters")
+    return text[:offset] + text[offset + count :]
+
+
+def _text_replace_range(args: list[Any], ctx: _Ctx) -> Any:
+    # Text.ReplaceRange(text as nullable text, offset as number, count as
+    # number, newText as text) as nullable text - `count` is NOT optional
+    # here (unlike RemoveRange). Verified against the docs' own worked
+    # example: Text.ReplaceRange("ABGF", 2, 1, "CDE") -> "ABCDEF" (the "G"
+    # at offset 2 is removed and "CDE" is inserted in its place). Same
+    # out-of-range-raises choice as Text.RemoveRange above, for the same
+    # reason.
+    _arity("Text.ReplaceRange", args, 4)
+    text = args[0]
+    if text is None:
+        return None
+    text = _require_str(text)
+    offset = _require_int(args[1])
+    if offset < 0:
+        raise EvalError("Text.ReplaceRange: offset must not be negative")
+    if offset > len(text):
+        raise EvalError("Text.ReplaceRange: not enough characters")
+    count = _require_int(args[2])
+    if count < 0:
+        raise EvalError("Text.ReplaceRange: count must not be negative")
+    if offset + count > len(text):
+        raise EvalError("Text.ReplaceRange: not enough characters")
+    new_text = _require_str(args[3])
+    return text[:offset] + new_text + text[offset + count :]
+
+
+# TextEncoding.* enum identifiers (TextEncoding.Utf8, TextEncoding.Utf16,
+# ...) are deliberately NOT registered anywhere in this evaluator - see
+# _enums.py's own docstring: their numbering was never confirmed, so a bare
+# `TextEncoding.Utf8` identifier already fails with "unknown identifier"
+# before Text.ToBinary is reached. The reachable call shape is therefore the
+# numeric Windows code page directly - the same shape Text.FromBinary's own
+# `encoding` argument already takes (see _connectors.py). Only the three
+# encodings with a UNAMBIGUOUS, standard byte-order-mark are supported for
+# `includeByteOrderMark`; the rest refuse rather than guess a BOM that does
+# not exist for that encoding.
+_BOM_BYTES: dict[int, bytes] = {
+    65001: b"\xef\xbb\xbf",  # UTF-8
+    1200: b"\xff\xfe",  # UTF-16 LE ("Unicode" / TextEncoding.Utf16)
+    1201: b"\xfe\xff",  # UTF-16 BE ("BigEndianUnicode")
+}
+
+
+def _require_bool(value: Any, what: str) -> bool:
+    if not isinstance(value, bool):
+        raise EvalError(f"{what}: expected a logical value, got {_type_name(value)}")
+    return value
+
+
+def _text_to_binary(args: list[Any], ctx: _Ctx) -> Any:
+    # Text.ToBinary(text as nullable text, optional encoding as nullable
+    # number, optional includeByteOrderMark as nullable logical) as
+    # nullable binary. Verified against the MS docs' own two worked
+    # examples: default UTF-8 encoding of "Testing 1-2-3" base64-encodes to
+    # exactly "VGVzdGluZyAxLTItMw==" (cross-checked with Python's own
+    # base64.b64encode), and TextEncoding.Utf16 (code page 1200, which
+    # `_CODE_PAGES` already maps to "utf-16-le") with
+    # includeByteOrderMark=true produces the exact hex
+    # "fffe540065007300740069006e006700200031002d0032002d003300" (cross-
+    # checked byte-for-byte). Python's explicit "utf-16-le"/"utf-16-be"
+    # codecs never emit a BOM on `.encode()` (only the generic "utf-16"
+    # codec does, and only in native/ambiguous endianness), so the BOM is
+    # prepended by hand here rather than relying on the codec to add one.
+    _arity("Text.ToBinary", args, 1, 3)
+    text = args[0]
+    if text is None:
+        return None
+    text = _require_str(text)
+    code_page = (
+        _DEFAULT_ENCODING if len(args) < 2 or args[1] is None else _require_int(args[1])
+    )
+    codec = _CODE_PAGES.get(code_page)
+    if codec is None:
+        raise UnsupportedError(
+            f"Text.ToBinary: text encoding code page {code_page} (known: "
+            + ", ".join(str(k) for k in sorted(_CODE_PAGES))
+            + ")"
+        )
+    include_bom = False
+    if len(args) == 3 and args[2] is not None:
+        include_bom = _require_bool(args[2], "Text.ToBinary")
+    try:
+        encoded = text.encode(codec)
+    except UnicodeEncodeError as error:
+        raise EvalError(f"Text.ToBinary: {error}") from error
+    if not include_bom:
+        return encoded
+    bom = _BOM_BYTES.get(code_page)
+    if bom is None:
+        raise UnsupportedError(
+            f"Text.ToBinary: includeByteOrderMark for code page {code_page} "
+            "(no standard byte-order mark is defined for this encoding)"
+        )
+    return bom + encoded
+
+
+def _text_infer_number_type(args: list[Any], ctx: _Ctx) -> Any:
+    # Text.InferNumberType(text as text, optional culture as nullable text)
+    # as type. The MS docs page for this function has NO worked example -
+    # it says only "Infers the granular number type (Int64.Type,
+    # Double.Type, and so on)". It does not say which text forms select
+    # which of the ~9 granular number subtypes (Int64 vs Double vs Decimal
+    # vs Currency vs Percentage), what the Int64-range overflow boundary
+    # does, or how the optional culture argument changes parsing. Guessing
+    # at that mapping is exactly the plausible-wrong-answer failure this
+    # package refuses to produce - the same reasoning _type.py's own
+    # docstring already gives for refusing Value.Type/Value.Is on values it
+    # cannot classify - so this refuses by name instead of picking a
+    # subtype. Still registered, per this codebase's own convention (see
+    # Comparer.FromCulture above), so the refusal names itself precisely
+    # rather than surfacing as "unknown identifier".
+    _arity("Text.InferNumberType", args, 1, 2)
+    _check_invariant_culture(
+        "Text.InferNumberType",
+        args[1] if len(args) == 2 else None,
+        "culture-specific number-type inference",
+    )
+    raise UnsupportedError(
+        "Text.InferNumberType: granular number-subtype selection (Int64.Type "
+        "vs Double.Type vs Decimal.Type vs Currency.Type vs Percentage.Type) "
+        "has no worked example in the M docs to pin it against, so this "
+        "module does not guess which subtype a given text maps to"
+    )
+
+
 # The M-visible names this module owns. builtins/__init__.py merges every
 # module's BUILTINS into one registry, so a new function is added HERE and
 # nowhere else - no central file to edit, and no merge conflict when several
@@ -787,4 +978,9 @@ BUILTINS: dict[str, Any] = {
     "Text.At": _text_at,
     "Text.SplitAny": _text_split_any,
     "Text.NewGuid": _text_new_guid,
+    "Text.Range": _text_range,
+    "Text.RemoveRange": _text_remove_range,
+    "Text.ReplaceRange": _text_replace_range,
+    "Text.ToBinary": _text_to_binary,
+    "Text.InferNumberType": _text_infer_number_type,
 }

@@ -16,6 +16,10 @@ pq format report.pq                     # format it
 pq check  report.pq                     # lint it in CI
 ```
 
+<!-- coverage:start -->
+pqtools implements **292 of the 634** functions in Microsoft's Power Query M reference (46%). Every one of the remaining 342 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+<!-- coverage:end -->
+
 What it is for, in one line each:
 
 - **Run a real query, source and all.** Paste a query out of Power Query's
@@ -214,7 +218,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 354 builtins.
+and calling them; `try ... otherwise ...`; and these 353 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -295,7 +299,6 @@ PostgreSQL.Database
 MySQL.Database
 Oracle.Database
 Uri.BuildQueryString Uri.Combine Uri.EscapeDataString Uri.Parts
-Uri.UnescapeDataString
 Binary.Buffer Binary.Combine Binary.Decompress Binary.FromText Binary.Length
 Binary.ToText
 BinaryEncoding.Base64 BinaryEncoding.Hex
@@ -403,9 +406,36 @@ in
     Grouped
 ```
 
-**SharePoint is the one that still refuses.** Completing its OAuth flow would
-mean holding your tokens, which is a different product. It raises an error
-naming itself rather than returning something plausible.
+**Every function Power Query has, pqtools answers for.** Not by implementing
+all of them - by never leaving you guessing which case you are in. `pqtools`
+carries Microsoft's whole documented function list, so a name it does not
+implement still gets a typed error saying *why*, and a name that is not M at
+all still reads as a typo:
+
+```
+Salesforce.Data(...)      Salesforce.Data is a data-source connector. It needs
+                          vendor credentials, an OAuth identity, or a
+                          proprietary driver that pqtools does not ship.
+                          Supply its result with --bind NAME=PATH and pqtools
+                          will run every step after it
+Table.FuzzyJoin(...)      does approximate matching. Microsoft does not
+                          document the similarity algorithm precisely enough
+                          to reproduce, and an approximate join returns the
+                          WRONG ROWS rather than an error
+Tabel.RowCount(...)       unknown identifier: Tabel.RowCount
+```
+
+Those are three different problems with three different fixes, and before
+0.10.0 all three said "unknown identifier". The list is generated from
+Microsoft's reference by `scripts/sync_m_catalog.py`, so it cannot drift the
+way the previous hand-kept version did - it had five connector names on file
+while Microsoft documented eighty-five.
+
+The same check runs in reverse. `tests/test_catalog.py` fails if pqtools
+registers a name Power Query does not have, because that is the one failure
+worse than a missing function: your query passes here and then fails in Power
+Query. It found two - `Uri.UnescapeDataString` and `Table.SelectDuplicates`,
+both invented by this project, both removed in 0.10.0.
 
 ### Why network and database access are off by default
 

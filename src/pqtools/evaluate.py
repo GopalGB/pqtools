@@ -38,6 +38,7 @@ from .builtins._shared import (
     _type_name,
 )
 from .builtins._type import _PRIMITIVE_TYPES, _classify, _MType
+from .catalog import explain as _explain_documented
 from .core import ast as _parse_ast
 from .io import DENY_ALL, IOBlockedError, IOPolicy
 
@@ -930,6 +931,12 @@ def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) 
             "the transformation chain after you supply its result table with "
             "--bind"
         )
+    documented = _explain_documented(name)
+    if documented is not None:
+        # A real M function we do not implement. Saying "unknown identifier"
+        # here is the same error a typo gives, which leaves the reader unable
+        # to tell a misspelling from a genuine gap.
+        raise UnsupportedError(documented)
     raise UnsupportedError(f"unknown identifier: {name}")
 
 

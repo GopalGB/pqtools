@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from pqtools.catalog import DOCUMENTED  # noqa: E402
 from pqtools.evaluate import BUILTINS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -150,7 +151,35 @@ def main() -> int:
         re.sub(r"\d+ M builtins", f"{total} M builtins", llms.read_text("utf-8")),
         encoding="utf-8",
     )
+    # Coverage, written between markers so both documents state one number
+    # that is computed rather than remembered. llms.txt spent two releases
+    # telling AI assistants that connectors shipped in 0.8.0 were unsupported
+    # because its capability prose was updated by hand and the hand forgot.
+    documented = len(DOCUMENTED)
+    covered = sum(1 for name in DOCUMENTED if name in BUILTINS)
+    coverage = (
+        f"pqtools implements **{covered} of the {documented}** functions in "
+        f"Microsoft's Power Query M reference ({100 * covered // documented}%). "
+        f"Every one of the remaining {documented - covered} is recognised by "
+        "name and refuses with a typed error saying which outside system it "
+        "would need - never a wrong answer, and never the bare "
+        "\"unknown identifier\" that a typo produces."
+    )
+    for path in (readme, llms):
+        body = path.read_text(encoding="utf-8")
+        marked = re.sub(
+            r"(<!-- coverage:start -->).*?(<!-- coverage:end -->)",
+            lambda m: f"{m.group(1)}\n{coverage}\n{m.group(2)}",
+            body,
+            count=1,
+            flags=re.DOTALL,
+        )
+        if marked == body and "<!-- coverage:start -->" in body:
+            print(f"warning: coverage markers present but unchanged in {path.name}")
+        path.write_text(marked, encoding="utf-8")
+
     print(f"synced {total} builtins into README.md and llms.txt")
+    print(f"coverage: {covered}/{documented} documented M functions")
     return 0
 
 

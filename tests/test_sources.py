@@ -224,9 +224,21 @@ def test_uri_parts_splits_a_url() -> None:
     assert parts["Query"] == {"a": "1"}
 
 
-def test_uri_escaping_round_trips() -> None:
+def test_uri_escaping() -> None:
     assert evaluate('let S = Uri.EscapeDataString("a b&c") in S') == "a%20b%26c"
-    assert evaluate('let S = Uri.UnescapeDataString("a%20b%26c") in S') == "a b&c"
+
+
+def test_there_is_no_uri_unescape_because_m_has_none() -> None:
+    """pqtools shipped `Uri.UnescapeDataString` until 0.10.0. M has no such
+    function - Microsoft documents exactly four Uri functions and that is not
+    one. Implementing a function M lacks is worse than omitting one: the query
+    passes here and fails in Power Query, which inverts this package's whole
+    promise. Uri.Parts already returns decoded fields.
+    """
+    from pqtools import UnsupportedError
+
+    with pytest.raises(UnsupportedError, match="unknown identifier"):
+        evaluate('Uri.UnescapeDataString("a%20b")')
 
 
 def test_uri_combine_joins_a_relative_path() -> None:

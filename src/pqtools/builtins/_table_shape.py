@@ -859,45 +859,6 @@ def _table_remove_rows_with_errors(args: list[Any], ctx: _Ctx) -> Any:
     return list(_require_table(args[0]))
 
 
-def _table_select_duplicates(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.SelectDuplicates", args, 1, 2)
-    table = _require_table(args[0])
-    names: list[str] | None = None
-    if len(args) == 2 and args[1] is not None:
-        names = _field_name_list(args[1])
-        if table:
-            for name in names:
-                if name not in table[0]:
-                    raise EvalError(f"Table.SelectDuplicates: no such column: {name}")
-
-    def key_of(row: dict[str, Any]) -> Any:
-        if names is not None:
-            return tuple(row.get(name) for name in names)
-        return row
-
-    group_keys: list[Any] = []
-    counts: list[int] = []
-    index_of_row: list[int] = []
-    for row in table:
-        key = key_of(row)
-        try:
-            idx = group_keys.index(key)
-        except ValueError:
-            idx = len(group_keys)
-            group_keys.append(key)
-            counts.append(0)
-        counts[idx] += 1
-        index_of_row.append(idx)
-    # Every row belonging to a group of size >= 2 is kept (not just the
-    # "extra" occurrences beyond the first) - the common, widely
-    # corroborated understanding of Table.SelectDuplicates; pinned by a
-    # test since Microsoft's own reference page for it was unreachable
-    # while implementing this.
-    return [
-        row for row, idx in zip(table, index_of_row, strict=True) if counts[idx] >= 2
-    ]
-
-
 def _table_max_or_min(args: list[Any], want_max: bool, what: str) -> Any:
     _arity(what, args, 2, 3)
     table = _require_table(args[0])
