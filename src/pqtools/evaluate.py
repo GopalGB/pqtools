@@ -396,7 +396,15 @@ def _eval_record(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 
 def _eval_list(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     (array_wrapper,) = _semantic(node)
-    return [_eval(_semantic(csv)[0], scope, ctx) for csv in _children(array_wrapper)]
+    items: list[Any] = []
+    for csv in _children(array_wrapper):
+        element = _semantic(csv)[0]
+        if element["kind"] == "RangeExpression":
+            # `{1..5}` contributes five items, not one.
+            items.extend(_range_values(element, scope, ctx))
+        else:
+            items.append(_eval(element, scope, ctx))
+    return items
 
 
 def _ascribed_type_name(node: dict[str, Any]) -> str | None:
@@ -666,6 +674,8 @@ def _eval_recursive(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
         elif step_kind == "ItemAccessExpression":
             (index_node,) = _semantic(step)
             base = _list_index(base, _eval(index_node, scope, ctx), _has_optional(step))
+        elif step_kind == "FieldProjection":
+            base = _project_fields(base, step, _has_optional(step))
         elif step_kind == "FieldSelector":
             (name_node,) = _semantic(step)
             base = _record_field_access(
@@ -687,6 +697,11 @@ def _error_record(error: EvalError) -> dict[str, Any]:
     by the language (Reason/Message/Detail), so code that reads
     ``[Message]`` off a caught error keeps working.
     """
+    supplied = getattr(error, "m_error_record", None)
+    if isinstance(supplied, dict):
+        # `error [Reason = "R", ...]` named its own fields; handing back the
+        # generic shape would lose exactly what the author raised.
+        return supplied
     return {
         "Reason": "Expression.Error",
         "Message": str(error),
@@ -1180,6 +1195,206 @@ def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) 
 # Dispatch
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Core language constructs
+#
+# These were all `UnsupportedError` until 0.10.0, and they are not exotic:
+# 23 of Microsoft's own worked examples use `..` alone. They were invisible
+# because no fixture in this repo was written by someone reading the M
+# reference - a library author writes `{1, 2, 3}`, the reference writes
+# `{1..10}`.
+# --------------------------------------------------------------------------
+
+
+def _range_values(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> list[Any]:
+    """`{1..5}` and `{"a".."z"}` - the range operator inside a list literal.
+
+    Both forms appear in the reference: `List.Range({1..10}, 6)` for numbers
+    and `Text.Select("a,b;c", {"a".."z"})` for characters. Inclusive at both
+    ends.
+    """
+    start_node, end_node = _semantic(node)
+    start = _eval(start_node, scope, ctx)
+    end = _eval(end_node, scope, ctx)
+    if isinstance(start, str) and isinstance(end, str):
+        if len(start) != 1 or len(end) != 1:
+            raise EvalError(
+                "a text range needs a single character on each side "
+                f"(got {start!r}..{end!r})"
+            )
+        low, high, as_text = ord(start), ord(end), True
+    elif _is_number(start) and _is_number(end):
+        if int(start) != start or int(end) != end:
+            raise EvalError(f"a numeric range needs whole numbers (got {start}..{end})")
+        low, high, as_text = int(start), int(end), False
+    else:
+        raise EvalError(
+            "a .. range needs two numbers or two single characters "
+            f"(got {_type_name(start)} and {_type_name(end)})"
+        )
+    values: list[Any] = []
+    for code in range(low, high + 1):
+        # Each element costs a step, so a runaway range meets the same budget
+        # that guards every other loop here instead of the heap.
+        ctx.budget.tick()
+        values.append(chr(code) if as_text else code)
+    return values
+
+
+_TYPE_KINDS = {
+    "text",
+    "number",
+    "logical",
+    "date",
+    "datetime",
+    "datetimezone",
+    "time",
+    "duration",
+    "binary",
+}
+
+
+def _named_type(node: dict[str, Any]) -> tuple[str | None, bool]:
+    """(primitive type name, nullable) from an `is`/`as` right-hand side."""
+    nullable = any(
+        str(child.get("value", "")) == "nullable"
+        for child in _descendants(node, "Constant")
+    )
+    for candidate in _descendants(node, "PrimitiveType"):
+        return str(candidate.get("value")), nullable
+    if node.get("kind") == "PrimitiveType":
+        return str(node.get("value")), nullable
+    return None, nullable
+
+
+def _conforms(value: Any, node: dict[str, Any], operator: str) -> bool:
+    """M's `is` test: does `value` conform to the named primitive type?"""
+    name, nullable = _named_type(node)
+    if name is None:
+        raise UnsupportedError(
+            f"{operator} against a non-primitive type "
+            "(only the primitive and nullable-primitive types are modelled "
+            "here, which is the same set the M spec defines these operators "
+            "over)"
+        )
+    if value is None:
+        return nullable or name in ("null", "any")
+    if name == "any":
+        return True
+    if name == "none":
+        return False
+    if name == "null":
+        return False
+    if name == "record":
+        return isinstance(value, dict)
+    if name == "function":
+        return isinstance(value, _Lambda) or callable(value)
+    if name in ("list", "table"):
+        if not isinstance(value, list):
+            return False
+        if value and all(isinstance(item, dict) for item in value):
+            # A table here IS a list of records, so the two answers are the
+            # same object. Guessing would make `x is table` and `x is list`
+            # both authoritative about something this model cannot see.
+            raise UnsupportedError(
+                f"{operator} list/table against a list of records: this "
+                "evaluator models an M table as exactly that, so the two "
+                "are indistinguishable here"
+            )
+        return name == "list"
+    if name in _TYPE_KINDS:
+        return _classify(value) == name or (
+            name == "binary" and isinstance(value, bytes)
+        )
+    raise UnsupportedError(f"{operator} against `type {name}`")
+
+
+def _eval_is(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    value_node, type_node = _semantic(node)
+    return _conforms(_eval(value_node, scope, ctx), type_node, "is")
+
+
+def _eval_as(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    """`x as number` - ascription, which CHECKS rather than converts.
+
+    "Is compatible primitive/nullable primitive type or error". It does not
+    coerce: `"1" as number` is an error, not 1.
+    """
+    value_node, type_node = _semantic(node)
+    value = _eval(value_node, scope, ctx)
+    if _conforms(value, type_node, "as"):
+        return value
+    name, nullable = _named_type(type_node)
+    declared = f"nullable {name}" if nullable else str(name)
+    raise EvalError(
+        f"{_type_name(value)} value does not conform to `type {declared}` "
+        "(`as` checks a type, it does not convert - use the matching "
+        "X.From/X.FromText to convert)"
+    )
+
+
+def _eval_coalesce(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    """`x ?? y` - null-coalescing, short-circuiting on a non-null left."""
+    left_node, right_node = _semantic(node)
+    left = _eval(left_node, scope, ctx)
+    return _eval(right_node, scope, ctx) if left is None else left
+
+
+def _eval_error_raising(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    """`error "..."` / `error [Reason=..., Message=..., Detail=...]`.
+
+    The raised value has to be catchable by `try`, and the record form has to
+    survive into `catch (e) => e[Reason]`, so the payload rides on the
+    exception and `_error_record` prefers it over the generic shape.
+    """
+    (payload_node,) = _semantic(node)
+    payload = _eval(payload_node, scope, ctx)
+    if isinstance(payload, dict):
+        message = payload.get("Message")
+        error = EvalError(str(message) if message is not None else "error")
+        # Carried on the exception rather than in the message, so `catch`
+        # can hand back the author's own Reason/Detail unchanged.
+        error.m_error_record = {  # type: ignore[attr-defined]
+            "Reason": payload.get("Reason", "Expression.Error"),
+            "Message": payload.get("Message"),
+            "Detail": payload.get("Detail"),
+        }
+        raise error
+    raise EvalError("error" if payload is None else str(payload))
+
+
+def _project_fields(base: Any, node: dict[str, Any], optional: bool) -> Any:
+    """`r[[a],[b]]` - keep only the named fields, in the order named.
+
+    On a table (a list of records here) M reads the same syntax as column
+    selection, which is the same operation applied row-wise.
+    """
+    names = [
+        _identifier_text(_semantic(selector)[0])
+        for csv in _children(_semantic(node)[0])
+        for selector in [_semantic(csv)[0]]
+    ]
+
+    def pick(record: dict[str, Any]) -> dict[str, Any]:
+        picked: dict[str, Any] = {}
+        for name in names:
+            if name in record:
+                picked[name] = record[name]
+            elif optional:
+                picked[name] = None
+            else:
+                raise EvalError(f"field not found: {name}")
+        return picked
+
+    if isinstance(base, dict):
+        return pick(base)
+    if isinstance(base, list) and all(isinstance(row, dict) for row in base):
+        return [pick(row) for row in base]
+    raise EvalError(
+        f"field projection needs a record or a table, got {_type_name(base)}"
+    )
+
+
 _HANDLERS: dict[str, Callable[[dict[str, Any], _Scope, _Ctx], Any]] = {
     "LiteralExpression": _eval_literal,
     "IdentifierExpression": _eval_identifier_expression,
@@ -1199,17 +1414,20 @@ _HANDLERS: dict[str, Callable[[dict[str, Any], _Scope, _Ctx], Any]] = {
     "RelationalExpression": _eval_relational,
     "LogicalExpression": _eval_logical,
     "UnaryExpression": _eval_unary,
+    "IsExpression": _eval_is,
+    "AsExpression": _eval_as,
+    "NullCoalescingExpression": _eval_coalesce,
+    "ErrorRaisingExpression": _eval_error_raising,
 }
 
 _SIMPLE_UNSUPPORTED: dict[str, str] = {
-    "AsExpression": "type ascription (as)",
-    "IsExpression": "is-expression",
-    "NullCoalescingExpression": "?? (null-coalescing operator)",
-    "MetadataExpression": "meta",
+    "MetadataExpression": "meta - attaching metadata that a later "
+    "Value.Metadata call could read back needs a value wrapper this "
+    "evaluator's flat data model does not have, and passing the value "
+    "through would make every later Value.Metadata call lie",
     "NotImplementedExpression": "... (not-implemented placeholder)",
-    "FieldProjection": "field projection (r[[a],[b]])",
-    "RangeExpression": "a .. range",
-    "ErrorRaisingExpression": "error ...",
+    "RangeExpression": "a .. range outside a list literal "
+    '(it is only meaningful as `{1..5}` or `{"a".."z"}`)',
     "Section": "a section document - pass --member NAME to evaluate one shared member",
     "SectionMember": "a section member outside of --member handling",
 }

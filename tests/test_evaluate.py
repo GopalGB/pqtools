@@ -278,19 +278,39 @@ def test_meta_expression_is_unsupported():
         evaluate("1 meta [a = 1]")
 
 
-def test_null_coalescing_is_unsupported():
-    with pytest.raises(UnsupportedError, match="null-coalescing"):
-        evaluate("null ?? 1")
+def test_null_coalescing_returns_the_right_side_only_for_null():
+    assert evaluate("null ?? 1") == 1
+    assert evaluate("2 ?? 1") == 2
+    assert evaluate("null ?? null") is None
+    # Short-circuits: a failing right side is never reached when the left
+    # side is non-null, which is the whole point of using `??` as a guard.
+    assert evaluate('2 ?? (1 + "a")') == 2
 
 
-def test_as_expression_type_ascription_is_unsupported():
-    with pytest.raises(UnsupportedError, match="type ascription"):
-        evaluate("1 as number")
+def test_as_checks_a_type_and_does_not_convert():
+    """ "Is compatible primitive/nullable primitive type or error."
+
+    The trap is reading `as` as a cast: `"1" as number` is an error in M,
+    not 1. Converting here would silently accept data that Power Query
+    rejects.
+    """
+    assert evaluate("1 as number") == 1
+    assert evaluate("null as nullable number") is None
+    with pytest.raises(EvalError, match="does not conform"):
+        evaluate('"1" as number')
+    with pytest.raises(EvalError, match="does not conform"):
+        evaluate("null as number")
 
 
-def test_is_expression_is_unsupported():
-    with pytest.raises(UnsupportedError, match="is-expression"):
-        evaluate("1 is number")
+def test_is_tests_conformance_to_a_primitive_type():
+    assert evaluate("1 is number") is True
+    assert evaluate('"a" is number') is False
+    assert evaluate("null is number") is False
+    assert evaluate("null is nullable number") is True
+    assert evaluate("1 is any") is True
+    assert evaluate("[a = 1] is record") is True
+    assert evaluate("{1, 2} is list") is True
+    assert evaluate("{1, 2} is table") is False
 
 
 def test_type_value_evaluates_to_a_type():
@@ -323,9 +343,16 @@ def test_function_return_type_ascription_is_checked_not_ignored():
         evaluate("((x) as text => x)(1)")
 
 
-def test_field_projection_is_unsupported():
-    with pytest.raises(UnsupportedError, match="projection"):
-        evaluate("[a = 1, b = 2][[a]]")
+def test_field_projection_keeps_the_named_fields_in_the_order_named():
+    assert evaluate("[a = 1, b = 2][[a]]") == {"a": 1}
+    assert evaluate("[a = 1, b = 2, c = 3][[c], [a]]") == {"c": 3, "a": 1}
+    # On a table the same syntax is column selection, which is the same
+    # operation applied row-wise.
+    table = '#table({"x", "y"}, {{1, 2}, {3, 4}})'
+    assert evaluate(f"{table}[[y]]") == [{"y": 2}, {"y": 4}]
+    with pytest.raises(EvalError, match="field not found"):
+        evaluate("[a = 1][[zzz]]")
+    assert evaluate("[a = 1][[zzz]]?") == {"zzz": None}
 
 
 def test_unknown_identifier_is_unsupported():

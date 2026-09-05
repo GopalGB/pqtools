@@ -140,6 +140,8 @@ _JOIN_RIGHT_OUTER = "RightOuter"
 _JOIN_FULL_OUTER = "FullOuter"
 _JOIN_LEFT_ANTI = "LeftAnti"
 _JOIN_RIGHT_ANTI = "RightAnti"
+_JOIN_LEFT_SEMI = "LeftSemi"
+_JOIN_RIGHT_SEMI = "RightSemi"
 _JOIN_KINDS = frozenset(
     {
         _JOIN_INNER,
@@ -148,6 +150,8 @@ _JOIN_KINDS = frozenset(
         _JOIN_FULL_OUTER,
         _JOIN_LEFT_ANTI,
         _JOIN_RIGHT_ANTI,
+        _JOIN_LEFT_SEMI,
+        _JOIN_RIGHT_SEMI,
     }
 )
 
@@ -161,6 +165,10 @@ _ENUM_BUILTINS: dict[str, Any] = {
     "JoinKind.FullOuter": _JOIN_FULL_OUTER,
     "JoinKind.LeftAnti": _JOIN_LEFT_ANTI,
     "JoinKind.RightAnti": _JOIN_RIGHT_ANTI,
+    # JoinKind.Type documents eight members; these two were missing, so
+    # `Table.Join(a, "k", b, "k", JoinKind.LeftSemi)` read as a typo.
+    "JoinKind.LeftSemi": _JOIN_LEFT_SEMI,
+    "JoinKind.RightSemi": _JOIN_RIGHT_SEMI,
     "GroupKind.Global": _GROUP_GLOBAL,
     "GroupKind.Local": _GROUP_LOCAL,
 }
@@ -514,7 +522,28 @@ def _table_join(args: list[Any], ctx: _Ctx) -> Any:
         raise UnsupportedError("Table.Join: keyEqualityComparers is not honoured")
 
     columns1 = list(table1[0].keys()) if table1 else []
-    columns2 = list(table2[0].keys()) if table2 else []
+    # A right key column that shares its name with the left key it joins to
+    # is COLLAPSED into that one column, not disambiguated. Both of the
+    # reference's examples are needed to see the rule, and either one alone
+    # gives the wrong answer:
+    #
+    #   Example 1 joins "CustomerID" to "CustomerID" and prints ONE
+    #     CustomerID column - pqtools emitted a second one as
+    #     "CustomerID.1", a duplicate key column no real query expects.
+    #   Example 2 joins {"TenantID","CustomerID"} to
+    #     {"Order.TenantID","Order.CustomerID"} and KEEPS both right key
+    #     columns - so "drop the right keys" is wrong too.
+    #
+    # Same name collapses (the values are equal by construction on a match);
+    # a different name is an ordinary column and stays.
+    collapsed = {
+        right for left, right in zip(keys1, keys2, strict=True) if left == right
+    }
+    columns2 = [
+        name
+        for name in (list(table2[0].keys()) if table2 else [])
+        if name not in collapsed
+    ]
     rename2 = _disambiguate(columns1, columns2)
 
     def merged_row(
@@ -528,6 +557,27 @@ def _table_join(args: list[Any], ctx: _Ctx) -> Any:
         return merged
 
     result: list[dict[str, Any]] = []
+
+    if kind in (_JOIN_LEFT_SEMI, _JOIN_RIGHT_SEMI):
+        # "A left semi join returns all rows from the first table that have a
+        # match in the second table" - rows from ONE table, so that table's
+        # own columns and nothing merged in.
+        driving, driving_keys = (
+            (table1, keys1) if kind == _JOIN_LEFT_SEMI else (table2, keys2)
+        )
+        other, other_keys = (
+            (table2, keys2) if kind == _JOIN_LEFT_SEMI else (table1, keys1)
+        )
+        for row in driving:
+            key = _row_key(row, driving_keys, "Table.Join")
+            if None in key:
+                continue
+            for candidate in other:
+                ctx.budget.tick()
+                if _join_keys_match(key, _row_key(candidate, other_keys, "Table.Join")):
+                    result.append(dict(row))
+                    break
+        return result
 
     if kind in (_JOIN_INNER, _JOIN_LEFT_OUTER, _JOIN_LEFT_ANTI, _JOIN_FULL_OUTER):
         matched2: set[int] = set()

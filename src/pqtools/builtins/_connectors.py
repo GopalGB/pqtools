@@ -355,7 +355,12 @@ def _binary_to_text(args: list[Any], ctx: _Ctx) -> Any:
     if encoding == "BinaryEncoding.Base64":
         return base64.b64encode(value).decode("ascii")
     if encoding == "BinaryEncoding.Hex":
-        return value.hex().upper()
+        # Lowercase. Both documented examples that print a hex string
+        # (Text.ToBinary and Text.FromBinary, the BOM round-trip) show
+        # "fffe5400...", and M text comparison is case-sensitive, so an
+        # uppercase result makes `... = "fffe..."` false here and true in
+        # Power Query.
+        return value.hex()
     raise UnsupportedError(f"Binary.ToText encoding {encoding!r}")
 
 

@@ -114,6 +114,16 @@ else
   printf '  SKIP  no .samples/ workbooks present - THIS CHECK DID NOT RUN\n'
 fi
 
+step "8. Microsoft's own worked examples"
+# The corpus nobody here authored. 784 examples harvested from the M
+# reference: none may hit an unknown identifier or a parse error, and every
+# printed Output must reproduce exactly. This is the check that finally has
+# teeth against the failure the other seven cannot see - a suite written by
+# the authors of the code, in the idioms those authors reach for.
+$PY -m pytest tests/test_doc_examples.py -q >/tmp/pq-gate-docs.log 2>&1
+check $? "documented examples run and reproduce their output"
+tail -1 /tmp/pq-gate-docs.log
+
 printf '\n'
 if [ "$FAILED" -eq 0 ]; then printf 'GATE PASSED\n'; else printf 'GATE FAILED\n'; fi
 exit "$FAILED"

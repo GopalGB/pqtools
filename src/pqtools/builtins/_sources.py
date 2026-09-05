@@ -529,14 +529,32 @@ def _odbc_datasource(args: list[Any], ctx: _Ctx) -> Any:
 # --------------------------------------------------------------------------
 
 
+# Default ports, so an absent port reports the number the scheme implies
+# rather than a blank. Microsoft's own Uri.Parts example prints `Port = 80`
+# for a URI that names no port at all.
+_DEFAULT_PORTS = {"http": 80, "https": 443, "ftp": 21, "ftps": 990}
+
+
 def _uri_parts(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Uri.Parts", args, 1)
-    parts = urllib.parse.urlsplit(_require_str(args[0]))
+    text = _require_str(args[0])
+    parts = urllib.parse.urlsplit(text)
+    if not parts.scheme or not parts.netloc:
+        # `Uri.Parts("www.adventure-works.com")` is documented to report
+        # Scheme = "http" and Host = "www.adventure-works.com". Without this,
+        # urlsplit reads the whole string as a PATH, so the host came back
+        # empty and the host name appeared in Path - a wrong answer with no
+        # error, on the page's own first example.
+        parts = urllib.parse.urlsplit("http://" + text.lstrip("/"))
+    port: Any = parts.port
+    if port is None:
+        port = _DEFAULT_PORTS.get(parts.scheme, "")
     return {
         "Scheme": parts.scheme,
         "Host": parts.hostname or "",
-        "Port": parts.port if parts.port is not None else "",
-        "Path": parts.path,
+        "Port": port,
+        # An empty path is "/" - again the page's own example.
+        "Path": parts.path or "/",
         "Query": dict(urllib.parse.parse_qsl(parts.query)),
         "Fragment": parts.fragment,
         "UserName": parts.username or "",

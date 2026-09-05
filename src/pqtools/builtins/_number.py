@@ -91,11 +91,44 @@ def _number_from(args: list[Any], ctx: _Ctx) -> Any:
     raise EvalError(f"Number.From: unsupported value type: {_type_name(value)}")
 
 
+# RoundingMode.Type, by its documented number. The mode decides the TIE only:
+# 1.4 rounds to 1 under every one of them.
+_ROUND_UP, _ROUND_DOWN, _ROUND_AWAY, _ROUND_TOWARD, _ROUND_EVEN = 0, 1, 2, 3, 4
+
+
 def _number_round(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Number.Round", args, 1, 2)
+    _arity("Number.Round", args, 1, 3)
     value = _require_number(args[0])
-    digits = _require_int(args[1]) if len(args) == 2 else 0
-    return round(value, digits)
+    digits = _require_int(args[1]) if len(args) >= 2 and args[1] is not None else 0
+    if len(args) < 3 or args[2] is None:
+        # Python's round() is round-half-to-even, which is also M's default:
+        # Number.Round(1.5) and Number.Round(2.5) are both 2.
+        return round(value, digits)
+    mode = _require_int(args[2])
+    if mode not in (_ROUND_UP, _ROUND_DOWN, _ROUND_AWAY, _ROUND_TOWARD, _ROUND_EVEN):
+        raise EvalError(
+            f"Number.Round: {mode} is not a RoundingMode "
+            "(RoundingMode.Up/Down/AwayFromZero/TowardZero/ToEven)"
+        )
+    if mode == _ROUND_EVEN:
+        return round(value, digits)
+    scale = 10.0**digits
+    scaled = value * scale
+    floor = math.floor(scaled)
+    remainder = scaled - floor
+    if remainder != 0.5:
+        # Not a tie, so the mode does not apply and ordinary rounding stands.
+        return round(value, digits)
+    if mode == _ROUND_UP:
+        chosen = floor + 1
+    elif mode == _ROUND_DOWN:
+        chosen = floor
+    elif mode == _ROUND_AWAY:
+        chosen = floor + 1 if scaled > 0 else floor
+    else:
+        chosen = floor if scaled > 0 else floor + 1
+    result = chosen / scale
+    return result if digits > 0 else int(result)
 
 
 def _number_abs(args: list[Any], ctx: _Ctx) -> Any:
@@ -917,6 +950,9 @@ BUILTINS: dict[str, Any] = {
     # Logical.FromText(text as nullable text) - one argument.
     "Logical.FromText": _from_text("Logical.FromText", _logical_from, options="none"),
     "Number.From": _number_from,
+    # "A constant that represents 3.1415926535897932" - a value, not a
+    # function, so the identifier resolver returns it directly.
+    "Number.PI": math.pi,
     "Number.Round": _number_round,
     "Number.Abs": _number_abs,
     "Json.Document": _json_document,

@@ -712,20 +712,62 @@ def test_join_composite_keys():
     assert result == [{"a": 1, "b": "x", "v": "left", "ra": 1, "rb": "x", "w": "right"}]
 
 
-def test_join_composite_keys_with_same_column_names_get_disambiguated():
-    # When key1 and key2 literally share a name (the common real-world
-    # case), Table.Join is not documented as unifying them into one output
-    # column - this module applies the same ".1" suffix convention it uses
-    # for any other name collision (see _disambiguate's docstring), so
-    # table1's key column wins the bare name and table2's is renamed. This
-    # test pins that deliberate, documented choice.
+def test_join_keys_sharing_a_name_collapse_into_one_column():
+    """A key pair with the same name becomes ONE column, not `id` + `id.1`.
+
+    This test previously asserted the opposite, on the stated grounds that
+    "Table.Join is not documented as unifying them". That was an absence of
+    evidence rather than evidence of absence: the reference's Example 1
+    joins "CustomerID" to "CustomerID" and prints a table with exactly one
+    CustomerID column. It was found by running Microsoft's own worked
+    examples, not by reading the prose, which never states the rule.
+
+    The rule is narrower than "drop the right keys", and Example 2 is what
+    pins that: it joins {"TenantID","CustomerID"} to
+    {"Order.TenantID","Order.CustomerID"} and KEEPS both right key columns.
+    Same name collapses, a different name stays - see the sibling test.
+    """
     left = [{"id": 1, "v": "left"}]
     right = [{"id": 1, "w": "right"}]
     result = evaluate(
         'Table.Join(L, "id", R, "id", JoinKind.Inner)',
         bindings={"L": left, "R": right},
     )
-    assert result == [{"id": 1, "v": "left", "id.1": 1, "w": "right"}]
+    assert result == [{"id": 1, "v": "left", "w": "right"}]
+
+
+def test_join_keys_with_different_names_are_both_kept():
+    """The other half of the rule, from the reference's Example 2."""
+    result = evaluate(
+        'Table.Join(L, "id", R, "rid", JoinKind.Inner)',
+        bindings={"L": [{"id": 1, "v": "left"}], "R": [{"rid": 1, "w": "right"}]},
+    )
+    assert result == [{"id": 1, "v": "left", "rid": 1, "w": "right"}]
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("JoinKind.LeftSemi", [{"id": 1, "v": "a"}]),
+        ("JoinKind.RightSemi", [{"id": 1, "w": "x"}]),
+    ],
+)
+def test_semi_joins_return_one_sides_rows_and_only_its_columns(kind, expected):
+    """ "A left semi join returns all rows from the first table that have a
+    match in the second table" - rows from ONE table, so that table's own
+    columns and nothing merged in.
+
+    Both were missing from the JoinKind enum entirely, so a query naming one
+    read as a misspelling.
+    """
+    result = evaluate(
+        f'Table.Join(L, "id", R, "id", {kind})',
+        bindings={
+            "L": [{"id": 1, "v": "a"}, {"id": 2, "v": "b"}],
+            "R": [{"id": 1, "w": "x"}, {"id": 3, "w": "y"}],
+        },
+    )
+    assert result == expected
 
 
 def test_join_key_count_mismatch_errors():

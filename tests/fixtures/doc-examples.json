@@ -1,0 +1,4085 @@
+{
+ "functions": {
+  "Binary.ApproximateLength": [
+   {
+    "output": "",
+    "usage": "Binary.ApproximateLength(Binary.FromText(\"i45WMlSKjQUA\", BinaryEncoding.Base64))"
+   }
+  ],
+  "Binary.Buffer": [
+   {
+    "output": "",
+    "usage": "Binary.Buffer(Binary.FromList({0..10}))"
+   }
+  ],
+  "Binary.Compress": [
+   {
+    "output": "",
+    "usage": "Binary.Compress(Binary.FromList(List.Repeat({10}, 1000)), Compression.Deflate)"
+   }
+  ],
+  "Binary.Decompress": [
+   {
+    "output": "",
+    "usage": "Binary.Decompress(#binary({115, 103, 200, 7, 194, 20, 134, 36, 134, 74, 134, 84, 6, 0}), Compression.Deflate)"
+   }
+  ],
+  "Binary.From": [
+   {
+    "output": "",
+    "usage": "Binary.From(\"1011\")"
+   }
+  ],
+  "Binary.FromText": [
+   {
+    "output": "",
+    "usage": "Binary.FromText(\"1011\")"
+   },
+   {
+    "output": "",
+    "usage": "Binary.FromText(\"1011\", BinaryEncoding.Hex)"
+   }
+  ],
+  "Binary.Range": [
+   {
+    "output": "",
+    "usage": "Binary.Range(#binary({0..10}), 6)"
+   },
+   {
+    "output": "",
+    "usage": "Binary.Range(#binary({0..10}), 6, 2)"
+   }
+  ],
+  "Binary.View": [
+   {
+    "output": "",
+    "usage": "Binary.View(\n    null,\n    [\n        GetLength = () => 12,\n        GetStream = () => Text.ToBinary(\"hello world!\")\n    ]\n)"
+   }
+  ],
+  "BinaryFormat.Choice": [
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({2, 3, 4, 5}),\n    listFormat = BinaryFormat.Choice(\n        BinaryFormat.Byte,\n        (length) => BinaryFormat.List(BinaryFormat.Byte, length)\n    )\nin\n    listFormat(binaryData)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({2, 3, 4, 5}),\n    listFormat = BinaryFormat.Choice(\n        BinaryFormat.Byte,\n        (length) => BinaryFormat.Record([\n            length = length,\n            list = BinaryFormat.List(BinaryFormat.Byte, length)\n        ])\n    )\nin\n    listFormat(binaryData)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({2, 3, 4, 5}),\n    listFormat = BinaryFormat.Choice(\n        BinaryFormat.Byte,\n        (length) => BinaryFormat.List(BinaryFormat.Byte, length),\n        type list\n    )\nin\n    listFormat(binaryData)"
+   }
+  ],
+  "BinaryFormat.Group": [
+   {
+    "output": "",
+    "usage": "let\n    b = #binary({\n        1, 11,\n        2, 22,\n        2, 22,\n        5, 55,\n        1, 11\n    }),\n    f = BinaryFormat.Group(\n        BinaryFormat.Byte,\n        {\n            {1, BinaryFormat.Byte, BinaryOccurrence.Required},\n            {2, BinaryFormat.Byte, BinaryOccurrence.Repeating},\n            {3, BinaryFormat.Byte, BinaryOccurrence.Optional},\n            {4, BinaryFormat.Byte, BinaryOccurrence.Repeating}\n        },\n        (extra) => BinaryFormat.Byte\n    )\nin\n    f(b)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    b = #binary({\n        1, 101,\n        1, 102\n    }),\n    f = BinaryFormat.Group(\n        BinaryFormat.Byte,\n        {\n            {1, BinaryFormat.Byte, BinaryOccurrence.Repeating,\n              0, (list) => List.Sum(list)},\n            {2, BinaryFormat.Byte, BinaryOccurrence.Optional, 123}\n        }\n    )\nin\n    f(b)"
+   }
+  ],
+  "BinaryFormat.Length": [
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({1, 2, 3}),\n    listFormat = BinaryFormat.Length(\n        BinaryFormat.List(BinaryFormat.Byte),\n        2\n    )\nin\n    listFormat(binaryData)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({1, 2, 3}),\n    listFormat = BinaryFormat.Length(\n        BinaryFormat.List(BinaryFormat.Byte),\n        BinaryFormat.Byte\n    )\nin\n    listFormat(binaryData)"
+   }
+  ],
+  "BinaryFormat.List": [
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({1, 2, 3}),\n    listFormat = BinaryFormat.List(BinaryFormat.Byte)\nin\n    listFormat(binaryData)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({1, 2, 3}),\n    listFormat = BinaryFormat.List(BinaryFormat.Byte, 2)\nin\n    listFormat(binaryData)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({1, 2, 3}),\n    listFormat = BinaryFormat.List(BinaryFormat.Byte, (x) => x < 2)\nin\n    listFormat(binaryData)"
+   }
+  ],
+  "BinaryFormat.Record": [
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({\n        0x00, 0x01,\n        0x00, 0x00, 0x00, 0x02\n    }),\n    recordFormat = BinaryFormat.Record([\n        A = BinaryFormat.UnsignedInteger16,\n        B = BinaryFormat.UnsignedInteger32\n    ])\nin\n    recordFormat(binaryData)"
+   }
+  ],
+  "BinaryFormat.Text": [
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({65, 66, 67}),\n    textFormat = BinaryFormat.Text(2, TextEncoding.Ascii)\nin\n    textFormat(binaryData)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({2, 65, 66}),\n    textFormat = BinaryFormat.Text(\n        BinaryFormat.Byte,\n        TextEncoding.Ascii\n    )\nin\n    textFormat(binaryData)"
+   }
+  ],
+  "BinaryFormat.Transform": [
+   {
+    "output": "",
+    "usage": "let\n    binaryData = #binary({1}),\n    transformFormat = BinaryFormat.Transform(\n        BinaryFormat.Byte,\n        (x) => x + 1\n    )\nin\n    transformFormat(binaryData)"
+   }
+  ],
+  "Byte.From": [
+   {
+    "output": "",
+    "usage": "Byte.From(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Byte.From(\"4.5\", null, RoundingMode.AwayFromZero)"
+   }
+  ],
+  "Character.FromNumber": [
+   {
+    "output": "",
+    "usage": "Character.FromNumber(9)"
+   },
+   {
+    "output": "",
+    "usage": "Character.FromNumber(Character.ToNumber(\"A\"))"
+   },
+   {
+    "output": "",
+    "usage": "Character.FromNumber(0x1F600)"
+   }
+  ],
+  "Character.ToNumber": [
+   {
+    "output": "",
+    "usage": "Character.ToNumber(\"#(tab)\")"
+   },
+   {
+    "output": "",
+    "usage": "Number.ToText(Character.ToNumber(\"#(0001F600)\"), \"X\")"
+   }
+  ],
+  "Combiner.CombineTextByDelimiter": [
+   {
+    "output": "",
+    "usage": "Combiner.CombineTextByDelimiter(\";\")({\"a\", \"b\", \"c\"})"
+   },
+   {
+    "output": "#table(\n    type table [Merged = text],\n    {{\"a,b\"}, {\"c,\"\"d,e,f\"\"\"}}\n)",
+    "usage": "let\n    Source = #table(\n        type table [Column1 = text, Column2 = text],\n        {{\"a\", \"b\"}, {\"c\", \"d,e,f\"}}\n    ),\n    Merged = Table.CombineColumns(\n        Source,\n        {\"Column1\", \"Column2\"},\n        Combiner.CombineTextByDelimiter(\",\", QuoteStyle.Csv),\n        \"Merged\"\n    )\nin\n    Merged"
+   }
+  ],
+  "Combiner.CombineTextByEachDelimiter": [
+   {
+    "output": "",
+    "usage": "Combiner.CombineTextByEachDelimiter({\"=\", \"+\"})({\"a\", \"b\", \"c\"})"
+   }
+  ],
+  "Combiner.CombineTextByLengths": [
+   {
+    "output": "",
+    "usage": "Combiner.CombineTextByLengths({1, 2, 3})({\"aaa\", \"bbb\", \"ccc\"})"
+   },
+   {
+    "output": "",
+    "usage": "Combiner.CombineTextByLengths({1, 2, 3}, \"*********\")({\"aaa\", \"bbb\", \"ccc\"})"
+   }
+  ],
+  "Combiner.CombineTextByPositions": [
+   {
+    "output": "",
+    "usage": "Combiner.CombineTextByPositions({0, 5, 10})({\"abc\", \"def\", \"ghi\"})"
+   }
+  ],
+  "Combiner.CombineTextByRanges": [
+   {
+    "output": "",
+    "usage": "Combiner.CombineTextByRanges({{0, 1}, {3, 2}, {6, null}})({\"abc\", \"def\", \"ghijkl\"})"
+   }
+  ],
+  "Comparer.Equals": [
+   {
+    "output": "",
+    "usage": "Comparer.Equals(Comparer.FromCulture(\"en-US\"), \"1\", \"A\")"
+   }
+  ],
+  "Comparer.FromCulture": [
+   {
+    "output": "",
+    "usage": "Comparer.FromCulture(\"en-US\")(\"a\", \"A\")"
+   },
+   {
+    "output": "",
+    "usage": "Comparer.FromCulture(\"en-US\", true)(\"a\", \"A\")"
+   }
+  ],
+  "Comparer.Ordinal": [
+   {
+    "output": "",
+    "usage": "Comparer.Equals(Comparer.Ordinal, \"encyclopædia\", \"encyclopaedia\")"
+   }
+  ],
+  "Comparer.OrdinalIgnoreCase": [
+   {
+    "output": "",
+    "usage": "Comparer.OrdinalIgnoreCase(\"Abc\", \"abc\")"
+   }
+  ],
+  "Csv.Document": [
+   {
+    "output": "Table.FromRecords({\n    [OrderID = \"1\", Item = \"Fishing rod\"],\n    [OrderID = \"2\", Item = \"1 lb. worms\"]\n})",
+    "usage": "let\n    csv = Text.Combine({\"OrderID,Item\", \"1,Fishing rod\", \"2,1 lb. worms\"}, \"#(cr)#(lf)\")\nin\n    Table.PromoteHeaders(Csv.Document(csv))"
+   },
+   {
+    "output": "Table.FromRecords({\n    [OrderID = \"1\", Color = \"Red\"],\n    [OrderID = \"2\", Color = \"Blue\"]\n})",
+    "usage": "let\n    csv = Text.Combine({\"OrderID#|#Color\", \"1#|#Red\", \"2#|#Blue\"}, \"#(cr)#(lf)\")\nin\n    Table.PromoteHeaders(Csv.Document(csv, null, \"#|#\"))"
+   },
+   {
+    "output": "Table.FromRecords({\n    [Column1 = \"1\", Column2 = \"Barb\", Column3 = \"\"],\n    [Column1 = \"2\", Column2 = \"Cal\", Column3 = \"\"]\n})",
+    "usage": "Csv.Document(\n    \"1|Barb#(cr)#(lf)2|Cal\",\n    [\n        Delimiter = \"|\",\n        Columns = 3\n    ]\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [ID = \"1\", First Name = \"Barb\", Last Name = \"Smith\"],\n    [ID = \"2\", First Name = \"Cal\", Last Name = \"Fisher\"]\n})",
+    "usage": "Csv.Document(\n    \"1|Barb|\"\"Smith#(cr)#(lf)2|Cal|Fisher\",\n    [\n        Delimiter = \"|\",\n        Columns = type table [ID = text, First Name = text, Last Name = text],\n        QuoteStyle = QuoteStyle.None\n    ]\n)"
+   }
+  ],
+  "Currency.From": [
+   {
+    "output": "",
+    "usage": "Currency.From(\"1.23455\")"
+   },
+   {
+    "output": "",
+    "usage": "Currency.From(\"1.23455\", \"en-US\", RoundingMode.Down)"
+   }
+  ],
+  "Date.AddDays": [
+   {
+    "output": "",
+    "usage": "Date.AddDays(#date(2011, 5, 14), 5)"
+   }
+  ],
+  "Date.AddMonths": [
+   {
+    "output": "",
+    "usage": "Date.AddMonths(#date(2011, 5, 14), 5)"
+   },
+   {
+    "output": "",
+    "usage": "Date.AddMonths(#datetime(2011, 5, 14, 8, 15, 22), 18)"
+   }
+  ],
+  "Date.AddQuarters": [
+   {
+    "output": "",
+    "usage": "Date.AddQuarters(#date(2011, 5, 14), 1)"
+   }
+  ],
+  "Date.AddWeeks": [
+   {
+    "output": "",
+    "usage": "Date.AddWeeks(#date(2011, 5, 14), 2)"
+   }
+  ],
+  "Date.AddYears": [
+   {
+    "output": "",
+    "usage": "Date.AddYears(#date(2011, 5, 14), 4)"
+   },
+   {
+    "output": "",
+    "usage": "Date.AddYears(#datetime(2011, 5, 14, 8, 15, 22), 10)"
+   }
+  ],
+  "Date.Day": [
+   {
+    "output": "",
+    "usage": "Date.Day(#datetime(2011, 5, 14, 17, 0, 0))"
+   }
+  ],
+  "Date.DayOfWeek": [
+   {
+    "output": "",
+    "usage": "Date.DayOfWeek(#date(2011, 02, 21), Day.Sunday)"
+   },
+   {
+    "output": "",
+    "usage": "Date.DayOfWeek(#date(2011, 02, 21), Day.Monday)"
+   }
+  ],
+  "Date.DayOfWeekName": [
+   {
+    "output": "",
+    "usage": "Date.DayOfWeekName(#date(2011, 12, 31), \"en-US\")"
+   }
+  ],
+  "Date.DayOfYear": [
+   {
+    "output": "",
+    "usage": "Date.DayOfYear(#date(2011, 03, 01))"
+   }
+  ],
+  "Date.DaysInMonth": [
+   {
+    "output": "",
+    "usage": "Date.DaysInMonth(#date(2011, 12, 01))"
+   }
+  ],
+  "Date.EndOfDay": [
+   {
+    "output": "",
+    "usage": "Date.EndOfDay(#datetime(2011, 5, 14, 17, 0, 0))"
+   },
+   {
+    "output": "",
+    "usage": "Date.EndOfDay(#datetimezone(2011, 5, 17, 5, 0, 0, -7, 0))"
+   }
+  ],
+  "Date.EndOfMonth": [
+   {
+    "output": "",
+    "usage": "Date.EndOfMonth(#date(2011, 5, 14))"
+   },
+   {
+    "output": "",
+    "usage": "Date.EndOfMonth(#datetimezone(2011, 5, 17, 5, 0, 0, -7, 0))"
+   }
+  ],
+  "Date.EndOfQuarter": [
+   {
+    "output": "",
+    "usage": "Date.EndOfQuarter(#datetime(2011, 10, 10, 8, 0, 0))"
+   }
+  ],
+  "Date.EndOfWeek": [
+   {
+    "output": "",
+    "usage": "Date.EndOfWeek(#date(2011, 5, 14))"
+   },
+   {
+    "output": "",
+    "usage": "Date.EndOfWeek(#datetimezone(2011, 5, 17, 5, 0, 0, -7, 0), Day.Sunday)"
+   }
+  ],
+  "Date.EndOfYear": [
+   {
+    "output": "",
+    "usage": "Date.EndOfYear(#datetime(2011, 5, 14, 17, 0, 0))"
+   },
+   {
+    "output": "",
+    "usage": "Date.EndOfYear(#datetimezone(2011, 5, 17, 5, 0, 0, -7, 0))"
+   }
+  ],
+  "Date.From": [
+   {
+    "output": "",
+    "usage": "Date.From(#datetime(1899, 12, 30, 06, 45, 12))"
+   },
+   {
+    "output": "",
+    "usage": "Date.From(43910)"
+   },
+   {
+    "output": "#table(type table [Account Code = text, Posted Date = date, Sales = number],\n{\n    {\"US-2004\", #date(2023, 1, 20), 580},\n    {\"CA-8843\", #date(2023, 7, 18), 280},\n    {\"PA-1274\", #date(2022, 1, 12), 90},\n    {\"PA-4323\", #date(2023, 4, 14), 187},\n    {\"US-1200\", #date(2022, 12, 14), 350},\n    {\"PTY-507\", #date(2023, 6, 4), 110}\n})",
+    "usage": "let\n    Source = #table(type table [Account Code = text, Posted Date = text, Sales = number],\n    {\n        {\"US-2004\", \"20 Januar 2023\", 580},\n        {\"CA-8843\", \"18 Juli, 2023\", 280},\n        {\"PA-1274\", \"12 Januar, 2022\", 90},\n        {\"PA-4323\", \"14 April 2023\", 187},\n        {\"US-1200\", \"14 Dezember, 2022\", 350},\n        {\"PTY-507\", \"4 Juni, 2023\", 110}\n    }),\n    #\"Filtered rows\" = Table.TransformColumns(\n        Source,\n        {\"Posted Date\", each Date.From(_, \"de-DE\"), type date}\n    )\nin\n    #\"Filtered rows\""
+   }
+  ],
+  "Date.FromText": [
+   {
+    "output": "",
+    "usage": "Date.FromText(\"2010-12-31\")"
+   },
+   {
+    "output": "",
+    "usage": "Date.FromText(\"30 Dez 2010\", [Format=\"dd MMM yyyy\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "Date.FromText(\"1400\", [Format=\"yyyy\", Culture=\"ar-SA\"])"
+   },
+   {
+    "output": "#table(type table [Account Code = text, Posted Date = date, Sales = number],\n{\n    {\"US-2004\", #date(2023, 1, 20), 580},\n    {\"CA-8843\", #date(2024, 7, 18), 280},\n    {\"PA-1274\", #date(2023, 1, 12), 90},\n    {\"PA-4323\", #date(2023, 4, 14), 187},\n    {\"US-1200\", #date(2023, 12, 14), 350},\n    {\"PTY-507\", #date(2024, 6, 4), 110}\n})",
+    "usage": "let\n    Source = #table(type table [Account Code = text, Posted Date = text, Sales = number],\n    {\n        {\"US-2004\", \"20 gen. 2023\", 580},\n        {\"CA-8843\", \"18 lug. 2024\", 280},\n        {\"PA-1274\", \"12 gen. 2023\", 90},\n        {\"PA-4323\", \"14 apr. 2023\", 187},\n        {\"US-1200\", \"14 dic. 2023\", 350},\n        {\"PTY-507\", \"4 giu. 2024\", 110}\n    }),\n    #\"Converted Date\" = Table.TransformColumns(\n        Source,\n        {\"Posted Date\", each Date.FromText(_, [Culture = \"it-IT\"]), type date}\n    )\nin\n    #\"Converted Date\""
+   }
+  ],
+  "Date.IsInCurrentDay": [
+   {
+    "output": "",
+    "usage": "Date.IsInCurrentDay(DateTime.FixedLocalNow())"
+   }
+  ],
+  "Date.IsInCurrentMonth": [
+   {
+    "output": "",
+    "usage": "Date.IsInCurrentMonth(DateTime.FixedLocalNow())"
+   }
+  ],
+  "Date.IsInCurrentQuarter": [
+   {
+    "output": "",
+    "usage": "Date.IsInCurrentQuarter(DateTime.FixedLocalNow())"
+   }
+  ],
+  "Date.IsInCurrentWeek": [
+   {
+    "output": "",
+    "usage": "Date.IsInCurrentWeek(DateTime.FixedLocalNow())"
+   }
+  ],
+  "Date.IsInCurrentYear": [
+   {
+    "output": "",
+    "usage": "Date.IsInCurrentYear(DateTime.FixedLocalNow())"
+   }
+  ],
+  "Date.IsInNextDay": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextDay(Date.AddDays(DateTime.FixedLocalNow(), 1))"
+   }
+  ],
+  "Date.IsInNextMonth": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextMonth(Date.AddMonths(DateTime.FixedLocalNow(), 1))"
+   }
+  ],
+  "Date.IsInNextNDays": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextNDays(Date.AddDays(DateTime.FixedLocalNow(), 1), 2)"
+   }
+  ],
+  "Date.IsInNextNMonths": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextNMonths(Date.AddMonths(DateTime.FixedLocalNow(), 1), 2)"
+   }
+  ],
+  "Date.IsInNextNQuarters": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextNQuarters(Date.AddQuarters(DateTime.FixedLocalNow(), 1), 2)"
+   }
+  ],
+  "Date.IsInNextNWeeks": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextNWeeks(Date.AddDays(DateTime.FixedLocalNow(), 7), 2)"
+   }
+  ],
+  "Date.IsInNextNYears": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextNYears(Date.AddYears(DateTime.FixedLocalNow(), 1), 2)"
+   }
+  ],
+  "Date.IsInNextQuarter": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextQuarter(Date.AddQuarters(DateTime.FixedLocalNow(), 1))"
+   }
+  ],
+  "Date.IsInNextWeek": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextWeek(Date.AddDays(DateTime.FixedLocalNow(), 7))"
+   }
+  ],
+  "Date.IsInNextYear": [
+   {
+    "output": "",
+    "usage": "Date.IsInNextYear(Date.AddYears(DateTime.FixedLocalNow(), 1))"
+   }
+  ],
+  "Date.IsInPreviousDay": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousDay(Date.AddDays(DateTime.FixedLocalNow(), -1))"
+   }
+  ],
+  "Date.IsInPreviousMonth": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousMonth(Date.AddMonths(DateTime.FixedLocalNow(), -1))"
+   }
+  ],
+  "Date.IsInPreviousNDays": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousNDays(Date.AddDays(DateTime.FixedLocalNow(), -1), 2)"
+   }
+  ],
+  "Date.IsInPreviousNMonths": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousNMonths(Date.AddMonths(DateTime.FixedLocalNow(), -1), 2)"
+   }
+  ],
+  "Date.IsInPreviousNQuarters": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousNQuarters(Date.AddQuarters(DateTime.FixedLocalNow(), -1), 2)"
+   }
+  ],
+  "Date.IsInPreviousNWeeks": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousNWeeks(Date.AddDays(DateTime.FixedLocalNow(), -7), 2)"
+   }
+  ],
+  "Date.IsInPreviousNYears": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousNYears(Date.AddYears(DateTime.FixedLocalNow(), -1), 2)"
+   }
+  ],
+  "Date.IsInPreviousQuarter": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousQuarter(Date.AddQuarters(DateTime.FixedLocalNow(), -1))"
+   }
+  ],
+  "Date.IsInPreviousWeek": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousWeek(Date.AddDays(DateTime.FixedLocalNow(), -7))"
+   }
+  ],
+  "Date.IsInPreviousYear": [
+   {
+    "output": "",
+    "usage": "Date.IsInPreviousYear(Date.AddYears(DateTime.FixedLocalNow(), -1))"
+   }
+  ],
+  "Date.IsInYearToDate": [
+   {
+    "output": "",
+    "usage": "Date.IsInYearToDate(DateTime.FixedLocalNow())"
+   }
+  ],
+  "Date.IsLeapYear": [
+   {
+    "output": "",
+    "usage": "Date.IsLeapYear(#date(2012, 01, 01))"
+   }
+  ],
+  "Date.Month": [
+   {
+    "output": "",
+    "usage": "Date.Month(#datetime(2011, 12, 31, 9, 15, 36))"
+   }
+  ],
+  "Date.MonthName": [
+   {
+    "output": "",
+    "usage": "Date.MonthName(#datetime(2011, 12, 31, 5, 0, 0), \"en-US\")"
+   }
+  ],
+  "Date.QuarterOfYear": [
+   {
+    "output": "",
+    "usage": "Date.QuarterOfYear(#date(2011, 12, 31))"
+   }
+  ],
+  "Date.StartOfDay": [
+   {
+    "output": "",
+    "usage": "Date.StartOfDay(#datetime(2011, 10, 10, 8, 0, 0))"
+   }
+  ],
+  "Date.StartOfMonth": [
+   {
+    "output": "",
+    "usage": "Date.StartOfMonth(#datetime(2011, 10, 10, 8, 10, 32))"
+   }
+  ],
+  "Date.StartOfQuarter": [
+   {
+    "output": "",
+    "usage": "Date.StartOfQuarter(#datetime(2011, 10, 10, 8, 0, 0))"
+   }
+  ],
+  "Date.StartOfWeek": [
+   {
+    "output": "// Sunday, October 9th, 2011\n#datetime(2011, 10, 9, 0, 0, 0)",
+    "usage": "Date.StartOfWeek(#datetime(2011, 10, 11, 8, 10, 32))"
+   },
+   {
+    "output": "// Monday, October 10th, 2011\n#datetime(2011, 10, 10, 0, 0, 0)",
+    "usage": "Date.StartOfWeek(#datetime(2011, 10, 11, 8, 10, 32), Day.Monday)"
+   }
+  ],
+  "Date.StartOfYear": [
+   {
+    "output": "",
+    "usage": "Date.StartOfYear(#datetime(2011, 10, 10, 8, 10, 32))"
+   }
+  ],
+  "Date.ToRecord": [
+   {
+    "output": "[\n      Year = 2011,\n      Month = 12,\n      Day = 31\n]",
+    "usage": "Date.ToRecord(#date(2011, 12, 31))"
+   }
+  ],
+  "Date.ToText": [
+   {
+    "output": "",
+    "usage": "Date.ToText(#date(2010, 12, 31))"
+   },
+   {
+    "output": "",
+    "usage": "Date.ToText(#date(2010, 12, 31), [Format=\"dd MMM yyyy\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "Date.ToText(#date(2000, 1, 1), [Format=\"yyyy\", Culture=\"ar-SA\"])"
+   }
+  ],
+  "Date.WeekOfMonth": [
+   {
+    "output": "",
+    "usage": "Date.WeekOfMonth(#date(2011, 03, 15))"
+   }
+  ],
+  "Date.WeekOfYear": [
+   {
+    "output": "",
+    "usage": "Date.WeekOfYear(#date(2011, 03, 27))"
+   },
+   {
+    "output": "",
+    "usage": "Date.WeekOfYear(#date(2011, 03, 27), Day.Monday)"
+   }
+  ],
+  "Date.Year": [
+   {
+    "output": "",
+    "usage": "Date.Year(#datetime(2011, 12, 31, 9, 15, 36))"
+   }
+  ],
+  "DateTime.AddZone": [
+   {
+    "output": "",
+    "usage": "DateTime.AddZone(#datetime(2010, 12, 31, 11, 56, 02), 7, 30)"
+   }
+  ],
+  "DateTime.Date": [
+   {
+    "output": "",
+    "usage": "DateTime.Date(#datetime(2010, 12, 31, 11, 56, 02))"
+   }
+  ],
+  "DateTime.From": [
+   {
+    "output": "",
+    "usage": "DateTime.From(#time(06, 45, 12))"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.From(#date(1975, 4, 4))"
+   }
+  ],
+  "DateTime.FromFileTime": [
+   {
+    "output": "",
+    "usage": "DateTime.FromFileTime(129876402529842245)"
+   }
+  ],
+  "DateTime.FromText": [
+   {
+    "output": "",
+    "usage": "DateTime.FromText(\"2010-12-31T01:30:25\")"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.FromText(\"30 Dez 2010 02:04:50.369730\", [Format=\"dd MMM yyyy HH:mm:ss.ffffff\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.FromText(\"2000-02-08T03:45:12Z\", [Format=\"yyyy-MM-dd'T'HH:mm:ss'Z'\", Culture=\"en-US\"])"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.FromText(\"20101231T013000\", [Format=\"yyyyMMdd'T'HHmmss\", Culture=\"en-US\"])"
+   }
+  ],
+  "DateTime.IsInCurrentHour": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInCurrentHour(DateTime.FixedLocalNow())"
+   }
+  ],
+  "DateTime.IsInCurrentMinute": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInCurrentMinute(DateTime.FixedLocalNow())"
+   }
+  ],
+  "DateTime.IsInCurrentSecond": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInCurrentSecond(DateTime.FixedLocalNow())"
+   }
+  ],
+  "DateTime.IsInNextHour": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInNextHour(DateTime.FixedLocalNow() + #duration(0, 1, 0, 0))"
+   }
+  ],
+  "DateTime.IsInNextMinute": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInNextMinute(DateTime.FixedLocalNow() + #duration(0, 0, 1, 0))"
+   }
+  ],
+  "DateTime.IsInNextNHours": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInNextNHours(DateTime.FixedLocalNow() + #duration(0, 2, 0, 0), 2)"
+   }
+  ],
+  "DateTime.IsInNextNMinutes": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInNextNMinutes(DateTime.FixedLocalNow() + #duration(0, 0, 2, 0), 2)"
+   }
+  ],
+  "DateTime.IsInNextNSeconds": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInNextNSeconds(DateTime.FixedLocalNow() + #duration(0, 0, 0, 2), 2)"
+   }
+  ],
+  "DateTime.IsInNextSecond": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInNextSecond(DateTime.FixedLocalNow() + #duration(0, 0, 0, 1))"
+   }
+  ],
+  "DateTime.IsInPreviousHour": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInPreviousHour(DateTime.FixedLocalNow() - #duration(0, 1, 0, 0))"
+   }
+  ],
+  "DateTime.IsInPreviousMinute": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInPreviousMinute(DateTime.FixedLocalNow() - #duration(0, 0, 1, 0))"
+   }
+  ],
+  "DateTime.IsInPreviousNHours": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInPreviousNHours(DateTime.FixedLocalNow() - #duration(0, 2, 0, 0), 2)"
+   }
+  ],
+  "DateTime.IsInPreviousNMinutes": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInPreviousNMinutes(DateTime.FixedLocalNow() - #duration(0, 0, 2, 0), 2)"
+   }
+  ],
+  "DateTime.IsInPreviousNSeconds": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInPreviousNSeconds(DateTime.FixedLocalNow() - #duration(0, 0, 0, 2), 2)"
+   }
+  ],
+  "DateTime.IsInPreviousSecond": [
+   {
+    "output": "",
+    "usage": "DateTime.IsInPreviousSecond(DateTime.FixedLocalNow() - #duration(0, 0, 0, 1))"
+   }
+  ],
+  "DateTime.LocalNow": [
+   {
+    "output": "",
+    "usage": "DateTime.LocalNow()"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.LocalNow()"
+   }
+  ],
+  "DateTime.Time": [
+   {
+    "output": "",
+    "usage": "DateTime.Time(#datetime(2010, 12, 31, 11, 56, 02))"
+   }
+  ],
+  "DateTime.ToRecord": [
+   {
+    "output": "[\n      Year = 2011,\n      Month = 12,\n      Day = 31,\n      Hour = 11,\n      Minute = 56,\n      Second = 2\n]",
+    "usage": "DateTime.ToRecord(#datetime(2011, 12, 31, 11, 56, 2))"
+   }
+  ],
+  "DateTime.ToText": [
+   {
+    "output": "",
+    "usage": "DateTime.ToText(#datetime(2010, 12, 31, 01, 30, 25))"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.ToText(#datetime(2010, 12, 30, 2, 4, 50.36973), [Format=\"dd MMM yyyy HH:mm:ss.ffffff\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "DateTime.ToText(#datetime(2000, 2, 8, 3, 45, 12),[Format=\"yyyy-MM-dd'T'HH:mm:ss'Z'\", Culture=\"en-US\"])"
+   }
+  ],
+  "DateTimeZone.From": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.From(\"2020-10-30T01:30:00-08:00\")"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.From(\"13 de agosto de 2025 15:43:00 -03:00\", \"pt-BR\")"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.From(45658.5)"
+   }
+  ],
+  "DateTimeZone.FromFileTime": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.FromFileTime(129876402529842245)"
+   }
+  ],
+  "DateTimeZone.FromText": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.FromText(\"2010-12-31T01:30:00-08:00\")"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.FromText(\"30 Dez 2010 02:04:50.369730 +02:00\", [Format=\"dd MMM yyyy HH:mm:ss.ffffff zzz\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.FromText(\"2009-06-15T13:45:30.0000000-07:00\", [Format=\"O\", Culture=\"en-US\"])"
+   }
+  ],
+  "DateTimeZone.RemoveZone": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.RemoveZone(#datetimezone(2011, 12, 31, 9, 15, 36, -7, 0))"
+   }
+  ],
+  "DateTimeZone.SwitchZone": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.SwitchZone(#datetimezone(2010, 12, 31, 11, 56, 02, 7, 30), 8)"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.SwitchZone(#datetimezone(2010, 12, 31, 11, 56, 02, 7, 30), 0, -30)"
+   }
+  ],
+  "DateTimeZone.ToLocal": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.ToLocal(#datetimezone(2010, 12, 31, 11, 56, 02, 7, 30))"
+   }
+  ],
+  "DateTimeZone.ToRecord": [
+   {
+    "output": "[\n      Year = 2011,\n      Month = 12,\n      Day = 31,\n      Hour = 11,\n      Minute = 56,\n      Second = 2,\n      ZoneHours = 8,\n      ZoneMinutes = 0\n]",
+    "usage": "DateTimeZone.ToRecord(#datetimezone(2011, 12, 31, 11, 56, 2, 8, 0))"
+   }
+  ],
+  "DateTimeZone.ToText": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.ToText(#datetimezone(2010, 12, 31, 01, 30, 25, 2, 0))"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.ToText(#datetimezone(2010, 12, 30, 2, 4, 50.36973, -8,0), [Format=\"dd MMM yyyy HH:mm:ss.ffffff zzz\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "DateTimeZone.ToText(#datetimezone(2000, 2, 8, 3, 45, 12, 2, 0),[Format=\"O\", Culture=\"en-US\"])"
+   }
+  ],
+  "DateTimeZone.ToUtc": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.ToUtc(#datetimezone(2010, 12, 31, 11, 56, 02, 7, 30))"
+   }
+  ],
+  "DateTimeZone.UtcNow": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.UtcNow()"
+   }
+  ],
+  "DateTimeZone.ZoneHours": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.ZoneHours(#datetimezone(2024, 4, 28, 13, 24, 22, 7, 30))"
+   }
+  ],
+  "DateTimeZone.ZoneMinutes": [
+   {
+    "output": "",
+    "usage": "DateTimeZone.ZoneMinutes(#datetimezone(2024, 4, 28, 13, 24, 22, 7, 30))"
+   }
+  ],
+  "Decimal.From": [
+   {
+    "output": "",
+    "usage": "Decimal.From(\"4.5\")"
+   }
+  ],
+  "Diagnostics.Trace": [
+   {
+    "output": "",
+    "usage": "Diagnostics.Trace(TraceLevel.Information, \"TextValueFromNumber\", () => Text.From(123), true)"
+   }
+  ],
+  "Double.From": [
+   {
+    "output": "",
+    "usage": "Double.From(\"4.5\")"
+   }
+  ],
+  "Duration.Days": [
+   {
+    "output": "",
+    "usage": "Duration.Days(#date(2022, 3, 4) - #date(2022, 2, 25))"
+   }
+  ],
+  "Duration.From": [
+   {
+    "output": "",
+    "usage": "Duration.From(2.525)"
+   },
+   {
+    "output": "",
+    "usage": "Duration.From(\"2.05:55:20.34567\")"
+   }
+  ],
+  "Duration.FromText": [
+   {
+    "output": "",
+    "usage": "Duration.FromText(\"2.05:55:20\")"
+   }
+  ],
+  "Duration.Hours": [
+   {
+    "output": "",
+    "usage": "Duration.Hours(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Duration.Minutes": [
+   {
+    "output": "",
+    "usage": "Duration.Minutes(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Duration.Seconds": [
+   {
+    "output": "",
+    "usage": "Duration.Seconds(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Duration.ToRecord": [
+   {
+    "output": "[\n    Days = 2,\n    Hours = 5,\n    Minutes = 55,\n    Seconds = 20\n]",
+    "usage": "Duration.ToRecord(#duration(2, 5, 55, 20))"
+   }
+  ],
+  "Duration.ToText": [
+   {
+    "output": "",
+    "usage": "Duration.ToText(#duration(2, 5, 55, 20))"
+   }
+  ],
+  "Duration.TotalDays": [
+   {
+    "output": "",
+    "usage": "Duration.TotalDays(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Duration.TotalHours": [
+   {
+    "output": "",
+    "usage": "Duration.TotalHours(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Duration.TotalMinutes": [
+   {
+    "output": "",
+    "usage": "Duration.TotalMinutes(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Duration.TotalSeconds": [
+   {
+    "output": "",
+    "usage": "Duration.TotalSeconds(#duration(5, 4, 3, 2))"
+   }
+  ],
+  "Error.Record": [
+   {
+    "output": "[\n    HasError = true,\n    Error =\n    [\n        Reason = \"DivideByZero\",\n        Message = \"You attempted to divide by zero.\",\n        Detail = null,\n        Message.Format = null,\n        Message.Parameters = null,\n        ErrorCode = null\n    ]\n]",
+    "usage": "let\n    input = 100,\n    divisor = 0,\n    result = try if divisor = 0 then\n        error Error.Record(\n            \"DivideByZero\",\n            \"You attempted to divide by zero.\"\n        )\n    else\n        input / divisor\nin\n    result"
+   },
+   {
+    "output": "[\n    HasError = true,\n    Error = [\n        Reason = \"CustomerNotFound\",\n        Message = \"Customer ID 12345 wasn't found.\",\n        Detail = \"Customer doesn't exist.\",\n        Message.Format = \"Customer ID 12345 wasn't found.\",\n        Message.Parameters = {\n            \"Invalid ID = 12345\",\n            \"Valid IDs: https://api.contoso.com/customers\"\n        },\n        ErrorCode = \"ERR404\"\n    ]\n]",
+    "usage": "let\n    CustomerId = 12345,\n    result = try if CustomerId > 9999 then\n        error Error.Record(\n            \"CustomerNotFound\",\n            Text.Format(\"Customer ID #{0} wasn't found.\", {CustomerId}),\n            \"Customer doesn't exist.\",\n            {\n                Text.Format(\"Invalid ID = #{0}\", {CustomerId}),\n                \"Valid IDs: https://api.contoso.com/customers\"\n            },\n            \"ERR404\"\n        )\n    else CustomerId\nin\n    result"
+   }
+  ],
+  "Excel.Workbook": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = \"ID\", Column2 = \"Name\", Column3 = \"Phone\"],\n    [Column1 = 1, Column2 = \"Bob\", Column3 = \"123-4567\"],\n    [Column1 = 3, Column2 = \"Pam\", Column3 = \"543-7890\"],\n    [Column1 = 2, Column2 = \"Jim\", Column3 = \"987-6543\"]\n})",
+    "usage": "Excel.Workbook(File.Contents(\"C:\\Book1.xlsx\"), null, true){[Item=\"Sheet1\"]}[Data]"
+   }
+  ],
+  "Expression.Constant": [
+   {
+    "output": "",
+    "usage": "Expression.Constant(123)"
+   },
+   {
+    "output": "",
+    "usage": "Expression.Constant(#date(2035, 01, 02))"
+   },
+   {
+    "output": "",
+    "usage": "Expression.Constant(\"abc\")"
+   }
+  ],
+  "Expression.Evaluate": [
+   {
+    "output": "",
+    "usage": "Expression.Evaluate(\"1 + 1\")"
+   },
+   {
+    "output": "",
+    "usage": "Expression.Evaluate(\"List.Sum({1, 2, 3})\", [List.Sum = List.Sum])"
+   },
+   {
+    "output": "",
+    "usage": "Expression.Evaluate(Expression.Constant(\"\"\"abc\") & \" & \" & Expression.Identifier(\"x\"), [x = \"def\"\"\"])"
+   }
+  ],
+  "Expression.Identifier": [
+   {
+    "output": "",
+    "usage": "Expression.Identifier(\"MyIdentifier\")"
+   },
+   {
+    "output": "",
+    "usage": "Expression.Identifier(\"My Identifier\")"
+   }
+  ],
+  "FabricAI.Prompt": [
+   {
+    "output": "",
+    "usage": "FabricAI.Prompt(\n    \"Categorize the review as positive, negative, or neutral, and extract a single key word in parentheses.\",\n    [Review = \"This is a great product. It only broke four times before we had to return it!\"]\n)"
+   }
+  ],
+  "Folder.Files": [
+   {
+    "output": "",
+    "usage": "Folder.Files(\"C:\\test-examples\\example-folder\")"
+   }
+  ],
+  "Function.From": [
+   {
+    "output": "",
+    "usage": "Function.From(type function (a as number, b as number) as number, List.Sum)(2, 1)"
+   },
+   {
+    "output": "",
+    "usage": "Function.From(type function (a as text, b as text) as text, (list) => list{0} & list{1})(\"2\", \"1\")"
+   }
+  ],
+  "Function.Invoke": [
+   {
+    "output": "",
+    "usage": "Function.Invoke(Record.FieldNames, {[A = 1, B = 2]})"
+   }
+  ],
+  "Function.ScalarVector": [
+   {
+    "output": "Table.FromRecords({\n    [a = 1, b = 2, Result = 2],\n    [a = 3, b = 4, Result = 12]\n})",
+    "usage": "let\n    Compute.ScoreScalar = (left, right) => left * right,\n    // When Function.ScalarVector batching kicks in, we'll receive all\n    // of the inputs for the entire table here at once.\n    Compute.ScoreVector = (input) => let\n        chunks = Table.Split(input, 100),\n        scoreChunk = (chunk) => Table.TransformRows(chunk, each Compute.ScoreScalar([left], [right]))\n      in\n        List.Combine(List.Transform(chunks, scoreChunk)),\n    Compute.Score = Function.ScalarVector(\n        type function (left as number, right as number) as number,\n        Compute.ScoreVector\n    ),\n    Final = Table.AddColumn(\n        Table.FromRecords({\n            [a = 1, b = 2],\n            [a = 3, b = 4]\n        }),\n        \"Result\",\n        each Compute.Score([a], [b])\n    )\nin\n    Final"
+   },
+   {
+    "output": "#table(\n    type table [Test Name = text, Right = number, Total = number, Grade = number],\n    {\n      {\"Quiz 1\", 3, 4, 0.75},\n      {\"Test 1\", 17, 22, 0.77},\n      {\"Quiz 2\", 10, 10, 1}\n    }\n)",
+    "usage": "let\n  _GradeTest = (right, total) => Number.Round(right / total, 2),\n  _GradeTests = (inputs as table) as list => let\n    batches = Table.Split(inputs, 2),\n    gradeBatch = (batch as table) as list =>\n      let\n        batchId = Text.NewGuid()\n      in\n        Table.TransformRows(batch, each [Grade = _GradeTest([right], [total]), BatchId = batchId])\n  in\n    List.Combine(List.Transform(batches, gradeBatch)),\n  GradeTest = Function.ScalarVector(type function (right as number, total as number) as number, _GradeTests),\n  Tests = #table(type table [Test Name = text, Right = number, Total = number],\n    {\n      {\"Quiz 1\", 3, 4},\n      {\"Test 1\", 17, 22},\n      {\"Quiz 2\", 10, 10}\n    }),\n  // To break batching, replace [Right] with {[Right]}{0}.\n  TestsWithGrades = Table.AddColumn(Tests, \"Grade Info\", each GradeTest([Right], [Total]), type record),\n  // To verify batching, also expand BatchId.\n  Final = Table.ExpandRecordColumn(TestsWithGrades, \"Grade Info\", {\"Grade\"})\nin\n  Final"
+   }
+  ],
+  "Guid.From": [
+   {
+    "output": "",
+    "usage": "Guid.From(\"05FE1DADC8C24F3BA4C2D194116B4967\")"
+   },
+   {
+    "output": "",
+    "usage": "Guid.From(\"05FE1DAD-C8C2-4F3B-A4C2-D194116B4967\")"
+   },
+   {
+    "output": "",
+    "usage": "Guid.From(\"{05FE1DAD-C8C2-4F3B-A4C2-D194116B4967}\")"
+   },
+   {
+    "output": "",
+    "usage": "Guid.From(\"(05FE1DAD-C8C2-4F3B-A4C2-D194116B4967)\")"
+   }
+  ],
+  "Html.Table": [
+   {
+    "output": "",
+    "usage": "Html.Table(\"<div class=\"\"name\"\">Jo</div><span>Manager</span>\", {{\"Name\", \".name\"}, {\"Title\", \"span\"}}, [RowSelector=\".name\"])"
+   },
+   {
+    "output": "",
+    "usage": "Html.Table(\"<a href=\"\"/test.html\"\">Test</a>\", {{\"Link\", \"a\", each [Attributes][href]}})"
+   }
+  ],
+  "Int16.From": [
+   {
+    "output": "",
+    "usage": "Int64.From(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Int16.From(\"4.5\", null, RoundingMode.AwayFromZero)"
+   }
+  ],
+  "Int32.From": [
+   {
+    "output": "",
+    "usage": "Int32.From(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Int32.From(\"4.5\", null, RoundingMode.AwayFromZero)"
+   }
+  ],
+  "Int64.From": [
+   {
+    "output": "",
+    "usage": "Int64.From(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Int64.From(\"4.5\", null, RoundingMode.AwayFromZero)"
+   }
+  ],
+  "Int8.From": [
+   {
+    "output": "",
+    "usage": "Int8.From(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Int8.From(\"4.5\", null, RoundingMode.AwayFromZero)"
+   }
+  ],
+  "ItemExpression.From": [
+   {
+    "output": "[\n    Kind = \"Binary\",\n    Operator = \"NotEquals\",\n    Left = ItemExpression.Item,\n    Right =\n    [\n        Kind = \"Constant\",\n        Value = null\n    ]\n]",
+    "usage": "ItemExpression.From(each _ <> null)"
+   }
+  ],
+  "Json.Document": [
+   {
+    "output": "[\n    project = \"Contosoware\",\n    description = \"A comprehensive initiative aimed at enhancing digital presence.\"\n    components =\n    {\n        \"Website Development\",\n        \"CRM Implementation\",\n        \"Mobile Application\"\n    }\n]",
+    "usage": "let\n    Source = \"{\n        \"\"project\"\": \"\"Contosoware\"\",\n        \"\"description\"\": \"\"A comprehensive initiative aimed at enhancing digital presence.\"\",\n        \"\"components\"\": [\n            \"\"Website Development\"\",\n            \"\"CRM Implementation\"\",\n            \"\"Mobile Application\"\"\n        ]\n    }\",\n    jsonDocument = Json.Document(Source)\nin\n    jsonDocument"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = Json.Document(\n        File.Contents(\"C:\\test-examples\\JSON\\Contosoware.json\")\n    )\nin\n    Source"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = Json.Document(\n        Web.Contents(\"htts://contoso.com/products/Contosoware.json\"),\n        TextEncoding.Utf16)\n    )\nin\n    Source"
+   }
+  ],
+  "Json.FromValue": [
+   {
+    "output": "",
+    "usage": "Text.FromBinary(Json.FromValue([A = {1, true, \"3\"}, B = #date(2012, 3, 25)]))"
+   }
+  ],
+  "Lines.ToText": [
+   {
+    "output": "",
+    "usage": "Lines.ToText({\"ID,Name\", \"1,Bob Smith\", \"2,Jan Lee\"})"
+   }
+  ],
+  "List.Accumulate": [
+   {
+    "output": "",
+    "usage": "let\n    Source = List.Accumulate(\n        {1, 2, 3, 4, 5},\n        0,\n        (runningSum, nextNumber) => runningSum + nextNumber\n    )\nin\n    Source"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = List.Accumulate(\n        {\"The\", \"quick\", \"brown\", \"fox\", \"jumps\", \"over\", \"the\", \"lazy\", \"dog.\"},\n        null,\n        (fullTextSoFar, nextPart) =>\n            Text.Combine({fullTextSoFar, nextPart}, \" \")\n    )\nin\n    Source"
+   },
+   {
+    "output": "{\n    #datetime(2025, 9, 8, 19, 0, 0),\n    #datetime(2025, 9, 8, 20, 0, 0),\n    #datetime(2025, 9, 8, 22, 0, 0),\n    #datetime(2025, 9, 9, 1, 0, 0)\n}",
+    "usage": "let\n    #\"Process Duration\" =\n    {\n        #duration(0,1,0,0),\n        #duration(0,2,0,0),\n        #duration(0,3,0,0)\n    },\n    #\"Start Time\" = #datetime(2025, 9, 8, 19, 0, 0),\n    #\"Process Timeline\" = List.Accumulate(\n        #\"Process Duration\",\n        {#\"Start Time\"},\n        (accumulatedTimes, nextDuration) =>\n            accumulatedTimes & {List.Last(accumulatedTimes) + nextDuration}\n    )\nin\n    #\"Process Timeline\""
+   }
+  ],
+  "List.AllTrue": [
+   {
+    "output": "",
+    "usage": "List.AllTrue({true, true, 2 > 0})"
+   },
+   {
+    "output": "",
+    "usage": "List.AllTrue({true, false, 2 < 0})"
+   }
+  ],
+  "List.Alternate": [
+   {
+    "output": "",
+    "usage": "List.Alternate({1..10}, 1)"
+   },
+   {
+    "output": "",
+    "usage": "List.Alternate({1..10}, 1, 1)"
+   },
+   {
+    "output": "",
+    "usage": "List.Alternate({1..10}, 1, 1, 1)"
+   },
+   {
+    "output": "",
+    "usage": "List.Alternate({1..10}, 1, 2, 1)"
+   }
+  ],
+  "List.AnyTrue": [
+   {
+    "output": "",
+    "usage": "List.AnyTrue({true, false, 2>0})"
+   },
+   {
+    "output": "",
+    "usage": "List.AnyTrue({2 = 0, false, 2 < 0})"
+   }
+  ],
+  "List.Average": [
+   {
+    "output": "",
+    "usage": "List.Average({3, 4, 6})"
+   },
+   {
+    "output": "",
+    "usage": "List.Average({#date(2011, 1, 1), #date(2011, 1, 2), #date(2011, 1, 3)})"
+   }
+  ],
+  "List.Buffer": [
+   {
+    "output": "",
+    "usage": "List.Buffer({1..10})"
+   }
+  ],
+  "List.Combine": [
+   {
+    "output": "{\n    1,\n    2,\n    3,\n    4\n}",
+    "usage": "List.Combine({{1, 2}, {3, 4}})"
+   },
+   {
+    "output": "{\n    1,\n    2,\n    3,\n    {4, 5}\n}",
+    "usage": "List.Combine({{1, 2}, {3, {4, 5}}})"
+   }
+  ],
+  "List.Contains": [
+   {
+    "output": "",
+    "usage": "List.Contains({1, 2, 3, 4, 5}, 3)"
+   },
+   {
+    "output": "",
+    "usage": "List.Contains({1, 2, 3, 4, 5}, 6)"
+   },
+   {
+    "output": "",
+    "usage": "List.Contains({\"Pears\", \"Bananas\", \"Rhubarb\", \"Peaches\"},\n    \"rhubarb\",\n    Comparer.OrdinalIgnoreCase\n)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {#date(2024, 2, 23), #date(2023, 12, 2), #date(2022, 4, 8), #date(2021, 7, 6)},\n    ContainsDate = List.Contains(Source, Date.From(\"4/8/2022\"))\nin\n    ContainsDate"
+   }
+  ],
+  "List.ContainsAll": [
+   {
+    "output": "",
+    "usage": "List.ContainsAll({1, 2, 3, 4, 5}, {3, 4})"
+   },
+   {
+    "output": "",
+    "usage": "List.ContainsAll({1, 2, 3, 4, 5}, {5, 6})"
+   },
+   {
+    "output": "",
+    "usage": "List.ContainsAll({\"dog\", \"cat\", \"racoon\", \"horse\", \"rabbit\"}, {\"DOG\", \"Horse\"}, Comparer.OrdinalIgnoreCase)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {#date(2024, 2, 23), #date(2023, 12, 2), #date(2022, 4, 8), #date(2021, 7, 6)},\n    ContainsDates = List.ContainsAll(Source, {#date(2022, 4, 8), #date(2021, 7, 6)})\nin\n    ContainsDates"
+   }
+  ],
+  "List.ContainsAny": [
+   {
+    "output": "",
+    "usage": "List.ContainsAny({1, 2, 3, 4, 5}, {3, 9})"
+   },
+   {
+    "output": "",
+    "usage": "List.ContainsAny({1, 2, 3, 4, 5}, {6, 7})"
+   },
+   {
+    "output": "",
+    "usage": "List.ContainsAny({\"dog\", \"cat\", \"racoon\", \"horse\", \"rabbit\"}, {\"Horse\", \"OWL\"}, Comparer.OrdinalIgnoreCase)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {#date(2024, 2, 23), #date(2023, 12, 2), #date(2022, 4, 8), #date(2021, 7, 6)},\n    ContainsDates = List.ContainsAny(Source, {Date.From(\"Apr 8, 2022\"), Date.From(\"Jan 11, 2021\")})\nin\n    ContainsDates"
+   }
+  ],
+  "List.Count": [
+   {
+    "output": "",
+    "usage": "List.Count({1, 2, 3})"
+   },
+   {
+    "output": "",
+    "usage": "let\n    colors = {\"Red\", \"Blue\", \"GREEN\", \"red\", \"Yellow\", \"RED\"},\n    redCount = List.Count(\n        List.Select(colors, each Text.Lower(_) = \"red\")\n    )\nin\n    redCount"
+   },
+   {
+    "output": "",
+    "usage": "let\n    customers = {\n        [CustomerID = 101, CustomerName = \"Alice\", AmountPurchased = 150],\n        [CustomerID = 102, CustomerName = \"Bob\", AmountPurchased = 75],\n        [CustomerID = 103, CustomerName = \"Carol\", AmountPurchased = 50],\n        [CustomerID = 104, CustomerName = \"Dave\", AmountPurchased = 90],\n        [CustomerID = 105, CustomerName = \"Eve\", AmountPurchased = 120]\n    },\n    highValueCustomerCount = List.Count(\n        List.Select(customers, each [AmountPurchased] > 100)\n    )\nin\n    highValueCustomerCount"
+   }
+  ],
+  "List.Covariance": [
+   {
+    "output": "",
+    "usage": "List.Covariance({1, 2, 3}, {1, 2, 3})"
+   }
+  ],
+  "List.DateTimeZones": [
+   {
+    "output": "{\n    #datetimezone(2011, 12, 31, 23, 55, 0, -8, 0),\n    #datetimezone(2011, 12, 31, 23, 56, 0, -8, 0),\n    #datetimezone(2011, 12, 31, 23, 57, 0, -8, 0),\n    #datetimezone(2011, 12, 31, 23, 58, 0, -8, 0),\n    #datetimezone(2011, 12, 31, 23, 59, 0, -8, 0),\n    #datetimezone(2012, 1, 1, 0, 0, 0, -8, 0),\n    #datetimezone(2012, 1, 1, 0, 1, 0, -8, 0),\n    #datetimezone(2012, 1, 1, 0, 2, 0, -8, 0),\n    #datetimezone(2012, 1, 1, 0, 3, 0, -8, 0),\n    #datetimezone(2012, 1, 1, 0, 4, 0, -8, 0)\n}",
+    "usage": "List.DateTimeZones(#datetimezone(2011, 12, 31, 23, 55, 0, -8, 0), 10, #duration(0, 0, 1, 0))"
+   }
+  ],
+  "List.DateTimes": [
+   {
+    "output": "{\n    #datetime(2011, 12, 31, 23, 55, 0),\n    #datetime(2011, 12, 31, 23, 56, 0),\n    #datetime(2011, 12, 31, 23, 57, 0),\n    #datetime(2011, 12, 31, 23, 58, 0),\n    #datetime(2011, 12, 31, 23, 59, 0),\n    #datetime(2012, 1, 1, 0, 0, 0),\n    #datetime(2012, 1, 1, 0, 1, 0),\n    #datetime(2012, 1, 1, 0, 2, 0),\n    #datetime(2012, 1, 1, 0, 3, 0),\n    #datetime(2012, 1, 1, 0, 4, 0)\n}",
+    "usage": "List.DateTimes(#datetime(2011, 12, 31, 23, 55, 0), 10, #duration(0, 0, 1, 0))"
+   }
+  ],
+  "List.Dates": [
+   {
+    "output": "{\n    #date(2011, 12, 31),\n    #date(2012, 1, 1),\n    #date(2012, 1, 2),\n    #date(2012, 1, 3),\n    #date(2012, 1, 4)\n}",
+    "usage": "List.Dates(#date(2011, 12, 31), 5, #duration(1, 0, 0, 0))"
+   }
+  ],
+  "List.Difference": [
+   {
+    "output": "",
+    "usage": "List.Difference({1, 2, 3, 4, 5}, {4, 5, 3})"
+   },
+   {
+    "output": "",
+    "usage": "List.Difference({1, 2}, {1, 2, 3})"
+   }
+  ],
+  "List.Distinct": [
+   {
+    "output": "",
+    "usage": "List.Distinct({1, 1, 2, 3, 3, 3})"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\"Apple\", \"Banana\", \"Cherry\", \"Date\", \"Fig\"},\n    Result = List.Distinct(List.Reverse(Source), each Text.Length(_))\nin\n    Result"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\"apple\", \"Pear\", \"aPPle\", \"banana\", \"ORANGE\", \"pear\", \"Banana\", \"Cherry\"},\n    Result = List.Distinct(Source, Comparer.OrdinalIgnoreCase)\nin\n    Result"
+   },
+   {
+    "output": "#table(type table[Country = text, Date = date, Value = Int64.Type],\n{\n    {\"USA\", #date(2023, 8, 1), 567},\n    {\"canada\", #date(2023, 8, 1), 254},\n    {\"Panama\", #date(2023, 6, 2), 20}\n})",
+    "usage": "let\n    Source = {\n        {\"USA\", #date(2023, 8, 1), 567},\n        {\"canada\", #date(2023, 8, 1), 254},\n        {\"Usa\", #date(2023, 7, 1), 450},\n        {\"CANADA\", #date(2023, 6, 1), 357},\n        {\"Panama\", #date(2023, 6, 2), 20},\n        {\"panama\", #date(2023, 7, 1), 40}\n    },\n    DistinctByCountry = List.Distinct(\n        Source,\n        {each _{0}, Comparer.OrdinalIgnoreCase}\n    ),\n    ToTable = Table.FromRows(DistinctByCountry, {\"Country\", \"Date\", \"Value\"}),\n    ChangeTypes = Table.TransformColumnTypes(\n        ToTable, {{\"Country\", type text}, {\"Date\", type date}, {\"Value\", Int64.Type}}\n    )\nin\n    ChangeTypes"
+   }
+  ],
+  "List.Durations": [
+   {
+    "output": "{\n    #duration(0, 1, 0, 0),\n    #duration(0, 2, 0, 0),\n    #duration(0, 3, 0, 0),\n    #duration(0, 4, 0, 0),\n    #duration(0, 5, 0, 0)\n}",
+    "usage": "List.Durations(#duration(0, 1, 0, 0), 5, #duration(0, 1, 0, 0))"
+   }
+  ],
+  "List.FindText": [
+   {
+    "output": "",
+    "usage": "List.FindText({\"a\", \"b\", \"ab\"}, \"a\")"
+   }
+  ],
+  "List.First": [
+   {
+    "output": "",
+    "usage": "List.First({1, 2, 3})"
+   },
+   {
+    "output": "",
+    "usage": "List.First({}, -1)"
+   }
+  ],
+  "List.FirstN": [
+   {
+    "output": "",
+    "usage": "List.FirstN({3, 4, 5, -1, 7, 8, 2}, each _ > 0)"
+   }
+  ],
+  "List.Generate": [
+   {
+    "output": "",
+    "usage": "List.Generate(() => 10, each _ > 0, each _ - 1)"
+   },
+   {
+    "output": "",
+    "usage": "List.Generate(\n    () => [x = 1, y = {}],\n    each [x] < 10,\n    each [x = List.Count([y]), y = [y] & {x}],\n    each [x]\n)"
+   }
+  ],
+  "List.InsertRange": [
+   {
+    "output": "{\n    1,\n    2,\n    3,\n    4,\n    5\n}",
+    "usage": "List.InsertRange({1, 2, 5}, 2, {3, 4})"
+   },
+   {
+    "output": "{\n    1,\n    {\n        1.1,\n        1.2\n    },\n    2,\n    3,\n    4\n}",
+    "usage": "List.InsertRange({2, 3, 4}, 0, {1, {1.1, 1.2}})"
+   }
+  ],
+  "List.Intersect": [
+   {
+    "output": "",
+    "usage": "List.Intersect({{1..5}, {2..6}, {3..7}})"
+   }
+  ],
+  "List.IsDistinct": [
+   {
+    "output": "",
+    "usage": "List.IsDistinct({1, 2, 3})"
+   },
+   {
+    "output": "",
+    "usage": "List.IsDistinct({1, 2, 3, 3})"
+   }
+  ],
+  "List.IsEmpty": [
+   {
+    "output": "",
+    "usage": "List.IsEmpty({})"
+   },
+   {
+    "output": "",
+    "usage": "List.IsEmpty({1, 2})"
+   }
+  ],
+  "List.Last": [
+   {
+    "output": "",
+    "usage": "List.Last({1, 2, 3})"
+   },
+   {
+    "output": "",
+    "usage": "List.Last({}, -1)"
+   }
+  ],
+  "List.LastN": [
+   {
+    "output": "",
+    "usage": "List.LastN({3, 4, 5, -1, 7, 8, 2}, 1)"
+   },
+   {
+    "output": "",
+    "usage": "List.LastN({3, 4, 5, -1, 7, 8, 2}, each _ > 0)"
+   }
+  ],
+  "List.MatchesAll": [
+   {
+    "output": "",
+    "usage": "List.MatchesAll({11, 12, 13}, each _  > 10)"
+   },
+   {
+    "output": "",
+    "usage": "List.MatchesAll({1, 2, 3}, each _  > 10)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\"Savannah\", \"Annabelle\", \"Annals\", \"wannabe\", \"MANNA\"},\n    Result = List.MatchesAll(Source, each Text.Contains(_, \"anna\", Comparer.OrdinalIgnoreCase))\nin\n    Result"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {#date(2021, 11, 28), #date(2021, 1, 14), #date(2021, 12, 31), #date(2021, 7, 6)},\n    Result = List.MatchesAll(Source, each Date.Year(_) = 2021)\nin\n    Result"
+   }
+  ],
+  "List.MatchesAny": [
+   {
+    "output": "",
+    "usage": "List.MatchesAny({9, 10, 11}, each _  > 10)"
+   },
+   {
+    "output": "",
+    "usage": "List.MatchesAny({1, 2, 3}, each _  > 10)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\"A Brown Fox\", \"A Loyal Dog\", \"A Curious Cat\", \"A Wild Horse\", \"A Rascally Rabbit\"},\n    Result = List.MatchesAny(Source, each Text.Contains(_, \"cat\", Comparer.OrdinalIgnoreCase))\nin\n    Result"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {#date(2024, 11, 28), #date(2023, 1, 14), #date(2021, 12, 31), #date(2025, 7, 6)},\n    Result = List.MatchesAny(Source, each Date.Year(_) = 2021)\nin\n    Result"
+   }
+  ],
+  "List.Max": [
+   {
+    "output": "",
+    "usage": "List.Max({1, 4, 7, 3, -2, 5}, 1)"
+   },
+   {
+    "output": "",
+    "usage": "List.Max({}, -1)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\"boy\", \"dog\", \"girl\", \"zebra\", \"cat\", \"mouse\", \"rabbit\"},\n    MaxText = List.Max(Source, \"none\")\nin\n    MaxText"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\"12.02.2024\", \"15.05.2025\", \"10.10.2021\", \"16.01.2025\", \"30.12.2022\"},\n    MaxDate = List.Max(Source, #date(2000, 1, 1), each Date.FromText(_, [Culture = \"de-DE\"]))\nin\n    MaxDate"
+   }
+  ],
+  "List.MaxN": [
+   {
+    "output": "",
+    "usage": "List.MaxN({3, 4, 5, -1, 7, 8, 2}, 5)"
+   },
+   {
+    "output": "",
+    "usage": "List.MaxN(\n    {\"boy\", \"dog\", \"pony\", \"cat\", \"rabbit\", \"bat\"},\n    each Text.Length(_) > 3\n)"
+   },
+   {
+    "output": "{\n    \"15.05.2025\",\n    \"16.01.2025\",\n    \"12.02.2024\"\n}",
+    "usage": "let\n    Source = {\"12.02.2024\", \"15.05.2025\", \"10.10.2021\", \"16.01.2025\", \"30.12.2022\"},\n    MaxDate = List.MaxN(Source, 3, each Date.FromText(_, [Culture = \"de-DE\"]))\nin\n    MaxDate"
+   }
+  ],
+  "List.Median": [
+   {
+    "output": "",
+    "usage": "List.Median({5, 3, 1, 7, 9})"
+   }
+  ],
+  "List.Min": [
+   {
+    "output": "",
+    "usage": "List.Min({1, 4, 7, 3, -2, 5})"
+   },
+   {
+    "output": "",
+    "usage": "List.Min({}, -1)"
+   }
+  ],
+  "List.MinN": [
+   {
+    "output": "",
+    "usage": "List.MinN({3, 4, 5, -1, 7, 8, 2}, 5)"
+   }
+  ],
+  "List.Mode": [
+   {
+    "output": "",
+    "usage": "List.Mode({\"A\", 1, 2, 3, 3, 4, 5})"
+   },
+   {
+    "output": "",
+    "usage": "List.Mode({\"A\", 1, 2, 3, 3, 4, 5, 5})"
+   }
+  ],
+  "List.Modes": [
+   {
+    "output": "",
+    "usage": "List.Modes({\"A\", 1, 2, 3, 3, 4, 5, 5})"
+   }
+  ],
+  "List.Numbers": [
+   {
+    "output": "{\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9,\n    10\n}",
+    "usage": "List.Numbers(1, 10)"
+   },
+   {
+    "output": "{\n    1,\n    3,\n    5,\n    7,\n    9,\n    11,\n    13,\n    15,\n    17,\n    19\n}",
+    "usage": "List.Numbers(1, 10, 2)"
+   }
+  ],
+  "List.Percentile": [
+   {
+    "output": "",
+    "usage": "List.Percentile({5, 3, 1, 7, 9}, 0.25)"
+   },
+   {
+    "output": "",
+    "usage": "List.Percentile({5, 3, 1, 7, 9}, {0.25, 0.5, 0.75}, [PercentileMode=PercentileMode.ExcelExc])"
+   }
+  ],
+  "List.PositionOf": [
+   {
+    "output": "",
+    "usage": "List.PositionOf({1, 2, 3}, 3)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\n        #date(2021, 5, 10),\n        #date(2022, 6, 28),\n        #date(2023, 7, 15),\n        #date(2022, 12, 31),\n        #date(2022, 4, 8),\n        #date(2024, 3, 20)\n    },\n    YearList = List.Transform(Source, each Date.Year(_)),\n    TargetYear = 2022,\n    FindPositions = List.PositionOf(YearList, TargetYear, Occurrence.All)\nin\n    FindPositions"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = List.PositionOf(\n        {\"dog\", \"cat\", \"DOG\", \"pony\", \"bat\", \"rabbit\", \"dOG\"},\n        \"dog\",\n        Occurrence.Last,\n        Comparer.OrdinalIgnoreCase\n    )\nin\n    Source"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = { 10, 15, 20, 25, 30 },\n    Position = List.PositionOf(\n        Source,\n        28,\n        Occurrence.First,\n        (x, y) => Number.Abs(x - y) <= 2\n    )\nin\n    Position"
+   }
+  ],
+  "List.PositionOfAny": [
+   {
+    "output": "",
+    "usage": "List.PositionOfAny({1, 2, 3}, {2, 3})"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = {\n        #date(2021, 5, 10),\n        #date(2022, 6, 28),\n        #date(2023, 7, 15),\n        #date(2025, 12, 31),\n        #date(2022, 4, 8),\n        #date(2024, 3, 20)\n    },\n    YearList = List.Transform(Source, each Date.Year(_)),\n    TargetYear = {2022, 2023},\n    FindPositions = List.PositionOfAny(YearList, TargetYear, Occurrence.All)\nin\n    FindPositions"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = List.PositionOfAny(\n        {\"dog\", \"cat\", \"DOG\", \"pony\", \"bat\", \"rabbit\", \"dOG\"},\n        {\"dog\", \"cat\"},\n        Occurrence.Last,\n        Comparer.OrdinalIgnoreCase\n    )\nin\n    Source"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = { 10, 15, 20, 25, 30 },\n    Position = List.PositionOfAny(\n        Source,\n        {17, 28},\n        Occurrence.All,\n        (x, y) => Number.Abs(x - y) <= 2\n    )\nin\n    Position"
+   }
+  ],
+  "List.Positions": [
+   {
+    "output": "",
+    "usage": "List.Positions({1, 2, 3, 4, null, 5})"
+   },
+   {
+    "output": "#table (type table[IDNumber = Int64.Type, CustomerName = text],\n{\n    {1, \"Alice\"},\n    {2, \"Bob\"},\n    {3, \"Charlie\"},\n    {4, \"Diana\"}\n})",
+    "usage": "let\n    customers = {\"Alice\", \"Bob\", \"Charlie\", \"Diana\"},\n    resultTable =\n        Table.FromRecords(\n            List.Transform(\n                List.Positions(customers),\n                each [\n                    IDNumber = _ + 1,   // Make it 1-based\n                    CustomerName = customers{_}\n                ]\n            ),\n            type table [IDNumber = Int64.Type, CustomerName = text]\n        )\nin\n    resultTable"
+   }
+  ],
+  "List.Product": [
+   {
+    "output": "",
+    "usage": "List.Product({1, 2, 3, 3, 4, 5, 5})"
+   }
+  ],
+  "List.Random": [
+   {
+    "output": "",
+    "usage": "List.Random(3)"
+   },
+   {
+    "output": "",
+    "usage": "List.Random(3, 2)"
+   }
+  ],
+  "List.Range": [
+   {
+    "output": "",
+    "usage": "List.Range({1..10}, 6)"
+   },
+   {
+    "output": "",
+    "usage": "List.Range({1..10}, 6, 2)"
+   }
+  ],
+  "List.RemoveFirstN": [
+   {
+    "output": "",
+    "usage": "List.RemoveFirstN({1, 2, 3, 4, 5}, 3)"
+   },
+   {
+    "output": "",
+    "usage": "List.RemoveFirstN({5, 4, 2, 6, 1}, each _ > 3)"
+   }
+  ],
+  "List.RemoveItems": [
+   {
+    "output": "",
+    "usage": "List.RemoveItems({1, 2, 3, 4, 2, 5, 5}, {2, 4, 6})"
+   }
+  ],
+  "List.RemoveLastN": [
+   {
+    "output": "",
+    "usage": "List.RemoveLastN({1, 2, 3, 4, 5}, 3)"
+   },
+   {
+    "output": "",
+    "usage": "List.RemoveLastN({5, 4, 2, 6, 4}, each _ > 3)"
+   }
+  ],
+  "List.RemoveMatchingItems": [
+   {
+    "output": "",
+    "usage": "List.RemoveMatchingItems({1, 2, 3, 4, 5, 5}, {1, 5})"
+   }
+  ],
+  "List.RemoveNulls": [
+   {
+    "output": "",
+    "usage": "List.RemoveNulls({1, 2, 3, null, 4, 5, null, 6})"
+   }
+  ],
+  "List.RemoveRange": [
+   {
+    "output": "",
+    "usage": "List.RemoveRange({1, 2, 3, 4, -6, -2, -1, 5}, 4, 3)"
+   }
+  ],
+  "List.Repeat": [
+   {
+    "output": "",
+    "usage": "List.Repeat({1, 2}, 3)"
+   }
+  ],
+  "List.ReplaceMatchingItems": [
+   {
+    "output": "",
+    "usage": "List.ReplaceMatchingItems({1, 2, 3, 4, 5}, {{5, -5}, {1, -1}})"
+   }
+  ],
+  "List.ReplaceRange": [
+   {
+    "output": "",
+    "usage": "List.ReplaceRange({1, 2, 7, 8, 9, 5}, 2, 3, {3, 4})"
+   }
+  ],
+  "List.ReplaceValue": [
+   {
+    "output": "",
+    "usage": "List.ReplaceValue({\"a\", \"B\", \"a\", \"a\"}, \"a\", \"A\", Replacer.ReplaceText)"
+   }
+  ],
+  "List.Reverse": [
+   {
+    "output": "",
+    "usage": "List.Reverse({1..10})"
+   }
+  ],
+  "List.Select": [
+   {
+    "output": "",
+    "usage": "List.Select({1, -3, 4, 9, -2}, each _ > 0)"
+   },
+   {
+    "output": "{\n    #date(2025, 10, 25),\n    #date(2025, 10, 26)\n}",
+    "usage": "let\n    dates = {\n        #date(2025, 10, 20),  // Monday\n        #date(2025, 10, 21),  // Tuesday\n        #date(2025, 10, 25),  // Saturday\n        #date(2025, 10, 26),  // Sunday\n        #date(2025, 10, 27)   // Monday\n    },\n    weekendDates = List.Select(\n        dates,\n        each Date.DayOfWeek(_, Day.Monday) >= 5\n    )\nin\n    weekendDates"
+   },
+   {
+    "output": "#table(type table[Name = text, Status = text, Purchases = number],\n{\n    {\"Alice\", \"Active\", 150},\n    {\"Dave\", \"Active\", 120}\n})",
+    "usage": "let\n    customers = {\n        [Name = \"Alice\", Status = \"Active\", Purchases = 150],\n        [Name = \"Bob\", Status = \"Inactive\", Purchases = 200],\n        [Name = \"Carol\", Status = \"Active\", Purchases = 90],\n        [Name = \"Dave\", Status = \"Active\", Purchases = 120]\n    },\n    highValueActiveCustomers = List.Select(\n        customers,\n        each [Status] = \"Active\" and [Purchases] > 100\n    ),\n    resultTable = Table.FromRecords(\n        highValueActiveCustomers,\n        type table [Name = text, Status = text, Purchases = number]\n    )\nin\n    resultTable"
+   }
+  ],
+  "List.Single": [
+   {
+    "output": "",
+    "usage": "List.Single({1})"
+   },
+   {
+    "output": "",
+    "usage": "List.Single({1, 2, 3})"
+   }
+  ],
+  "List.SingleOrDefault": [
+   {
+    "output": "",
+    "usage": "List.SingleOrDefault({1})"
+   },
+   {
+    "output": "",
+    "usage": "List.SingleOrDefault({})"
+   },
+   {
+    "output": "",
+    "usage": "List.SingleOrDefault({}, -1)"
+   }
+  ],
+  "List.Skip": [
+   {
+    "output": "",
+    "usage": "List.Skip({1, 2, 3, 4, 5}, 3)"
+   },
+   {
+    "output": "",
+    "usage": "List.Skip({5, 4, 2, 6, 1}, each _ > 3)"
+   }
+  ],
+  "List.Sort": [
+   {
+    "output": "",
+    "usage": "List.Sort({2, 3, 1})"
+   },
+   {
+    "output": "",
+    "usage": "List.Sort({2, 3, 1}, Order.Descending)"
+   },
+   {
+    "output": "",
+    "usage": "List.Sort({2, 3, 1}, (x, y) => Value.Compare(1/x, 1/y))"
+   }
+  ],
+  "List.StandardDeviation": [
+   {
+    "output": "",
+    "usage": "List.StandardDeviation({1..5})"
+   }
+  ],
+  "List.Sum": [
+   {
+    "output": "",
+    "usage": "List.Sum({1, 2, 3})"
+   }
+  ],
+  "List.Times": [
+   {
+    "output": "{\n    #time(12, 0, 0),\n    #time(13, 0, 0),\n    #time(14, 0, 0),\n    #time(15, 0, 0)\n}",
+    "usage": "List.Times(#time(12, 0, 0), 4, #duration(0, 1, 0, 0))"
+   }
+  ],
+  "List.Transform": [
+   {
+    "output": "",
+    "usage": "List.Transform({1, 2}, each _ + 1)"
+   }
+  ],
+  "List.TransformMany": [
+   {
+    "output": "{\n    [Name = \"Alice\", Pet = \"Scruffy\"],\n    [Name = \"Alice\", Pet = \"Sam\"],\n    [Name = \"Bob\", Pet = \"Walker\"]\n}",
+    "usage": "List.TransformMany(\n    {\n        [Name = \"Alice\", Pets = {\"Scruffy\", \"Sam\"}],\n        [Name = \"Bob\", Pets = {\"Walker\"}]\n    },\n    each [Pets],\n    (person, pet) => [Name = person[Name], Pet = pet]\n)"
+   }
+  ],
+  "List.Union": [
+   {
+    "output": "",
+    "usage": "List.Union({{1..5}, {2..6}, {3..7}})"
+   }
+  ],
+  "List.Zip": [
+   {
+    "output": "{\n    {1, 3},\n    {2, 4}\n}",
+    "usage": "List.Zip({{1, 2}, {3, 4}})"
+   },
+   {
+    "output": "{\n    {1, 3},\n    {2, null}\n}",
+    "usage": "List.Zip({{1, 2}, {3}})"
+   }
+  ],
+  "Logical.From": [
+   {
+    "output": "",
+    "usage": "Logical.From(2)"
+   }
+  ],
+  "Logical.FromText": [
+   {
+    "output": "",
+    "usage": "Logical.FromText(\"true\")"
+   },
+   {
+    "output": "",
+    "usage": "Logical.FromText(\"a\")"
+   }
+  ],
+  "Logical.ToText": [
+   {
+    "output": "",
+    "usage": "Logical.ToText(true)"
+   }
+  ],
+  "Number.Abs": [
+   {
+    "output": "",
+    "usage": "Number.Abs(-3)"
+   }
+  ],
+  "Number.Combinations": [
+   {
+    "output": "",
+    "usage": "Number.Combinations(5, 3)"
+   }
+  ],
+  "Number.Cos": [
+   {
+    "output": "",
+    "usage": "Number.Cos(0)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Cos(Number.PI)"
+   }
+  ],
+  "Number.Exp": [
+   {
+    "output": "",
+    "usage": "Number.Exp(3)"
+   }
+  ],
+  "Number.Factorial": [
+   {
+    "output": "",
+    "usage": "Number.Factorial(10)"
+   }
+  ],
+  "Number.From": [
+   {
+    "output": "",
+    "usage": "Number.From(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Number.From(#datetime(2020, 3, 20, 6, 0, 0))"
+   },
+   {
+    "output": "",
+    "usage": "Number.From(\"12.3%\")"
+   }
+  ],
+  "Number.FromText": [
+   {
+    "output": "",
+    "usage": "Number.FromText(\"4\")"
+   },
+   {
+    "output": "",
+    "usage": "Number.FromText(\"5.0e-10\")"
+   }
+  ],
+  "Number.IntegerDivide": [
+   {
+    "output": "",
+    "usage": "Number.IntegerDivide(6, 4)"
+   },
+   {
+    "output": "",
+    "usage": "Number.IntegerDivide(8.3, 3)"
+   }
+  ],
+  "Number.IsEven": [
+   {
+    "output": "",
+    "usage": "Number.IsEven(625)"
+   },
+   {
+    "output": "",
+    "usage": "Number.IsEven(82)"
+   }
+  ],
+  "Number.IsNaN": [
+   {
+    "output": "",
+    "usage": "Number.IsNaN(0/0)"
+   },
+   {
+    "output": "",
+    "usage": "Number.IsNaN(1/0)"
+   }
+  ],
+  "Number.IsOdd": [
+   {
+    "output": "",
+    "usage": "Number.IsOdd(625)"
+   },
+   {
+    "output": "",
+    "usage": "Number.IsOdd(82)"
+   }
+  ],
+  "Number.Ln": [
+   {
+    "output": "",
+    "usage": "Number.Ln(15)"
+   }
+  ],
+  "Number.Log": [
+   {
+    "output": "",
+    "usage": "Number.Log(2, 10)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Log(2)"
+   }
+  ],
+  "Number.Log10": [
+   {
+    "output": "",
+    "usage": "Number.Log10(2)"
+   }
+  ],
+  "Number.Mod": [
+   {
+    "output": "",
+    "usage": "Number.Mod(5, 3)"
+   },
+   {
+    "output": "[\n    DoublePrecision = \"0.0999999999999994\",\n    DecimalPrecision = \"0.1\"\n]",
+    "usage": "let\n    Dividend = 10.5,\n    Divisor = 0.2,\n\n    #\"Use Double Precision\" = Number.Mod(Dividend, Divisor, Precision.Double),\n    #\"Use Decimal Precision\" = Number.Mod(Dividend, Divisor, Precision.Decimal),\n\n    // Convert to text to inspect precision\n    #\"Double To Text\" = Number.ToText(#\"Use Double Precision\", \"G\"),\n    #\"Decimal To Text\" = Number.ToText(#\"Use Decimal Precision\", \"G\"),\n\n    #\"Display Result\" = [\n        DoublePrecision = #\"Double To Text\",\n        DecimalPrecision = #\"Decimal To Text\"\n    ]\nin\n    #\"Display Result\""
+   }
+  ],
+  "Number.Permutations": [
+   {
+    "output": "",
+    "usage": "Number.Permutations(5, 3)"
+   }
+  ],
+  "Number.Power": [
+   {
+    "output": "",
+    "usage": "Number.Power(5, 3)"
+   }
+  ],
+  "Number.Random": [
+   {
+    "output": "",
+    "usage": "Number.Random()"
+   }
+  ],
+  "Number.RandomBetween": [
+   {
+    "output": "",
+    "usage": "Number.RandomBetween(1, 5)"
+   }
+  ],
+  "Number.Round": [
+   {
+    "output": "",
+    "usage": "Number.Round(1.234)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Round(1.56)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Round(1.2345, 2)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Round(1.2345, 3, RoundingMode.Up)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Round(1.2345, 3, RoundingMode.Down)"
+   }
+  ],
+  "Number.RoundAwayFromZero": [
+   {
+    "output": "",
+    "usage": "Number.RoundAwayFromZero(-1.2)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundAwayFromZero(1.2)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundAwayFromZero(-1.234, 2)"
+   }
+  ],
+  "Number.RoundDown": [
+   {
+    "output": "",
+    "usage": "Number.RoundDown(1.234)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundDown(1.999)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundDown(1.999, 2)"
+   }
+  ],
+  "Number.RoundTowardZero": [
+   {
+    "output": "",
+    "usage": "Number.RoundTowardZero(-1.2)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundTowardZero(1.2)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundTowardZero(-1.234, 2)"
+   }
+  ],
+  "Number.RoundUp": [
+   {
+    "output": "",
+    "usage": "Number.RoundUp(1.234)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundUp(1.999)"
+   },
+   {
+    "output": "",
+    "usage": "Number.RoundUp(1.234, 2)"
+   }
+  ],
+  "Number.Sign": [
+   {
+    "output": "",
+    "usage": "Number.Sign(182)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Sign(-182)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Sign(0)"
+   }
+  ],
+  "Number.Sin": [
+   {
+    "output": "",
+    "usage": "Number.Sin(0)"
+   }
+  ],
+  "Number.Sqrt": [
+   {
+    "output": "",
+    "usage": "Number.Sqrt(625)"
+   },
+   {
+    "output": "",
+    "usage": "Number.Sqrt(85)"
+   }
+  ],
+  "Number.Tan": [
+   {
+    "output": "",
+    "usage": "Number.Tan(1)"
+   }
+  ],
+  "Number.ToText": [
+   {
+    "output": "",
+    "usage": "Number.ToText(4)"
+   },
+   {
+    "output": "",
+    "usage": "Number.ToText(4, \"e\")"
+   },
+   {
+    "output": "",
+    "usage": "Number.ToText(-0.1234, \"P1\")"
+   }
+  ],
+  "OData.Feed": [
+   {
+    "output": "",
+    "usage": "OData.Feed(\"https://services.odata.org/V4/TripPinService\")"
+   }
+  ],
+  "Odbc.DataSource": [
+   {
+    "output": "",
+    "usage": "Odbc.DataSource(\"dsn=your_dsn\")"
+   }
+  ],
+  "Odbc.InferOptions": [
+   {
+    "output": "",
+    "usage": "Odbc.InferOptions(\"dsn=your_dsn\")"
+   }
+  ],
+  "Odbc.Query": [
+   {
+    "output": "",
+    "usage": "Odbc.Query(\"dsn=your_dsn\", \"select * from Customers\")"
+   }
+  ],
+  "Pdf.Tables": [
+   {
+    "output": "",
+    "usage": "Pdf.Tables(File.Contents(\"c:\\sample.pdf\"))"
+   }
+  ],
+  "Percentage.From": [
+   {
+    "output": "",
+    "usage": "Percentage.From(\"12.3%\")"
+   }
+  ],
+  "Record.AddField": [
+   {
+    "output": "",
+    "usage": "Record.AddField([CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"], \"Address\", \"123 Main St.\")"
+   }
+  ],
+  "Record.Combine": [
+   {
+    "output": "",
+    "usage": "Record.Combine({\n    [CustomerID = 1, Name = \"Bob\"],\n    [Phone = \"123-4567\"]\n})"
+   }
+  ],
+  "Record.Field": [
+   {
+    "output": "",
+    "usage": "Record.Field([CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"], \"CustomerID\")"
+   }
+  ],
+  "Record.FieldCount": [
+   {
+    "output": "",
+    "usage": "Record.FieldCount([CustomerID = 1, Name = \"Bob\"])"
+   }
+  ],
+  "Record.FieldNames": [
+   {
+    "output": "",
+    "usage": "Record.FieldNames([OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0])"
+   }
+  ],
+  "Record.FieldOrDefault": [
+   {
+    "output": "",
+    "usage": "Record.FieldOrDefault([CustomerID = 1, Name = \"Bob\"], \"Phone\")"
+   },
+   {
+    "output": "",
+    "usage": "Record.FieldOrDefault([CustomerID = 1, Name = \"Bob\"], \"Phone\", \"123-4567\")"
+   }
+  ],
+  "Record.FieldValues": [
+   {
+    "output": "",
+    "usage": "Record.FieldValues([CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"])"
+   }
+  ],
+  "Record.FromList": [
+   {
+    "output": "",
+    "usage": "Record.FromList({1, \"Bob\", \"123-4567\"}, {\"CustomerID\", \"Name\", \"Phone\"})"
+   },
+   {
+    "output": "",
+    "usage": "Record.FromList({1, \"Bob\", \"123-4567\"}, type [CustomerID = number, Name = text, Phone = number])"
+   }
+  ],
+  "Record.FromTable": [
+   {
+    "output": "",
+    "usage": "Record.FromTable(\n    Table.FromRecords({\n        [Name = \"CustomerID\", Value = 1],\n        [Name = \"Name\", Value = \"Bob\"],\n        [Name = \"Phone\", Value = \"123-4567\"]\n    })\n)"
+   }
+  ],
+  "Record.HasFields": [
+   {
+    "output": "",
+    "usage": "Record.HasFields([CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"], \"CustomerID\")"
+   },
+   {
+    "output": "",
+    "usage": "Record.HasFields([CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"], {\"CustomerID\", \"Address\"})"
+   }
+  ],
+  "Record.RemoveFields": [
+   {
+    "output": "",
+    "usage": "Record.RemoveFields([CustomerID = 1, Item = \"Fishing rod\", Price = 18.00], \"Price\")"
+   },
+   {
+    "output": "",
+    "usage": "Record.RemoveFields([CustomerID = 1, Item = \"Fishing rod\", Price = 18.00], {\"Price\", \"Item\"})"
+   }
+  ],
+  "Record.RenameFields": [
+   {
+    "output": "",
+    "usage": "Record.RenameFields(\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", UnitPrice = 100.0],\n    {\"UnitPrice\", \"Price\"}\n)"
+   },
+   {
+    "output": "",
+    "usage": "Record.RenameFields(\n    [OrderNum = 1, CustomerID = 1, Item = \"Fishing rod\", UnitPrice = 100.0],\n    {\n        {\"UnitPrice\", \"Price\"},\n        {\"OrderNum\", \"OrderID\"}\n    }\n)"
+   }
+  ],
+  "Record.ReorderFields": [
+   {
+    "output": "",
+    "usage": "Record.ReorderFields(\n    [CustomerID = 1, OrderID = 1, Item = \"Fishing rod\", Price = 100.0],\n    {\"OrderID\", \"CustomerID\"}\n)"
+   },
+   {
+    "output": "",
+    "usage": "let\n    Source = [CustomerID = 3, First Name = \"Paul\", Phone = \"543-7890\", Purchase = \"Fishing Rod\"],\n    reorderedRecord = Record.ReorderFields(\n        Source,\n        {\"Purchase\", \"Last Name\", \"First Name\"},\n        MissingField.UseNull\n    )\nin\n    reorderedRecord"
+   }
+  ],
+  "Record.SelectFields": [
+   {
+    "output": "",
+    "usage": "Record.SelectFields(\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0],\n    {\"Item\", \"Price\"}\n)"
+   }
+  ],
+  "Record.ToList": [
+   {
+    "output": "",
+    "usage": "Record.ToList([A = 1, B = 2, C = 3])"
+   }
+  ],
+  "Record.ToTable": [
+   {
+    "output": "Table.FromRecords({\n    [Name = \"OrderID\", Value = 1],\n    [Name = \"CustomerID\", Value = 1],\n    [Name = \"Item\", Value = \"Fishing rod\"],\n    [Name = \"Price\", Value = 100]\n})",
+    "usage": "Record.ToTable([OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0])"
+   }
+  ],
+  "Record.TransformFields": [
+   {
+    "output": "",
+    "usage": "Record.TransformFields(\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = \"100.0\"],\n    {\"Price\", Number.FromText}\n)"
+   },
+   {
+    "output": "",
+    "usage": "Record.TransformFields(\n    [OrderID = \"1\", CustomerID = 1, Item = \"Fishing rod\", Price = \"100.0\"],\n    {{\"OrderID\", Number.FromText}, {\"Price\", Number.FromText}}\n)"
+   }
+  ],
+  "Replacer.ReplaceText": [
+   {
+    "output": "",
+    "usage": "Replacer.ReplaceText(\"hEllo world\", \"hE\", \"He\")"
+   }
+  ],
+  "Replacer.ReplaceValue": [
+   {
+    "output": "",
+    "usage": "Replacer.ReplaceValue(11, 11, 10)"
+   }
+  ],
+  "RowExpression.Column": [
+   {
+    "output": "[\n    Kind = \"FieldAccess\",\n    Expression = RowExpression.Row,\n    MemberName = \"CustomerName\"\n]",
+    "usage": "RowExpression.Column(\"CustomerName\")"
+   }
+  ],
+  "RowExpression.From": [
+   {
+    "output": "[\n    Kind = \"Binary\",\n    Operator = \"Equals\",\n    Left = RowExpression.Column(\"CustomerName\"),\n    Right =\n    [\n        Kind = \"Constant\",\n        Value = \"ALFKI\"\n    ]\n]",
+    "usage": "RowExpression.From(each [CustomerName] = \"ALFKI\")"
+   }
+  ],
+  "Single.From": [
+   {
+    "output": "",
+    "usage": "Single.From(\"1.5\")"
+   }
+  ],
+  "Splitter.SplitTextByAnyDelimiter": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByAnyDelimiter({\",\", \";\"}, QuoteStyle.Csv)(\"a,b;\"\"c,d;e\"\",f\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    startAtEnd = true\nin\n    Splitter.SplitTextByAnyDelimiter({\",\", \";\"}, QuoteStyle.Csv, startAtEnd)(\"a,\"\"b;c,d\")"
+   }
+  ],
+  "Splitter.SplitTextByCharacterTransition": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByCharacterTransition({\"A\"..\"Z\", \"a\"..\"z\"}, {\"0\"..\"9\"})(\"Abc123\")"
+   }
+  ],
+  "Splitter.SplitTextByDelimiter": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByDelimiter(\",\", QuoteStyle.Csv)(\"a,\"\"b,c\"\",d\")"
+   }
+  ],
+  "Splitter.SplitTextByEachDelimiter": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByEachDelimiter({\",\", \";\"})(\"a,b;c,d\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    startAtEnd = true\nin\n    Splitter.SplitTextByEachDelimiter({\",\", \";\"}, QuoteStyle.None, startAtEnd)(\"a,\"\"b;c\"\",d\")"
+   }
+  ],
+  "Splitter.SplitTextByLengths": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByLengths({2, 3})(\"AB123\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    startAtEnd = true\nin\n    Splitter.SplitTextByLengths({5, 2}, startAtEnd)(\"RedmondWA98052\")"
+   }
+  ],
+  "Splitter.SplitTextByPositions": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByPositions({0, 3, 4})(\"ABC|12345\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    startAtEnd = true\nin\n    Splitter.SplitTextByPositions({0, 5}, startAtEnd)(\"Redmond98052\")"
+   }
+  ],
+  "Splitter.SplitTextByRanges": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByRanges({{0, 4}, {2, 10}})(\"codelimiter\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    startAtEnd = true\nin\n    Splitter.SplitTextByRanges({{0, 5}, {6, 2}}, startAtEnd)(\"RedmondWA?98052\")"
+   },
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByRanges({{0, 5}, {5, null}})(\"98052Redmond\")"
+   }
+  ],
+  "Splitter.SplitTextByRepeatedLengths": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByRepeatedLengths(3)(\"12345678\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    startAtEnd = true\nin\n    Splitter.SplitTextByRepeatedLengths(3, startAtEnd)(\"87654321\")"
+   }
+  ],
+  "Splitter.SplitTextByWhitespace": [
+   {
+    "output": "",
+    "usage": "Splitter.SplitTextByWhitespace(QuoteStyle.None)(\"a b#(tab)c\")"
+   }
+  ],
+  "Table.AddColumn": [
+   {
+    "output": "Table.FromRecords({\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100, Shipping = 10, TotalPrice = 110],\n    [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5, Shipping = 15, TotalPrice = 20],\n    [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25, Shipping = 10, TotalPrice = 35]\n})",
+    "usage": "Table.AddColumn(\n    Table.FromRecords({\n        [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0, Shipping = 10.00],\n        [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5.0, Shipping = 15.00],\n        [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25.0, Shipping = 10.00]\n    }),\n    \"TotalPrice\",\n    each [Price] + [Shipping],\n    type number\n)"
+   }
+  ],
+  "Table.AddFuzzyClusterColumn": [
+   {
+    "output": "Table.FromRecords(\n    {\n        [EmployeeID = 1, Location = \"Seattle\", Location_Cleaned = \"Seattle\"],\n        [EmployeeID = 2, Location = \"seattl\", Location_Cleaned = \"Seattle\"],\n        [EmployeeID = 3, Location = \"Vancouver\", Location_Cleaned = \"Vancouver\"],\n        [EmployeeID = 4, Location = \"Seatle\", Location_Cleaned = \"Seattle\"],\n        [EmployeeID = 5, Location = \"vancover\", Location_Cleaned = \"Vancouver\"],\n        [EmployeeID = 6, Location = \"Seattle\", Location_Cleaned = \"Seattle\"],\n        [EmployeeID = 7, Location = \"Vancouver\", Location_Cleaned = \"Vancouver\"]\n    },\n    type table [EmployeeID = nullable number, Location = nullable text, Location_Cleaned = nullable text]\n)",
+    "usage": "Table.AddFuzzyClusterColumn(\n    Table.FromRecords(\n        {\n            [EmployeeID = 1, Location = \"Seattle\"],\n            [EmployeeID = 2, Location = \"seattl\"],\n            [EmployeeID = 3, Location = \"Vancouver\"],\n            [EmployeeID = 4, Location = \"Seatle\"],\n            [EmployeeID = 5, Location = \"vancover\"],\n            [EmployeeID = 6, Location = \"Seattle\"],\n            [EmployeeID = 7, Location = \"Vancouver\"]\n        },\n        type table [EmployeeID = nullable number, Location = nullable text]\n    ),\n    \"Location\",\n    \"Location_Cleaned\",\n    [IgnoreCase = true, IgnoreSpace = true]\n)"
+   }
+  ],
+  "Table.AddIndexColumn": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", Index = 0],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\", Index = 1],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\", Index = 2],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\", Index = 3]\n})",
+    "usage": "Table.AddIndexColumn(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"Index\"\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", Index = 10],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\", Index = 15],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\", Index = 20],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\", Index = 25]\n})",
+    "usage": "Table.AddIndexColumn(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"Index\",\n    10,\n    5\n)"
+   }
+  ],
+  "Table.AddJoinColumn": [
+   {
+    "output": "Table.FromRecords({\n    [\n        saleID = 1,\n        item = \"Shirt\",\n        price = Table.FromRecords({[saleID = 1, price = 20, stock = 1234]})\n    ],\n    [\n        saleID = 2,\n        item = \"Hat\",\n        price = Table.FromRecords({[saleID = 2, price = 10, stock = 5643]})\n    ]\n})",
+    "usage": "Table.AddJoinColumn(\n    Table.FromRecords({\n        [saleID = 1, item = \"Shirt\"],\n        [saleID = 2, item = \"Hat\"]\n    }),\n    \"saleID\",\n    Table.FromRecords({\n        [saleID = 1, price = 20, stock = 1234],\n        [saleID = 2, price = 10, stock = 5643]\n    }),\n    \"saleID\",\n    \"price\"\n)"
+   }
+  ],
+  "Table.AddKey": [
+   {
+    "output": "Table.FromRecords({\n    [Id = 1, Name = \"Hello There\"],\n    [Id = 2, Name = \"Good Bye\"]\n})",
+    "usage": "let\n    table = Table.FromRecords({\n        [Id = 1, Name = \"Hello There\"],\n        [Id = 2, Name = \"Good Bye\"]\n    }),\n    resultTable = Table.AddKey(table, {\"Id\"}, true)\nin\n    resultTable"
+   }
+  ],
+  "Table.AddRankColumn": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Revenue = 200, RevenueRank = 1],\n    [CustomerID = 3, Name = \"Paul\", Revenue = 200, RevenueRank = 1],\n    [CustomerID = 2, Name = \"Jim\", Revenue = 100, RevenueRank = 3],\n    [CustomerID = 4, Name = \"Ringo\", Revenue = 50, RevenueRank = 4]\n})",
+    "usage": "Table.AddRankColumn(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Revenue = 200],\n        [CustomerID = 2, Name = \"Jim\", Revenue = 100],\n        [CustomerID = 3, Name = \"Paul\", Revenue = 200],\n        [CustomerID = 4, Name = \"Ringo\", Revenue = 50]\n    }),\n    \"RevenueRank\",\n    {\"Revenue\", Order.Descending},\n    [RankKind = RankKind.Competition]\n)"
+   }
+  ],
+  "Table.AggregateTableColumn": [
+   {
+    "output": "",
+    "usage": "Table.AggregateTableColumn(\n    Table.FromRecords(\n        {\n            [\n                t = Table.FromRecords({\n                    [a = 1, b = 2, c = 3],\n                    [a = 2, b = 4, c = 6]\n                }),\n                b = 2\n            ]\n        },\n        type table [t = table [a = number, b = number, c = number], b = number]\n    ),\n    \"t\",\n    {\n        {\"a\", List.Sum, \"sum of t.a\"},\n        {\"b\", List.Min, \"min of t.b\"},\n        {\"b\", List.Max, \"max of t.b\"},\n        {\"a\", List.Count, \"count of t.a\"}\n    }\n)"
+   }
+  ],
+  "Table.AlternateRows": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})",
+    "usage": "Table.AlternateRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    }),\n    1,\n    1,\n    1\n)"
+   }
+  ],
+  "Table.ApproximateRowCount": [
+   {
+    "output": "",
+    "usage": "Table.ApproximateRowCount(Table.Distinct(Table.SelectColumns(sqlTable, {\"city\", \"state\"})))"
+   }
+  ],
+  "Table.Buffer": [
+   {
+    "output": "",
+    "usage": "let\n    Source = Sql.Database(\"SomeSQLServer\", \"MyDb\"),\n    MyTable = Source{[Item=\"MyTable\"]}[Data],\n    BufferMyTable = Table.Buffer(MyTable)\nin\n    BufferMyTable"
+   }
+  ],
+  "Table.Column": [
+   {
+    "output": "",
+    "usage": "Table.Column(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"Name\"\n)"
+   }
+  ],
+  "Table.ColumnCount": [
+   {
+    "output": "",
+    "usage": "Table.ColumnCount(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    })\n)"
+   }
+  ],
+  "Table.ColumnNames": [
+   {
+    "output": "",
+    "usage": "Table.ColumnNames(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    })\n)"
+   }
+  ],
+  "Table.ColumnsOfType": [
+   {
+    "output": "",
+    "usage": "Table.ColumnsOfType(\n    Table.FromRecords(\n        {[a = 1, b = \"hello\"]},\n        type table[a = Number.Type, b = Text.Type]\n    ),\n    {type number}\n)"
+   }
+  ],
+  "Table.Combine": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})",
+    "usage": "Table.Combine({\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    Table.FromRecords({[CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]}),\n    Table.FromRecords({[CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]})\n})"
+   },
+   {
+    "output": "Table.FromRecords({\n    [Name = \"Bob\", Phone = \"123-4567\", Fax = null, Cell = null],\n    [Name = null, Phone = \"838-7171\", Fax = \"987-6543\", Cell = null],\n    [Name = null, Phone = null, Fax = null, Cell = \"543-7890\"]\n})",
+    "usage": "Table.Combine({\n    Table.FromRecords({[Name = \"Bob\", Phone = \"123-4567\"]}),\n    Table.FromRecords({[Fax = \"987-6543\", Phone = \"838-7171\"]}),\n    Table.FromRecords({[Cell = \"543-7890\"]})\n})"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = null, Name = \"Bob\"],\n    [CustomerID = null, Name = null],\n    [CustomerID = null, Name = null]\n})",
+    "usage": "Table.Combine(\n    {\n        Table.FromRecords({[Name = \"Bob\", Phone = \"123-4567\"]}),\n        Table.FromRecords({[Fax = \"987-6543\", Phone = \"838-7171\"]}),\n        Table.FromRecords({[Cell = \"543-7890\"]})\n    },\n    type table [CustomerID = text, Name = text]\n)"
+   }
+  ],
+  "Table.CombineColumns": [
+   {
+    "output": "",
+    "usage": "Table.CombineColumns(\n    Table.FromRecords({[FirstName = \"Bob\", LastName = \"Smith\"]}),\n    {\"LastName\", \"FirstName\"},\n    Combiner.CombineTextByDelimiter(\",\", QuoteStyle.None),\n    \"FullName\"\n)"
+   }
+  ],
+  "Table.Contains": [
+   {
+    "output": "",
+    "usage": "Table.Contains(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    [Name = \"Bob\"]\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.Contains(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    [Name = \"Ted\"]\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.Contains(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    [CustomerID = 4, Name = \"Bob\"],\n    \"Name\"\n)"
+   }
+  ],
+  "Table.ContainsAll": [
+   {
+    "output": "",
+    "usage": "Table.ContainsAll(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    {\n        [CustomerID = 1, Name = \"Bill\"],\n        [CustomerID = 2, Name = \"Fred\"]\n    },\n    \"CustomerID\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.ContainsAll(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    {\n        [CustomerID = 1, Name = \"Bill\"],\n        [CustomerID = 2, Name = \"Fred\"]\n    }\n)"
+   }
+  ],
+  "Table.ContainsAny": [
+   {
+    "output": "",
+    "usage": "Table.ContainsAny(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 3, b = 4]\n    }),\n    {\n        [a = 1, b = 2],\n        [a = 3, b = 5]\n    }\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.ContainsAny(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 3, b = 4]\n    }),\n    {\n        [a = 1, b = 3],\n        [a = 3, b = 5]\n    }\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.ContainsAny(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 3, b = 4]\n    }),\n    {\n        [a = 1, b = 3],\n        [a = 3, b = 5]\n    },\n    \"a\"\n)"
+   }
+  ],
+  "Table.DemoteHeaders": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = \"CustomerID\", Column2 = \"Name\", Column3 = \"Phone\"],\n    [Column1 = 1, Column2 = \"Bob\", Column3 = \"123-4567\"],\n    [Column1 = 2, Column2 = \"Jim\", Column3 = \"987-6543\"]\n})",
+    "usage": "Table.DemoteHeaders(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n    })\n)"
+   }
+  ],
+  "Table.Distinct": [
+   {
+    "output": "Table.FromRecords({\n    [a = \"A\", b = \"a\"],\n    [a = \"B\", b = \"b\"]\n})",
+    "usage": "Table.Distinct(\n    Table.FromRecords({\n        [a = \"A\", b = \"a\"],\n        [a = \"B\", b = \"b\"],\n        [a = \"A\", b = \"a\"]\n    })\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [a = \"A\", b = \"a\"],\n    [a = \"A\", b = \"b\"]\n})",
+    "usage": "Table.Distinct(\n    Table.FromRecords({\n        [a = \"A\", b = \"a\"],\n        [a = \"B\", b = \"a\"],\n        [a = \"A\", b = \"b\"]\n    }),\n    \"b\"\n)"
+   }
+  ],
+  "Table.DuplicateColumn": [
+   {
+    "output": "Table.FromRecords({\n    [a = 1, b = 2, #\"copied column\" = 1],\n    [a = 3, b = 4, #\"copied column\" = 3]\n})",
+    "usage": "Table.DuplicateColumn(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 3, b = 4]\n    }),\n    \"a\",\n    \"copied column\"\n)"
+   }
+  ],
+  "Table.ExpandListColumn": [
+   {
+    "output": "Table.FromRecords({\n    [Name = \"Bob\", Discount = 0.15],\n    [Name = \"Jim\", Discount = 0.15],\n    [Name = \"Paul\", Discount = 0.15]\n})",
+    "usage": "Table.ExpandListColumn(\n    Table.FromRecords({[Name = {\"Bob\", \"Jim\", \"Paul\"}, Discount = .15]}),\n    \"Name\"\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [Part = \"Tool\", Components = [Name = \"Thingamajig\", Quantity = 2]],\n    [Part = \"Tool\", Components = [Name = \"Widget\", Quantity = 3]]\n})",
+    "usage": "Table.ExpandListColumn(\n    #table(\n        {\"Part\", \"Components\"},\n        {\n            {\"Tool\", #table({\"Name\", \"Quantity\"}, {{\"Thingamajig\", 2}, {\"Widget\", 3}})}\n        }\n    ),\n    \"Components\"\n)"
+   }
+  ],
+  "Table.ExpandRecordColumn": [
+   {
+    "output": "",
+    "usage": "Table.ExpandRecordColumn(\n    Table.FromRecords({\n        [\n            a = [aa = 1, bb = 2, cc = 3],\n            b = 2\n        ]\n    }),\n    \"a\",\n    {\"aa\", \"bb\", \"cc\"}\n)"
+   }
+  ],
+  "Table.ExpandTableColumn": [
+   {
+    "output": "Table.FromRecords({\n    [t.a = 1, t.b = 2, t.c = 3, b = 2],\n    [t.a = 2, t.b = 4, t.c = 6, b = 2]\n})",
+    "usage": "Table.ExpandTableColumn(\n    Table.FromRecords({\n        [\n            t = Table.FromRecords({\n                [a = 1, b = 2, c = 3],\n                [a = 2, b = 4, c = 6]\n            }),\n            b = 2\n        ]\n    }),\n    \"t\",\n    {\"a\", \"b\", \"c\"},\n    {\"t.a\", \"t.b\", \"t.c\"}\n)"
+   }
+  ],
+  "Table.FillDown": [
+   {
+    "output": "Table.FromRecords({\n    [Place = 1, Name = \"Bob\"],\n    [Place = 1, Name = \"John\"],\n    [Place = 2, Name = \"Brad\"],\n    [Place = 3, Name = \"Mark\"],\n    [Place = 3, Name = \"Tom\"],\n    [Place = 3, Name = \"Adam\"]\n})",
+    "usage": "Table.FillDown(\n    Table.FromRecords({\n        [Place = 1, Name = \"Bob\"],\n        [Place = null, Name = \"John\"],\n        [Place = 2, Name = \"Brad\"],\n        [Place = 3, Name = \"Mark\"],\n        [Place = null, Name = \"Tom\"],\n        [Place = null, Name = \"Adam\"]\n    }),\n    {\"Place\"}\n)"
+   }
+  ],
+  "Table.FillUp": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = 1, Column2 = 2],\n    [Column1 = 3, Column2 = 3],\n    [Column1 = 5, Column2 = 3]\n})",
+    "usage": "Table.FillUp(\n    Table.FromRecords({\n        [Column1 = 1, Column2 = 2],\n        [Column1 = 3, Column2 = null],\n        [Column1 = 5, Column2 = 3]\n    }),\n    {\"Column2\"}\n)"
+   }
+  ],
+  "Table.FindText": [
+   {
+    "output": "",
+    "usage": "Table.FindText(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"Bob\"\n)"
+   }
+  ],
+  "Table.First": [
+   {
+    "output": "",
+    "usage": "Table.First(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    })\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.First(Table.FromRecords({}), [a = 0, b = 0])"
+   }
+  ],
+  "Table.FirstN": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n})",
+    "usage": "Table.FirstN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    }),\n    2\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [a = 1, b = 2],\n    [a = 3, b = 4]\n})",
+    "usage": "Table.FirstN(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 3, b = 4],\n        [a = -5, b = -6]\n    }),\n    each [a] > 0\n)"
+   }
+  ],
+  "Table.FromColumns": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = 1, Column2 = \"Bob\", Column3 = \"123-4567\"],\n    [Column1 = 2, Column2 = \"Jim\", Column3 = \"987-6543\"],\n    [Column1 = 3, Column2 = \"Paul\", Column3 = \"543-7890\"]\n})",
+    "usage": "Table.FromColumns({\n    {1, 2, 3},\n    {\"Bob\", \"Jim\", \"Paul\"},\n    {\"123-4567\", \"987-6543\", \"543-7890\"}\n})"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})",
+    "usage": "Table.FromColumns(\n    {\n      {1, 2, 3},\n      {\"Bob\", \"Jim\", \"Paul\"},\n      {\"123-4567\", \"987-6543\", \"543-7890\"}\n    },\n    {\"CustomerID\", \"Name\", \"Phone\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [column1 = 1, column2 = 4, column3 = 6],\n    [column1 = 2, column2 = 5, column3 = 7],\n    [column1 = 3, column2 = null, column3 = 8],\n    [column1 = null, column2 = null, column3 = 9]\n})",
+    "usage": "Table.FromColumns(\n    {\n        {1, 2, 3},\n        {4, 5},\n        {6, 7, 8, 9}\n    },\n    {\"column1\", \"column2\", \"column3\"}\n)"
+   }
+  ],
+  "Table.FromList": [
+   {
+    "output": "Table.FromRecords({\n    [Letter = \"a\", #\"Example Word\" = \"apple\"],\n    [Letter = \"b\", #\"Example Word\" = \"ball\"],\n    [Letter = \"c\", #\"Example Word\" = \"cookie\"],\n    [Letter = \"d\", #\"Example Word\" = \"door\"]\n})",
+    "usage": "Table.FromList(\n    {\"a,apple\", \"b,ball\", \"c,cookie\", \"d,door\"},\n    null,\n    {\"Letter\", \"Example Word\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [#\"Letter and Example Word\" = \"a,apple\"],\n    [#\"Letter and Example Word\" = \"b,ball\"],\n    [#\"Letter and Example Word\" = \"c,cookie\"],\n    [#\"Letter and Example Word\" = \"d,door\"]\n})",
+    "usage": "Table.FromList(\n    {\"a,apple\", \"b,ball\", \"c,cookie\", \"d,door\"},\n    Splitter.SplitByNothing(),\n    {\"Letter and Example Word\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\"],\n    [CustomerID = 2, Name = \"Jim\"]\n})",
+    "usage": "Table.FromList(\n    {\n        [CustomerID = 1, Name = \"Bob\"],\n        [CustomerID = 2, Name = \"Jim\"]\n    },\n    Record.FieldValues,\n    {\"CustomerID\", \"Name\"}\n)"
+   }
+  ],
+  "Table.FromPartitions": [
+   {
+    "output": "Table.FromRecords({\n    [\n        Foo = \"Bar\",\n        Day = 1,\n        Month = \"Jan\",\n        Year = 1994\n    ],\n    [\n        Foo = \"Bar\",\n        Day = 2,\n        Month = \"Jan\",\n        Year = 1994\n    ],\n    [\n        Foo = \"Bar\",\n        Day = 3,\n        Month = \"Feb\",\n        Year = 1994\n    ],\n    [\n        Foo = \"Bar\",\n        Day = 4,\n        Month = \"Feb\",\n        Year = 1994\n    ]\n})",
+    "usage": "Table.FromPartitions(\n    \"Year\",\n    {\n        {\n            1994,\n            Table.FromPartitions(\n                \"Month\",\n                {\n                    {\n                        \"Jan\",\n                        Table.FromPartitions(\n                            \"Day\",\n                            {\n                                {1, #table({\"Foo\"}, {{\"Bar\"}})},\n                                {2, #table({\"Foo\"}, {{\"Bar\"}})}\n                            }\n                        )\n                    },\n                    {\n                        \"Feb\",\n                        Table.FromPartitions(\n                            \"Day\",\n                            {\n                                {3, #table({\"Foo\"}, {{\"Bar\"}})},\n                                {4, #table({\"Foo\"}, {{\"Bar\"}})}\n                            }\n                        )\n                    }\n                }\n            )\n        }\n    }\n)"
+   }
+  ],
+  "Table.FromRecords": [
+   {
+    "output": "#table(type table[CustomerID = any, Name = any, Phone = any],\n{\n    {1, \"Bob\", \"123-4567\"},\n    {2, \"Jim\", \"987-6543\"},\n    {3, \"Paul\", \"543-7890\"}\n})",
+    "usage": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})"
+   },
+   {
+    "output": "",
+    "usage": "Table.ColumnsOfType(\n    Table.FromRecords(\n        {[CustomerID = 1, Name = \"Bob\"]},\n        type table[CustomerID = Number.Type, Name = Text.Type]\n    ),\n    {type number}\n)"
+   },
+   {
+    "output": "#table(type table[FirstName = text, MiddleInitial = text, LastName = text],\n{\n    {\"Bob\", \"C\", \"Smith\"},\n    {\"Sarah\", null, \"Jones\"},\n    {\"Harry\", \"H\", null}\n})",
+    "usage": "Table.FromRecords({\n        [CustomerID = 1, FirstName = \"Bob\", MiddleInitial = \"C\", LastName = \"Smith\"],\n        [CustomerID = 2, FirstName = \"Sarah\", LastName = \"Jones\"],\n        [CustomerID = 3, FirstName = \"Harry\", MiddleInitial = \"H\"]\n    },\n    type table [FirstName = nullable text, MiddleInitial = nullable text, LastName = nullable text],\n    MissingField.UseNull)"
+   }
+  ],
+  "Table.FromRows": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n})",
+    "usage": "Table.FromRows(\n    {\n        {1, \"Bob\", \"123-4567\"},\n        {2, \"Jim\", \"987-6543\"}\n    },\n    {\"CustomerID\", \"Name\", \"Phone\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n})",
+    "usage": "Table.FromRows(\n    {\n        {1, \"Bob\", \"123-4567\"},\n        {2, \"Jim\", \"987-6543\"}\n    },\n    type table [CustomerID = number, Name = text, Phone = text]\n)"
+   }
+  ],
+  "Table.FromValue": [
+   {
+    "output": "",
+    "usage": "Table.FromValue(1)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [Value = 1],\n    [Value = \"Bob\"],\n    [Value = \"123-4567\"]\n})",
+    "usage": "Table.FromValue({1, \"Bob\", \"123-4567\"})"
+   },
+   {
+    "output": "",
+    "usage": "Table.FromValue(1, [DefaultColumnName = \"MyValue\"])"
+   }
+  ],
+  "Table.FuzzyGroup": [
+   {
+    "output": "Table.FromRecords({\n    [Location = \"Seattle\", Count = 4],\n    [Location = \"Vancouver\", Count = 3]\n})",
+    "usage": "Table.FuzzyGroup(\n    Table.FromRecords(\n        {\n            [EmployeeID = 1, Location = \"Seattle\"],\n            [EmployeeID = 2, Location = \"seattl\"],\n            [EmployeeID = 3, Location = \"Vancouver\"],\n            [EmployeeID = 4, Location = \"Seatle\"],\n            [EmployeeID = 5, Location = \"vancover\"],\n            [EmployeeID = 6, Location = \"Seattle\"],\n            [EmployeeID = 7, Location = \"Vancouver\"]\n        },\n        type table [EmployeeID = nullable number, Location = nullable text]\n    ),\n    \"Location\",\n    {\"Count\", each Table.RowCount(_)},\n    [IgnoreCase = true, IgnoreSpace = true]\n)"
+   }
+  ],
+  "Table.FuzzyJoin": [
+   {
+    "output": "Table.FromRecords({\n    [\n        CustomerID = 1,\n        FirstName1 = \"Bob\",\n        Phone = \"555-1234\",\n        CustomerStateID = 1,\n        FirstName2 = \"Bob\",\n        State = \"TX\"\n    ],\n    [\n        CustomerID = 1,\n        FirstName1 = \"Bob\",\n        Phone = \"555-1234\",\n        CustomerStateID = 2,\n        FirstName2 = \"bOB\",\n        State = \"CA\"\n    ],\n    [\n        CustomerID = 2,\n        FirstName1 = \"Robert\",\n        Phone = \"555-4567\",\n        CustomerStateID = null,\n        FirstName2 = null,\n        State = null\n    ]\n})",
+    "usage": "Table.FuzzyJoin(\n    Table.FromRecords(\n        {\n            [CustomerID = 1, FirstName1 = \"Bob\", Phone = \"555-1234\"],\n            [CustomerID = 2, FirstName1 = \"Robert\", Phone = \"555-4567\"]\n        },\n        type table [CustomerID = nullable number, FirstName1 = nullable text, Phone = nullable text]\n    ),\n    {\"FirstName1\"},\n    Table.FromRecords(\n        {\n            [CustomerStateID = 1, FirstName2 = \"Bob\", State = \"TX\"],\n            [CustomerStateID = 2, FirstName2 = \"bOB\", State = \"CA\"]\n        },\n        type table [CustomerStateID = nullable number, FirstName2 = nullable text, State = nullable text]\n    ),\n    {\"FirstName2\"},\n    JoinKind.LeftOuter,\n    [IgnoreCase = true, IgnoreSpace = false]\n)"
+   }
+  ],
+  "Table.FuzzyNestedJoin": [
+   {
+    "output": "Table.FromRecords({\n    [\n        CustomerID = 1,\n        FirstName1 = \"Bob\",\n        Phone = \"555-1234\",\n        NestedTable = Table.FromRecords({\n            [\n                CustomerStateID = 1,\n                FirstName2 = \"Bob\",\n                State = \"TX\"\n            ],\n            [\n                CustomerStateID = 2,\n                FirstName2 = \"bOB\",\n                State = \"CA\"\n            ]\n        })\n    ],\n    [\n        CustomerID = 2,\n        FirstName1 = \"Robert\",\n        Phone = \"555-4567\",\n        NestedTable = Table.FromRecords({})\n    ]\n})",
+    "usage": "Table.FuzzyNestedJoin(\n    Table.FromRecords(\n        {\n            [CustomerID = 1, FirstName1 = \"Bob\", Phone = \"555-1234\"],\n            [CustomerID = 2, FirstName1 = \"Robert\", Phone = \"555-4567\"]\n        },\n        type table [CustomerID = nullable number, FirstName1 = nullable text, Phone = nullable text]\n    ),\n    {\"FirstName1\"},\n    Table.FromRecords(\n        {\n            [CustomerStateID = 1, FirstName2 = \"Bob\", State = \"TX\"],\n            [CustomerStateID = 2, FirstName2 = \"bOB\", State = \"CA\"]\n        },\n        type table [CustomerStateID = nullable number, FirstName2 = nullable text, State = nullable text]\n    ),\n    {\"FirstName2\"},\n    \"NestedTable\",\n    JoinKind.LeftOuter,\n    [IgnoreCase = true, IgnoreSpace = false]\n)"
+   }
+  ],
+  "Table.Group": [
+   {
+    "output": "Table.FromRecords(\n    {\n        [CustomerID = 1, total = 30],\n        [CustomerID = 2, total = 30],\n        [CustomerID = 3, total = 25]\n    },\n    {\"CustomerID\", \"total\"}\n)",
+    "usage": "Table.Group(\n    Table.FromRecords({\n        [CustomerID = 1, price = 20],\n        [CustomerID = 2, price = 10],\n        [CustomerID = 2, price = 20],\n        [CustomerID = 1, price = 10],\n        [CustomerID = 3, price = 20],\n        [CustomerID = 3, price = 5]\n    }),\n    \"CustomerID\",\n    {\"total\", each List.Sum([price])}\n)"
+   }
+  ],
+  "Table.HasColumns": [
+   {
+    "output": "",
+    "usage": "Table.HasColumns(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"Name\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.HasColumns(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    {\"Name\", \"PhoneNumber\"}\n)"
+   }
+  ],
+  "Table.InsertRows": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n})",
+    "usage": "Table.InsertRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n    }),\n    1,\n    {[CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})",
+    "usage": "Table.InsertRows(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    1,\n    {\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    }\n)"
+   }
+  ],
+  "Table.IsDistinct": [
+   {
+    "output": "",
+    "usage": "Table.IsDistinct(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    })\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.IsDistinct(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 5, Name = \"Bob\", Phone = \"232-1550\"]\n    }),\n    \"Name\"\n)"
+   }
+  ],
+  "Table.IsEmpty": [
+   {
+    "output": "",
+    "usage": "Table.IsEmpty(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    })\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.IsEmpty(Table.FromRecords({}))"
+   }
+  ],
+  "Table.Join": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", OrderID = 1, Item = \"Fishing rod\", Price = 100],\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", OrderID = 2, Item = \"1 lb. worms\", Price = 5],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\", OrderID = 3, Item = \"Fishing net\", Price = 25],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\", OrderID = 4, Item = \"Fish tazer\", Price = 200],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\", OrderID = 5, Item = \"Bandaids\", Price = 2],\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", OrderID = 6, Item = \"Tackle box\", Price = 20]\n})",
+    "usage": "Table.Join(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"CustomerID\",\n    Table.FromRecords({\n        [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0],\n        [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5.0],\n        [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25.0],\n        [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200.0],\n        [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2.0],\n        [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20.0],\n        [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25]\n    }),\n    \"CustomerID\"\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [TenantID = 1, CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", Order.TenantID = 1, Order.OrderID = 1, Order.CustomerID = 1, Order.Name = \"Fishing rod\", Order.Price = 100],\n    [TenantID = 1, CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\", Order.TenantID = 1, Order.OrderID = 2, Order.CustomerID = 1, Order.Name = \"1 lb. worms\", Order.Price = 5],\n    [TenantID = 1, CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\", Order.TenantID = 1, Order.OrderID = 3, Order.CustomerID = 2, Order.Name = \"Fishing net\", Order.Price = 25]\n})",
+    "usage": "let\n    customers = Table.FromRecords({\n        [TenantID = 1, CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [TenantID = 1, CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n    }),\n    orders = Table.FromRecords({\n        [TenantID = 1, OrderID = 1, CustomerID = 1, Name = \"Fishing rod\", Price = 100.0],\n        [TenantID = 1, OrderID = 2, CustomerID = 1, Name = \"1 lb. worms\", Price = 5.0],\n        [TenantID = 1, OrderID = 3, CustomerID = 2, Name = \"Fishing net\", Price = 25.0]\n    })\nin\n    Table.Join(\n        customers,\n        {\"TenantID\", \"CustomerID\"},\n        Table.PrefixColumns(orders, \"Order\"),\n        {\"Order.TenantID\", \"Order.CustomerID\"}\n    )"
+   }
+  ],
+  "Table.Keys": [
+   {
+    "output": "",
+    "usage": "let\n    table = Table.FromRecords({\n        [Id = 1, Name = \"Hello There\"],\n        [Id = 2, Name = \"Good Bye\"]\n    }),\n    tableWithKeys = Table.AddKey(table, {\"Id\"}, true),\n    keys = Table.Keys(tableWithKeys)\nin\n    keys"
+   }
+  ],
+  "Table.Last": [
+   {
+    "output": "",
+    "usage": "Table.Last(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    })\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.Last(Table.FromRecords({}), [a = 0, b = 0])"
+   }
+  ],
+  "Table.LastN": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})",
+    "usage": "Table.LastN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    }),\n    2\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [a = 3, b = 4],\n    [a = 5, b = 6]\n})",
+    "usage": "Table.LastN(\n    Table.FromRecords({\n        [a = -1, b = -2],\n        [a = 3, b = 4],\n        [a = 5, b = 6]\n    }),\n    each _ [a] > 0\n)"
+   }
+  ],
+  "Table.MatchesAllRows": [
+   {
+    "output": "",
+    "usage": "Table.MatchesAllRows(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 6, b = 8]\n    }),\n    each Number.Mod([a], 2) = 0\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.MatchesAllRows(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = -3, b = 4]\n    }),\n    each _ = [a = 1, b = 2]\n)"
+   }
+  ],
+  "Table.MatchesAnyRows": [
+   {
+    "output": "",
+    "usage": "Table.MatchesAnyRows(\n    Table.FromRecords({\n        [a = 1, b = 4],\n        [a = 3, b = 8]\n    }),\n    each Number.Mod([a], 2) = 0\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.MatchesAnyRows(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = -3, b = 4]\n    }),\n    each _ = [a = 1, b = 2]\n)"
+   }
+  ],
+  "Table.Max": [
+   {
+    "output": "",
+    "usage": "Table.Max(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 6, b = 8]\n    }),\n    \"a\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.Max(#table({\"a\"}, {}), \"a\", -1)"
+   }
+  ],
+  "Table.MaxN": [
+   {
+    "output": "Table.FromRecords({\n    [a = 6, b = 2],\n    [a = 2, b = 4]\n})",
+    "usage": "Table.MaxN(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 0, b = 0],\n        [a = 6, b = 2]\n    }),\n    \"a\",\n    each [a] > 0\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.MaxN(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 8, b = 0],\n        [a = 6, b = 2]\n    }),\n    \"a\",\n    each [b] > 0\n)"
+   }
+  ],
+  "Table.Min": [
+   {
+    "output": "",
+    "usage": "Table.Min(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 6, b = 8]\n    }),\n    \"a\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.Min(#table({\"a\"}, {}), \"a\", -1)"
+   }
+  ],
+  "Table.MinN": [
+   {
+    "output": "Table.FromRecords({\n    [a = 0, b = 0],\n    [a = 2, b = 4]\n})",
+    "usage": "Table.MinN(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 0, b = 0],\n        [a = 6, b = 4]\n    }),\n    \"a\",\n    each [a] < 3\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.MinN(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 8, b = 0],\n        [a = 6, b = 2]\n    }),\n    \"a\",\n    each [b] < 0\n)"
+   }
+  ],
+  "Table.NestedJoin": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerToCall = 1, CustomerDetails = Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]})],\n    [CustomerToCall = 3, CustomerDetails = Table.FromRecords({[CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]})]\n})",
+    "usage": "Table.NestedJoin(\n    Table.FromRecords({\n        [CustomerToCall = 1],\n        [CustomerToCall = 3]\n    }),\n    {\"CustomerToCall\"},\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    {\"CustomerID\"},\n    \"CustomerDetails\"\n)"
+   }
+  ],
+  "Table.Partition": [
+   {
+    "output": "{\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 2, b = 4]\n    }),\n    Table.FromRecords({\n        [a = 1, b = 4],\n        [a = 1, b = 4]\n    })\n}",
+    "usage": "Table.Partition(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 1, b = 4],\n        [a = 2, b = 4],\n        [a = 1, b = 4]\n    }),\n    \"a\",\n    2,\n    each _\n)"
+   }
+  ],
+  "Table.Pivot": [
+   {
+    "output": "Table.FromRecords({\n    [key = \"x\", a = 1, b = null, c = 3],\n    [key = \"y\", a = 2, b = 4, c = null]\n})",
+    "usage": "Table.Pivot(\n    Table.FromRecords({\n        [key = \"x\", attribute = \"a\", value = 1],\n        [key = \"x\", attribute = \"c\", value = 3],\n        [key = \"y\", attribute = \"a\", value = 2],\n        [key = \"y\", attribute = \"b\", value = 4]\n    }),\n    {\"a\", \"b\", \"c\"},\n    \"attribute\",\n    \"value\"\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [key = \"x\", a = 1, b = null, c = 5],\n    [key = \"y\", a = 2, b = 4, c = null]\n})",
+    "usage": "Table.Pivot(\n    Table.FromRecords({\n        [key = \"x\", attribute = \"a\", value = 1],\n        [key = \"x\", attribute = \"c\", value = 3],\n        [key = \"x\", attribute = \"c\", value = 5],\n        [key = \"y\", attribute = \"a\", value = 2],\n        [key = \"y\", attribute = \"b\", value = 4]\n    }),\n    {\"a\", \"b\", \"c\"},\n    \"attribute\",\n    \"value\",\n    List.Max\n)"
+   }
+  ],
+  "Table.PositionOf": [
+   {
+    "output": "",
+    "usage": "Table.PositionOf(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 1, b = 4],\n        [a = 2, b = 4],\n        [a = 1, b = 4]\n    }),\n    [a = 2, b = 4]\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.PositionOf(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 1, b = 4],\n        [a = 2, b = 4],\n        [a = 1, b = 4]\n    }),\n    [a = 2, b = 4],\n    1\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.PositionOf(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 1, b = 4],\n        [a = 2, b = 4],\n        [a = 1, b = 4]\n    }),\n    [a = 2, b = 4],\n    Occurrence.All\n)"
+   }
+  ],
+  "Table.PositionOfAny": [
+   {
+    "output": "",
+    "usage": "Table.PositionOfAny(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 1, b = 4],\n        [a = 2, b = 4],\n        [a = 1, b = 4]\n    }),\n    {\n        [a = 2, b = 4],\n        [a = 6, b = 8]\n    }\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.PositionOfAny(\n    Table.FromRecords({\n        [a = 2, b = 4],\n        [a = 6, b = 8],\n        [a = 2, b = 4],\n        [a = 1, b = 4]\n    }),\n    {\n        [a = 2, b = 4],\n        [a = 6, b = 8]\n    },\n    Occurrence.All\n)"
+   }
+  ],
+  "Table.PrefixColumns": [
+   {
+    "output": "",
+    "usage": "Table.PrefixColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    \"MyTable\"\n)"
+   }
+  ],
+  "Table.PromoteHeaders": [
+   {
+    "output": "",
+    "usage": "Table.PromoteHeaders(\n    Table.FromRecords({\n        [Column1 = \"CustomerID\", Column2 = \"Name\", Column3 = #date(1980, 1, 1)],\n        [Column1 = 1, Column2 = \"Bob\", Column3 = #date(1980, 1, 1)]\n    })\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.PromoteHeaders(\n    Table.FromRecords({\n        [Rank = 1, Name = \"Name\", Date = #date(1980, 1, 1)],\n        [Rank = 1, Name = \"Bob\", Date = #date(1980, 1, 1)]}\n    ),\n    [PromoteAllScalars = true, Culture = \"en-US\"]\n)"
+   }
+  ],
+  "Table.Range": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.Range(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.Range(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1,\n    1\n)"
+   }
+  ],
+  "Table.RemoveColumns": [
+   {
+    "output": "",
+    "usage": "Table.RemoveColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    \"Phone\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.RemoveColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    \"Address\"\n)"
+   }
+  ],
+  "Table.RemoveFirstN": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.RemoveFirstN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.RemoveFirstN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    2\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.RemoveFirstN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    each [CustomerID] <= 2\n)"
+   }
+  ],
+  "Table.RemoveLastN": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n})",
+    "usage": "Table.RemoveLastN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.RemoveLastN(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    each [CustomerID] >= 2\n)"
+   }
+  ],
+  "Table.RemoveMatchingRows": [
+   {
+    "output": "",
+    "usage": "Table.RemoveMatchingRows(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 3, b = 4],\n        [a = 1, b = 6]\n    }),\n    {[a = 1]},\n    \"a\"\n)"
+   },
+   {
+    "output": "#table(type table[OrderID = number, Product = text, Quantity = number],\n{\n    {101, \"Widget\", 5},\n    {102, \"Gadget\", 3}\n})",
+    "usage": "let\n    CurrentOrders = #table(type table[OrderID = number, Product = text, Quantity = number],\n    {\n        {101, \"Widget\", 5},\n        {102, \"Gadget\", 3},\n        {103, \"Widget\", 5}\n    }),\n    CanceledOrders = {\n        [OrderID = 103, Product = \"widget\", Quantity = 5]\n    },\n    FilteredOrders = Table.RemoveMatchingRows(CurrentOrders, CanceledOrders, Comparer.OrdinalIgnoreCase)\nin\n    FilteredOrders"
+   },
+   {
+    "output": "#table(type table[Task = text, Date = date],\n{\n    {\"HVAC Check\", #date(2025, 7, 10)},\n    {\"Fire Drill\", #date(2025, 9, 17)}\n})",
+    "usage": "let\n    MaintenanceSchedule = #table(type table [Task = text, Date = date],\n    {\n        {\"HVAC Check\", #date(2025, 7, 10)},              // Not a holiday\n        {\"Window Washing\", #date(2025, 9, 1)},           // Labor Day\n        {\"Fire Drill\", #date(2025, 9, 17)},              // Not a holiday\n        {\"Light Bulb Replacement\", #date(2025, 11, 27)}  // Thanksgiving\n    }),\n\n    USHolidays = {\n        [Date = #date(2025, 1, 1)],   // New Year's Day\n        [Date = #date(2025, 7, 4)],   // Independence Day\n        [Date = #date(2025, 9, 1)],   // Labor Day\n        [Date = #date(2025, 11, 27)], // Thanksgiving\n        [Date = #date(2025, 12, 25)]  // Christmas\n    },\n\n    FilteredSchedule = Table.RemoveMatchingRows(\n        MaintenanceSchedule,\n        USHolidays,\n        {\"Date\"}\n    )\nin\n    FilteredSchedule"
+   }
+  ],
+  "Table.RemoveRows": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.RemoveRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    0\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.RemoveRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.RemoveRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1,\n    2\n)"
+   }
+  ],
+  "Table.RemoveRowsWithErrors": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = 2],\n    [Column1 = 3]\n})",
+    "usage": "Table.RemoveRowsWithErrors(\n    Table.FromRecords({\n        [Column1 = ...],\n        [Column1 = 2],\n        [Column1 = 3]\n    })\n)"
+   }
+  ],
+  "Table.RenameColumns": [
+   {
+    "output": "",
+    "usage": "Table.RenameColumns(\n    Table.FromRecords({[CustomerNum = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    {\"CustomerNum\", \"CustomerID\"}\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.RenameColumns(\n    Table.FromRecords({[CustomerNum = 1, Name = \"Bob\", PhoneNum = \"123-4567\"]}),\n    {\n        {\"CustomerNum\", \"CustomerID\"},\n        {\"PhoneNum\", \"Phone\"}\n    }\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.RenameColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    {\"NewCol\", \"NewColumn\"},\n    MissingField.Ignore\n)"
+   }
+  ],
+  "Table.ReorderColumns": [
+   {
+    "output": "",
+    "usage": "Table.ReorderColumns(\n    Table.FromRecords({[CustomerID = 1, Phone = \"123-4567\", Name = \"Bob\"]}),\n    {\"Name\", \"Phone\"}\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.ReorderColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    {\"Phone\", \"Address\"},\n    MissingField.Ignore\n)"
+   }
+  ],
+  "Table.Repeat": [
+   {
+    "output": "Table.FromRecords({\n    [a = 1, b = \"hello\"],\n    [a = 3, b = \"world\"],\n    [a = 1, b = \"hello\"],\n    [a = 3, b = \"world\"]\n})",
+    "usage": "Table.Repeat(\n    Table.FromRecords({\n        [a = 1, b = \"hello\"],\n        [a = 3, b = \"world\"]\n    }),\n    2\n)"
+   }
+  ],
+  "Table.ReplaceErrorValues": [
+   {
+    "output": "Table.FromRecords({\n    [A = 1, B = \"hello\"],\n    [A = 3, B = \"world\"]\n})",
+    "usage": "Table.ReplaceErrorValues(\n    Table.FromRows({{1, \"hello\"}, {3, ...}}, {\"A\", \"B\"}),\n    {\"B\", \"world\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [A = \"hello\", B = \"world\"],\n    [A = 1, B = 2]\n})",
+    "usage": "Table.ReplaceErrorValues(\n    Table.FromRows({{..., ...}, {1, 2}}, {\"A\", \"B\"}),\n    {{\"A\", \"hello\"}, {\"B\", \"world\"}}\n)"
+   }
+  ],
+  "Table.ReplaceKeys": [
+   {
+    "output": "",
+    "usage": "let\n    table = Table.FromRecords({\n        [Id = 1, Name = \"Hello There\"],\n        [Id = 2, Name = \"Good Bye\"]\n    }),\n    tableWithKeys = Table.AddKey(table, {\"Id\"}, true),\n    resultTable = Table.ReplaceKeys(tableWithKeys, {[Columns = {\"Id\"}, Primary = false]}),\n    newKeys = Table.Keys(resultTable)\nin\n    newKeys"
+   }
+  ],
+  "Table.ReplaceMatchingRows": [
+   {
+    "output": "Table.FromRecords({\n    [a = -1, b = -2],\n    [a = -2, b = -3],\n    [a = 3, b = 4],\n    [a = -1, b = -2]\n})",
+    "usage": "Table.ReplaceMatchingRows(\n    Table.FromRecords({\n        [a = 1, b = 2],\n        [a = 2, b = 3],\n        [a = 3, b = 4],\n        [a = 1, b = 2]\n    }),\n    {\n        {[a = 1, b = 2], [a = -1, b = -2]},\n        {[a = 2, b = 3], [a = -2, b = -3]}\n    }\n)"
+   }
+  ],
+  "Table.ReplaceRows": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = 1],\n    [Column1 = 6],\n    [Column1 = 7],\n    [Column1 = 5]\n})",
+    "usage": "Table.ReplaceRows(\n    Table.FromRecords({\n        [Column1 = 1],\n        [Column1 = 2],\n        [Column1 = 3],\n        [Column1 = 4],\n        [Column1 = 5]\n    }),\n    1,\n    3,\n    {[Column1 = 6], [Column1 = 7]}\n)"
+   }
+  ],
+  "Table.ReplaceValue": [
+   {
+    "output": "Table.FromRecords({\n    [A = 1, B = \"hello\"],\n    [A = 2, B = \"world\"],\n    [A = 3, B = \"goodbyes\"]\n})",
+    "usage": "Table.ReplaceValue(\n    Table.FromRecords({\n        [A = 1, B = \"hello\"],\n        [A = 2, B = \"goodbye\"],\n        [A = 3, B = \"goodbyes\"]\n    }),\n    \"goodbye\",\n    \"world\",\n    Replacer.ReplaceValue,\n    {\"B\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [A = 1, B = \"hello\"],\n    [A = 2, B = \"world\"]\n})",
+    "usage": "Table.ReplaceValue(\n    Table.FromRecords({\n        [A = 1, B = \"hello\"],\n        [A = 2, B = \"wurld\"]\n    }),\n    \"ur\",\n    \"or\",\n    Replacer.ReplaceText,\n    {\"B\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [Name = \"*****\", Country = \"US\"],\n    [Name = \"Bob\", Country = \"CA\"]\n})",
+    "usage": "Table.ReplaceValue(\n    Table.FromRecords({\n        [Name = \"Cindy\", Country = \"US\"],\n        [Name = \"Bob\", Country = \"CA\"]\n    }),\n    each if [Country] = \"US\" then [Name] else false,\n    each Text.Repeat(\"*\", Text.Length([Name])),\n    Replacer.ReplaceValue,\n    {\"Name\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [Name = \"?????\", Country = \"??\"],\n    [Name = \"Bob\", Country = \"CA\"]\n})",
+    "usage": "Table.ReplaceValue(\n    Table.FromRecords({\n        [Name = \"Cindy\", Country = \"US\"],\n        [Name = \"Bob\", Country = \"CA\"]\n    }),\n    each [Country] = \"US\",\n    \"?\",\n    (currentValue, isUS, replacementValue) =>\n        if isUS then\n            Text.Repeat(replacementValue, Text.Length(currentValue))\n        else\n            currentValue,\n    {\"Name\", \"Country\"}\n)"
+   }
+  ],
+  "Table.ReverseRows": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]\n})",
+    "usage": "Table.ReverseRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    })\n)"
+   }
+  ],
+  "Table.RowCount": [
+   {
+    "output": "",
+    "usage": "Table.RowCount(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    })\n)"
+   }
+  ],
+  "Table.SelectColumns": [
+   {
+    "output": "Table.FromRecords({\n    [Name = \"Bob\"],\n    [Name = \"Jim\"],\n    [Name = \"Paul\"],\n    [Name = \"Ringo\"]\n})",
+    "usage": "Table.SelectColumns(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    \"Name\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.SelectColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    {\"CustomerID\", \"Name\"}\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.SelectColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    \"NewColumn\"\n)"
+   },
+   {
+    "output": "",
+    "usage": "Table.SelectColumns(\n    Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n    {\"CustomerID\", \"NewColumn\"},\n    MissingField.UseNull\n)"
+   }
+  ],
+  "Table.SelectRows": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.SelectRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    each [CustomerID] > 2\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.SelectRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    each not Text.Contains([Name], \"B\")\n)"
+   }
+  ],
+  "Table.SelectRowsWithErrors": [
+   {
+    "output": "",
+    "usage": "Table.SelectRowsWithErrors(\n    Table.FromRecords({\n        [CustomerID = ..., Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    })\n)[Name]"
+   }
+  ],
+  "Table.SingleRow": [
+   {
+    "output": "",
+    "usage": "Table.SingleRow(Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}))"
+   }
+  ],
+  "Table.Skip": [
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.Skip(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    1\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n    [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n})",
+    "usage": "Table.Skip(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Ringo\", Phone = \"232-1550\"]\n    }),\n    2\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5],\n    [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25],\n    [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200],\n    [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2],\n    [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20],\n    [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n    [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100],\n    [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n})",
+    "usage": "Table.Skip(\n    Table.FromRecords({\n        [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0],\n        [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5.0],\n        [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25.0],\n        [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200.0],\n        [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2.0],\n        [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20.0],\n        [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n        [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100.0],\n        [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n    }),\n    each [Price] > 25\n)"
+   }
+  ],
+  "Table.Sort": [
+   {
+    "output": "Table.FromRecords({\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100],\n    [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5],\n    [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25],\n    [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200],\n    [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2],\n    [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20],\n    [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n    [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100],\n    [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n})",
+    "usage": "Table.Sort(\n    Table.FromRecords({\n        [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0],\n        [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5.0],\n        [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25.0],\n        [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200.0],\n        [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2.0],\n        [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20.0],\n        [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n        [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100.0],\n        [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n    }),\n    {\"OrderID\"}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25],\n    [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100],\n    [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n    [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20],\n    [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2],\n    [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200],\n    [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25],\n    [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5],\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100]\n})",
+    "usage": "Table.Sort(\n    Table.FromRecords({\n        [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0],\n        [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5.0],\n        [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25.0],\n        [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200.0],\n        [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2.0],\n        [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20.0],\n        [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n        [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100.0],\n        [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n    }),\n    {\"OrderID\", Order.Descending}\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100],\n    [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5],\n    [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20],\n    [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25],\n    [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200],\n    [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2],\n    [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n    [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100],\n    [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n})",
+    "usage": "Table.Sort(\n    Table.FromRecords({\n        [OrderID = 1, CustomerID = 1, Item = \"Fishing rod\", Price = 100.0],\n        [OrderID = 2, CustomerID = 1, Item = \"1 lb. worms\", Price = 5.0],\n        [OrderID = 3, CustomerID = 2, Item = \"Fishing net\", Price = 25.0],\n        [OrderID = 4, CustomerID = 3, Item = \"Fish tazer\", Price = 200.0],\n        [OrderID = 5, CustomerID = 3, Item = \"Bandaids\", Price = 2.0],\n        [OrderID = 6, CustomerID = 1, Item = \"Tackle box\", Price = 20.0],\n        [OrderID = 7, CustomerID = 5, Item = \"Bait\", Price = 3.25],\n        [OrderID = 8, CustomerID = 5, Item = \"Fishing Rod\", Price = 100.0],\n        [OrderID = 9, CustomerID = 6, Item = \"Bait\", Price = 3.25]\n    }),\n    {\n        {\"CustomerID\", Order.Ascending},\n        \"OrderID\"\n    }\n)"
+   }
+  ],
+  "Table.Split": [
+   {
+    "output": "{\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n    }),\n    Table.FromRecords({\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Cristina\", Phone = \"232-1550\"]\n    }),\n    Table.FromRecords({\n        [CustomerID = 5, Name = \"Anita\", Phone = \"530-1459\"]\n    })\n}",
+    "usage": "let\n    Customers = Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"],\n        [CustomerID = 4, Name = \"Cristina\", Phone = \"232-1550\"],\n        [CustomerID = 5, Name = \"Anita\", Phone = \"530-1459\"]\n    })\nin\n    Table.Split(Customers, 2)"
+   }
+  ],
+  "Table.SplitAt": [
+   {
+    "output": "{\n    #table({\"a\", \"b\", \"c\"}, {{1, 2, 3}, {4, 5, 6}}),\n    #table({\"a\", \"b\", \"c\"}, {{7, 8, 9}})\n}",
+    "usage": "Table.SplitAt(#table({\"a\", \"b\", \"c\"}, {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}), 2)"
+   }
+  ],
+  "Table.SplitColumn": [
+   {
+    "output": "#table(type table[CustomerID = number, Name.1 = text, Name.2 = text, Phone = text],\n{\n    {1, \"Bob\", \"White\", \"123-4567\"},\n    {2, \"Jim\", \"Smith\", \"987-6543\"},\n    {3, \"Paul\", null, \"543-7890\"},\n    {4, \"Cristina\", \"Best\", \"232-1550\"}\n})",
+    "usage": "let\n    Source = #table(type table[CustomerID = number, Name = text, Phone = text],\n    {\n        {1, \"Bob White\", \"123-4567\"},\n        {2, \"Jim Smith\", \"987-6543\"},\n        {3, \"Paul\", \"543-7890\"},\n        {4, \"Cristina Best\", \"232-1550\"}\n    }),\n    SplitColumns = Table.SplitColumn(\n        Source,\n        \"Name\",\n        Splitter.SplitTextByDelimiter(\" \"))\nin\n    SplitColumns"
+   },
+   {
+    "output": "#table(type table[CustomerID = number, First Name = text, Last Name = text, Phone = text],\n{\n    {1, \"Bob\", \"White\", \"123-4567\"},\n    {2, \"Jim\", \"Smith\", \"987-6543\"},\n    {3, \"Paul\", null, \"543-7890\"},\n    {4, \"Cristina\", \"Best\", \"232-1550\"}\n})",
+    "usage": "let\n    Source = #table(type table[CustomerID = number, Name = text, Phone = text],\n    {\n        {1, \"Bob White\", \"123-4567\"},\n        {2, \"Jim Smith\", \"987-6543\"},\n        {3, \"Paul\", \"543-7890\"},\n        {4, \"Cristina Best\", \"232-1550\"}\n    }),\n    SplitColumns = Table.SplitColumn(\n        Source,\n        \"Name\",\n        Splitter.SplitTextByDelimiter(\" \"),\n        {\"First Name\", \"Last Name\"})\nin\n    SplitColumns"
+   },
+   {
+    "output": "#table(type table[CustomerID = number, First Name = text, Last Name = text, Phone = text],\n{\n    {1, \"Bob\", \"White\", \"123-4567\"},\n    {2, \"Jim\", \"Smith\", \"987-6543\"},\n    {3, \"Paul\", \"-No Entry-\", \"543-7890\"},\n    {4, \"Cristina\", \"Best\", \"232-1550\"}\n})",
+    "usage": "let\n    Source = #table(type table[CustomerID = number, Name = text, Phone = text],\n    {\n        {1, \"Bob White\", \"123-4567\"},\n        {2, \"Jim Smith\", \"987-6543\"},\n        {3, \"Paul\", \"543-7890\"},\n        {4, \"Cristina Best\", \"232-1550\"}\n    }),\n    SplitColumns = Table.SplitColumn(\n        Source,\n        \"Name\",\n        Splitter.SplitTextByDelimiter(\" \"),\n        {\"First Name\", \"Last Name\"},\n        \"-No Entry-\")\nin\n    SplitColumns"
+   },
+   {
+    "output": "#table(type table[CustomerID = number, First Name = text, Last Name = text, Phone = text],\n{\n    {1, \"Bob\", {\"White\"}, \"123-4567\"},\n    {2, \"Jim\", {\"Smith\"}, \"987-6543\"},\n    {3, \"Paul\", {\"Green\"}, \"543-7890\"},\n    {4, \"Cristina\", {\"J.\", \"Best\"}, \"232-1550\"}\n})",
+    "usage": "let\n    Source = #table(type table[CustomerID = number, Name = text, Phone = text],\n    {\n        {1, \"Bob White\", \"123-4567\"},\n        {2, \"Jim Smith\", \"987-6543\"},\n        {3, \"Paul Green\", \"543-7890\"},\n        {4, \"Cristina J. Best\", \"232-1550\"}\n    }),\n    SplitColumns = Table.SplitColumn(\n        Source,\n        \"Name\",\n        Splitter.SplitTextByDelimiter(\" \"),\n        {\"First Name\", \"Last Name\"},\n        null,\n        ExtraValues.List)\nin\n    SplitColumns"
+   }
+  ],
+  "Table.StopFolding": [
+   {
+    "output": "",
+    "usage": "let\n    Source = Sql.Database(\"SomeSQLServer\", \"MyDb\"),\n    MyTable = Source{[Item=\"MyTable\"]}[Data],\n    MyLocalTable = Table.StopFolding(MyTable)\nin\n    MyLocalTable"
+   }
+  ],
+  "Table.ToColumns": [
+   {
+    "output": "",
+    "usage": "Table.ToColumns(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"]\n    })\n)"
+   }
+  ],
+  "Table.ToList": [
+   {
+    "output": "",
+    "usage": "Table.ToList(\n    Table.FromRows({\n        {Number.ToText(1), \"Bob\", \"123-4567\"},\n        {Number.ToText(2), \"Jim\", \"987-6543\"},\n        {Number.ToText(3), \"Paul\", \"543-7890\"}\n    }),\n    Combiner.CombineTextByDelimiter(\",\")\n)"
+   }
+  ],
+  "Table.ToRecords": [
+   {
+    "output": "{\n    [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n    [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n    [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n}",
+    "usage": "Table.ToRecords(\n    Table.FromRows(\n        {\n            {1, \"Bob\", \"123-4567\"},\n            {2, \"Jim\", \"987-6543\"},\n            {3, \"Paul\", \"543-7890\"}\n        },\n        {\"CustomerID\", \"Name\", \"Phone\"}\n    )\n)"
+   }
+  ],
+  "Table.ToRows": [
+   {
+    "output": "{\n    {1, \"Bob\", \"123-4567\"},\n    {2, \"Jim\", \"987-6543\"},\n    {3, \"Paul\", \"543-7890\"}\n}",
+    "usage": "Table.ToRows(\n    Table.FromRecords({\n        [CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"],\n        [CustomerID = 2, Name = \"Jim\", Phone = \"987-6543\"],\n        [CustomerID = 3, Name = \"Paul\", Phone = \"543-7890\"]\n    })\n)"
+   }
+  ],
+  "Table.TransformColumnNames": [
+   {
+    "output": "",
+    "usage": "Table.TransformColumnNames(Table.FromRecords({[#\"Col#(tab)umn\" = 1]}), Text.Clean)"
+   },
+   {
+    "output": "",
+    "usage": "Table.TransformColumnNames(\n    Table.FromRecords({[ColumnNum = 1, cOlumnnum = 2, coLumnNUM = 3]}),\n    Text.Clean,\n    [MaxLength = 6, Comparer = Comparer.OrdinalIgnoreCase]\n)"
+   }
+  ],
+  "Table.TransformColumnTypes": [
+   {
+    "output": "#table(type table [a = text, b = number],\n{\n    {\"1\", 2},\n    {\"3\", 4}\n})",
+    "usage": "let\n    Source = #table(type table [a = number, b = number],\n    {\n        {1, 2},\n        {3, 4}\n    }),\n    #\"Transform Column\" = Table.TransformColumnTypes(\n        Source,\n        {\"a\", type text}\n    )\nin\n    #\"Transform Column\""
+   },
+   {
+    "output": "#table(type table [Company ID = text, Country = text, Date = text],\n{\n    {\"JS-464\", \"USA\", \"24/03/2024\"},\n    {\"LT-331\", \"France\", \"05/10/2024\"},\n    {\"XE-100\", \"USA\", \"21/05/2024\"},\n    {\"RT-430\", \"Germany\", \"18/01/2024\"},\n    {\"LS-005\", \"France\", \"31/12/2023\"},\n    {\"UW-220\", \"Germany\", \"25/02/2024\"}\n})",
+    "usage": "let\n    Source = #table(type table [Company ID = text, Country = text, Date = date],\n    {\n        {\"JS-464\", \"USA\", #date(2024, 3, 24)},\n        {\"LT-331\", \"France\", #date(2024, 10, 5)},\n        {\"XE-100\", \"USA\", #date(2024, 5, 21)},\n        {\"RT-430\", \"Germany\", #date(2024, 1,18)},\n        {\"LS-005\", \"France\", #date(2023, 12, 31)},\n        {\"UW-220\", \"Germany\", #date(2024, 2, 25)}\n    }),\n    #\"Transform Column\" = Table.TransformColumnTypes(\n        Source,\n        {\"Date\", type text},\n        \"fr-FR\"\n    )\nin\n    #\"Transform Column\""
+   },
+   {
+    "output": "#table(type table [Date = text, Customer ID = text, Value = Percentage.Type],\n{\n    {\"12.03.2024\", \"134282\", .24368},\n    {\"30.05.2024\", \"44343\", .03556},\n    {\"14.12.2023\", \"22\", .3834}\n})",
+    "usage": "let\n    Source = #table(type table [Date = date, Customer ID = text, Value = number],\n    {\n        {#date(2024, 3, 12), \"134282\", .24368},\n        {#date(2024, 5, 30), \"44343\", .03556},\n        {#date(2023, 12, 14), \"22\", .3834}\n    }),\n    #\"Transform Columns\" = Table.TransformColumnTypes(\n        Source,\n        {{\"Date\", type text}, {\"Value\", Percentage.Type}},\n        \"de-DE\")\nin\n    #\"Transform Columns\""
+   },
+   {
+    "output": "#table(type table [Company ID = text, Country = text, Date = text, NewColumn = number],\n{\n    {\"JS-464\", \"USA\", \"24/03/2024\", null},\n    {\"LT-331\", \"France\", \"05/10/2024\", null},\n    {\"XE-100\", \"USA\", \"21/05/2024\", null},\n    {\"RT-430\", \"Germany\", \"18/01/2024\", null},\n    {\"LS-005\", \"France\", \"31/12/2023\", null},\n    {\"UW-220\", \"Germany\", \"25/02/2024\", null}\n})",
+    "usage": "let\n    Source = #table(type table [Company ID = text, Country = text, Date = date],\n    {\n        {\"JS-464\", \"USA\", #date(2024, 3, 24)},\n        {\"LT-331\", \"France\", #date(2024, 10, 5)},\n        {\"XE-100\", \"USA\", #date(2024, 5, 21)},\n        {\"RT-430\", \"Germany\", #date(2024, 1,18)},\n        {\"LS-005\", \"France\", #date(2023, 12, 31)},\n        {\"UW-220\", \"Germany\", #date(2024, 2, 25)}\n    }),\n    #\"Transform Column\" = Table.TransformColumnTypes(\n        Source,\n        {{\"Date\", type text}, {\"NewColumn\", type number}},\n        [Culture=\"fr-FR\", MissingField=MissingField.UseNull]\n    )\nin\n    #\"Transform Column\""
+   }
+  ],
+  "Table.TransformColumns": [
+   {
+    "output": "Table.FromRecords({\n    [A = 1, B = \"2\"],\n    [A = 5, B = \"10\"]\n})",
+    "usage": "Table.TransformColumns(\n    Table.FromRecords({\n        [A = \"1\", B = 2],\n        [A = \"5\", B = 10]\n    }),\n    {\n        {\"A\", Number.FromText},\n        {\"B\", Text.From}\n    }\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [A = \"1\", B = 2, X = null],\n    [A = \"5\", B = 10, X = null]\n})",
+    "usage": "Table.TransformColumns(\n    Table.FromRecords({\n        [A = \"1\", B = 2],\n        [A = \"5\", B = 10]\n    }),\n    {\"X\", Number.FromText},\n    null,\n    MissingField.UseNull\n)"
+   },
+   {
+    "output": "Table.FromRecords({\n    [A = 1, B = \"3\"],\n    [A = 5, B = \"11\"]\n})",
+    "usage": "Table.TransformColumns(\n    Table.FromRecords({\n        [A = \"1\", B = 2],\n        [A = \"5\", B = 10]\n    }),\n    {\"B\", each Text.From(_ + 1), type text},\n    Number.FromText\n)"
+   },
+   {
+    "output": "#table(type table[Task = text, Date = date],\n{\n    {\"HVAC Check\", #date(2025, 7, 10)},\n    {\"Window Washing\", #date(2025, 9, 2)},\n    {\"Fire Drill\", #date(2025, 9, 17)},\n    {\"Light Replacement\", #date(2025, 11, 28)}\n})",
+    "usage": "let\n    MaintenanceSchedule = #table(type table [Task = text, Date = date],\n    {\n        {\"HVAC Check\", #date(2025, 7, 10)},         // Not a holiday\n        {\"Window Washing\", #date(2025, 9, 1)},      // Labor Day\n        {\"Fire Drill\", #date(2025, 9, 17)},         // Not a holiday\n        {\"Light Replacement\", #date(2025, 11, 27)}  // Thanksgiving\n    }),\n    USHolidays = {\n        #date(2025, 1, 1),   // New Year's Day\n        #date(2025, 7, 4),   // Independence Day\n        #date(2025, 9, 1),   // Labor Day\n        #date(2025, 11, 27), // Thanksgiving\n        #date(2025, 12, 25)  // Christmas\n    },\n    AdjustedSchedule = Table.TransformColumns(\n        MaintenanceSchedule,\n        {{\"Date\", each if List.Contains(USHolidays, _) then\n            if Date.DayOfWeek(_, Day.Sunday) = 5 then\n                Date.AddDays(_, 3)     // Friday to Monday\n            else\n                Date.AddDays(_, 1)     // Other to next day\n        else _, type date}}\n    )\nin\n    AdjustedSchedule"
+   }
+  ],
+  "Table.TransformRows": [
+   {
+    "output": "",
+    "usage": "Table.TransformRows(\n    Table.FromRecords({\n        [a = 1],\n        [a = 2],\n        [a = 3],\n        [a = 4],\n        [a = 5]\n    }),\n    each [a]\n)"
+   },
+   {
+    "output": "{\n    [B = \"1\"],\n    [B = \"2\"],\n    [B = \"3\"],\n    [B = \"4\"],\n    [B = \"5\"]\n}",
+    "usage": "Table.TransformRows(\n    Table.FromRecords({\n        [a = 1],\n        [a = 2],\n        [a = 3],\n        [a = 4],\n        [a = 5]\n    }),\n    (row) as record => [B = Number.ToText(row[a])]\n)"
+   }
+  ],
+  "Table.Transpose": [
+   {
+    "output": "Table.FromRecords({\n    [Column1 = \"Full Name\", Column2 = \"Age\", Column3 = \"Country\"],\n    [Column1 = \"Fred\", Column2 = 42, Column3 = \"UK\"]\n})",
+    "usage": "Table.Transpose(\n    Table.FromRecords({\n        [Name = \"Full Name\", Value = \"Fred\"],\n        [Name = \"Age\", Value = 42],\n        [Name = \"Country\", Value = \"UK\"]\n    })\n)"
+   }
+  ],
+  "Table.Unpivot": [
+   {
+    "output": "Table.FromRecords({\n    [key = \"x\", attribute = \"a\", value = 1],\n    [key = \"x\", attribute = \"c\", value = 3],\n    [key = \"y\", attribute = \"a\", value = 2],\n    [key = \"y\", attribute = \"b\", value = 4]\n})",
+    "usage": "Table.Unpivot(\n    Table.FromRecords({\n        [key = \"x\", a = 1, b = null, c = 3],\n        [key = \"y\", a = 2, b = 4, c = null]\n    }),\n    {\"a\", \"b\", \"c\"},\n    \"attribute\",\n    \"value\"\n)"
+   }
+  ],
+  "Table.UnpivotOtherColumns": [
+   {
+    "output": "Table.FromRecords({\n    [key = \"key1\", column1 = \"attribute1\", column2 = 1],\n    [key = \"key1\", column1 = \"attribute2\", column2 = 2],\n    [key = \"key1\", column1 = \"attribute3\", column2 = 3],\n    [key = \"key2\", column1 = \"attribute1\", column2 = 4],\n    [key = \"key2\", column1 = \"attribute2\", column2 = 5],\n    [key = \"key2\", column1 = \"attribute3\", column2 = 6]\n})",
+    "usage": "Table.UnpivotOtherColumns(\n    Table.FromRecords({\n        [key = \"key1\", attribute1 = 1, attribute2 = 2, attribute3 = 3],\n        [key = \"key2\", attribute1 = 4, attribute2 = 5, attribute3 = 6]\n    }),\n    {\"key\"},\n    \"column1\",\n    \"column2\"\n)"
+   }
+  ],
+  "Table.View": [
+   {
+    "output": "",
+    "usage": "Table.View(\n    null,\n    [\n        GetType = () => type table [CustomerID = number, Name = text, Phone = nullable text],\n        GetRows = () => Table.FromRecords({[CustomerID = 1, Name = \"Bob\", Phone = \"123-4567\"]}),\n        GetRowCount = () => 1\n    ]\n)"
+   }
+  ],
+  "Text.AfterDelimiter": [
+   {
+    "output": "",
+    "usage": "Text.AfterDelimiter(\"111-222-333\", \"-\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.AfterDelimiter(\"111-222-333\", \"-\", 1)"
+   },
+   {
+    "output": "",
+    "usage": "Text.AfterDelimiter(\"111-222-333\", \"-\", {1, RelativePosition.FromEnd})"
+   }
+  ],
+  "Text.At": [
+   {
+    "output": "",
+    "usage": "Text.At(\"Hello, World\", 4)"
+   }
+  ],
+  "Text.BeforeDelimiter": [
+   {
+    "output": "",
+    "usage": "Text.BeforeDelimiter(\"111-222-333\", \"-\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.BeforeDelimiter(\"111-222-333\", \"-\", 1)"
+   },
+   {
+    "output": "",
+    "usage": "Text.BeforeDelimiter(\"111-222-333\", \"-\", {1, RelativePosition.FromEnd})"
+   }
+  ],
+  "Text.BetweenDelimiters": [
+   {
+    "output": "",
+    "usage": "Text.BetweenDelimiters(\"111 (222) 333 (444)\", \"(\", \")\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.BetweenDelimiters(\"111 (222) 333 (444)\", \"(\", \")\", 1, 0)"
+   },
+   {
+    "output": "",
+    "usage": "Text.BetweenDelimiters(\"111 (222) 333 (444)\", \"(\", \")\", {1, RelativePosition.FromEnd}, {1, RelativePosition.FromStart})"
+   }
+  ],
+  "Text.Clean": [
+   {
+    "output": "",
+    "usage": "Text.Clean(\"ABC#(lf)D\")"
+   }
+  ],
+  "Text.Combine": [
+   {
+    "output": "",
+    "usage": "Text.Combine({\"Seattle\", \"WA\"})"
+   },
+   {
+    "output": "",
+    "usage": "Text.Combine({\"Seattle\", \"WA\"}, \", \")"
+   },
+   {
+    "output": "",
+    "usage": "Text.Combine({\"Seattle\", null, \"WA\"}, \", \")"
+   },
+   {
+    "output": "Table.FromRecords({\n    [First Name = \"Doug\", Middle Initial = \"J\", Last Name = \"Elis\", Full Name = \"Doug J Elis\"],\n    [First Name = \"Anna\", Middle Initial = \"M\", Last Name = \"Jorayew\", Full Name = \"Anna M Jorayew\"],\n    [First Name = \"Rada\", Middle Initial = null, Last Name = \"Mihaylova\", Full Name = \"Rada Mihaylova\"]\n})",
+    "usage": "let\n    Source = Table.FromRecords({\n        [First Name = \"Doug\", Middle Initial = \"J\", Last Name = \"Elis\"],\n        [First Name = \"Anna\", Middle Initial = \"M\", Last Name = \"Jorayew\"],\n        [First Name = \"Rada\", Middle Initial = null, Last Name = \"Mihaylova\"]\n    }),\n    FullName = Table.AddColumn(Source, \"Full Name\", each Text.Combine({[First Name], [Middle Initial], [Last Name]}, \" \"))\nin\n    FullName"
+   }
+  ],
+  "Text.Contains": [
+   {
+    "output": "",
+    "usage": "Text.Contains(\"Hello World\", \"Hello\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.Contains(\"Hello World\", \"hello\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.Contains(\"Hello World\", \"hello\", Comparer.OrdinalIgnoreCase)"
+   },
+   {
+    "output": "#table(type table [Account Code = text, Posted Date = date, Sales = number],\n{\n    {\"CA-8843\", #date(2023,7,18), 280},\n    {\"PA-1274\", #date(2022,1,12), 90},\n    {\"PA-4323\", #date(2023,4,14), 187},\n    {\"PTY-507\", #date(2023,6,4), 110}\n})",
+    "usage": "let\n    Source = #table(type table [Account Code = text, Posted Date = date, Sales = number],\n    {\n        {\"US-2004\", #date(2023,1,20), 580},\n        {\"CA-8843\", #date(2023,7,18), 280},\n        {\"PA-1274\", #date(2022,1,12), 90},\n        {\"PA-4323\", #date(2023,4,14), 187},\n        {\"US-1200\", #date(2022,12,14), 350},\n        {\"PTY-507\", #date(2023,6,4), 110}\n    }),\n    #\"Filtered rows\" = Table.SelectRows(\n        Source,\n        each Text.Contains([Account Code], \"A-\") or\n            Text.Contains([Account Code], \"7\"))\nin\n    #\"Filtered rows\""
+   }
+  ],
+  "Text.End": [
+   {
+    "output": "",
+    "usage": "Text.End(\"Hello, World\", 5)"
+   }
+  ],
+  "Text.EndsWith": [
+   {
+    "output": "",
+    "usage": "Text.EndsWith(\"Hello, World\", \"world\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.EndsWith(\"Hello, World\", \"World\")"
+   }
+  ],
+  "Text.From": [
+   {
+    "output": "",
+    "usage": "Text.From(3)"
+   },
+   {
+    "output": "",
+    "usage": "Text.From(#datetime(2024, 6, 24, 14, 32, 22))"
+   },
+   {
+    "output": "",
+    "usage": "Text.From(#datetime(2024, 6, 24, 14, 32, 22), \"de-DE\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.From(Binary.FromText(\"10FF\", BinaryEncoding.Hex))"
+   },
+   {
+    "output": "#table(type table [Company ID = text, Country = text, Date = text],\n{\n    {\"LT-331\", \"France\", \"05/10/2024\"},\n    {\"LS-005\", \"France\", \"31/12/2023\"}\n})",
+    "usage": "let\n    Source = #table(type table [Company ID = text, Country = text, Date = date],\n    {\n        {\"JS-464\", \"USA\", #date(2024, 3, 24)},\n        {\"LT-331\", \"France\", #date(2024, 10, 5)},\n        {\"XE-100\", \"USA\", #date(2024, 5, 21)},\n        {\"RT-430\", \"Germany\", #date(2024, 1,18)},\n        {\"LS-005\", \"France\", #date(2023, 12, 31)},\n        {\"UW-220\", \"Germany\", #date(2024, 2, 25)}\n    }),\n    #\"Convert Dates\" = Table.TransformColumns(\n        Table.SelectRows(Source, each [Country] = \"France\"),\n        {\"Date\", each Text.From(_, \"fr-FR\")}\n    )\nin\n    #\"Convert Dates\""
+   }
+  ],
+  "Text.FromBinary": [
+   {
+    "output": "[\n    OriginalText = \"Testing 1-2-3\",\n    BinaryBase64 = \"VGVzdGluZyAxLTItMw==\",\n    DecodedText = \"Testing 1-2-3\"\n]",
+    "usage": "let\n    originalText = \"Testing 1-2-3\",\n\n    // Default UTF-8 binary\n    binaryData = Text.ToBinary(originalText),\n\n    // Convert binary to viewable Base64 string\n    encodedText = Binary.ToText(binaryData, BinaryEncoding.Base64),\n\n    // Decode back to text\n    decodedText = Text.FromBinary(binaryData),\n\n    result = [\n        OriginalText = originalText,\n        BinaryBase64 = encodedText,\n        DecodedText = decodedText\n    ]\nin\n    result"
+   },
+   {
+    "output": "[\n    OriginalText = \"Testing 1-2-3\",\n    BinaryHex = \"fffe540065007300740069006e006700200031002d0032002d003300\",\n    DecodedText = \"Testing 1-2-3\",\n    IsIdentical = true\n]",
+    "usage": "let\n    originalText = \"Testing 1-2-3\",\n\n    // Convert to binary with BOM\n    binaryData = Text.ToBinary(originalText, TextEncoding.Utf16, true),\n\n    // Show binary as hex to demonstrate presence of BOM (fffe)\n    binaryAsHex = Binary.ToText(binaryData, BinaryEncoding.Hex),\n\n    // Decode back to text\n    decodedText = Text.FromBinary(binaryData, TextEncoding.Utf16),\n\n    // Compare original text and decoded text\n    isIdentical = originalText = decodedText,\n\n    result = [\n        OriginalText = originalText,\n        BinaryHex = binaryAsHex,\n        DecodedText = decodedText,\n        IsIdentical = isIdentical\n    ]\nin\n    result"
+   }
+  ],
+  "Text.Insert": [
+   {
+    "output": "",
+    "usage": "Text.Insert(\"ABD\", 2, \"C\")"
+   }
+  ],
+  "Text.Length": [
+   {
+    "output": "",
+    "usage": "Text.Length(\"Hello World\")"
+   }
+  ],
+  "Text.Lower": [
+   {
+    "output": "",
+    "usage": "Text.Lower(\"AbCd\")"
+   }
+  ],
+  "Text.Middle": [
+   {
+    "output": "",
+    "usage": "Text.Middle(\"Hello World\", 6, 5)"
+   },
+   {
+    "output": "",
+    "usage": "Text.Middle(\"Hello World\", 6, 20)"
+   },
+   {
+    "output": "",
+    "usage": "Text.Middle(\"Hello World\", 0, 2)"
+   }
+  ],
+  "Text.PadEnd": [
+   {
+    "output": "",
+    "usage": "Text.PadEnd(\"Name\", 10)"
+   },
+   {
+    "output": "",
+    "usage": "Text.PadEnd(\"Name\", 10, \"|\")"
+   }
+  ],
+  "Text.PadStart": [
+   {
+    "output": "",
+    "usage": "Text.PadStart(\"Name\", 10)"
+   },
+   {
+    "output": "",
+    "usage": "Text.PadStart(\"Name\", 10, \"|\")"
+   }
+  ],
+  "Text.PositionOf": [
+   {
+    "output": "",
+    "usage": "Text.PositionOf(\"Hello, World! Hello, World!\", \"World\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.PositionOf(\"Hello, World! Hello, World!\", \"World\", Occurrence.Last)"
+   }
+  ],
+  "Text.PositionOfAny": [
+   {
+    "output": "",
+    "usage": "Text.PositionOfAny(\"Hello, World!\", {\"H\", \"W\"})"
+   },
+   {
+    "output": "",
+    "usage": "Text.PositionOfAny(\"Hello, World!\", {\"H\", \"W\"}, Occurrence.All)"
+   }
+  ],
+  "Text.Proper": [
+   {
+    "output": "",
+    "usage": "Text.Proper(\"the QUICK BrOWn fOx jUmPs oVER tHe LAzy DoG\")"
+   }
+  ],
+  "Text.Range": [
+   {
+    "output": "",
+    "usage": "Text.Range(\"Hello World\", 6)"
+   },
+   {
+    "output": "",
+    "usage": "Text.Range(\"Hello World Hello\", 6, 5)"
+   }
+  ],
+  "Text.Remove": [
+   {
+    "output": "",
+    "usage": "Text.Remove(\"a,b;c\", {\",\",\";\"})"
+   }
+  ],
+  "Text.RemoveRange": [
+   {
+    "output": "",
+    "usage": "Text.RemoveRange(\"ABCDE\", 2)"
+   },
+   {
+    "output": "",
+    "usage": "Text.RemoveRange(\"ABCDE\", 1, 2)"
+   }
+  ],
+  "Text.Repeat": [
+   {
+    "output": "",
+    "usage": "Text.Repeat(\"a\", 5)"
+   },
+   {
+    "output": "",
+    "usage": "Text.Repeat(\"helloworld.\", 3)"
+   }
+  ],
+  "Text.Replace": [
+   {
+    "output": "",
+    "usage": "Text.Replace(\"the quick brown fox jumps over the lazy dog\", \"the\", \"a\")"
+   }
+  ],
+  "Text.ReplaceRange": [
+   {
+    "output": "",
+    "usage": "Text.ReplaceRange(\"ABGF\", 2, 1, \"CDE\")"
+   }
+  ],
+  "Text.Reverse": [
+   {
+    "output": "",
+    "usage": "Text.Reverse(\"123\")"
+   }
+  ],
+  "Text.Select": [
+   {
+    "output": "",
+    "usage": "Text.Select(\"a,b;c\", {\"a\"..\"z\"})"
+   }
+  ],
+  "Text.Split": [
+   {
+    "output": "{\n    \"Name\",\n    \"Address\",\n    \"PhoneNumber\"\n}",
+    "usage": "Text.Split(\"Name|Address|PhoneNumber\", \"|\")"
+   },
+   {
+    "output": "{\n    \"Name\",\n    \"Customer\",\n    \"Purchase Date\"\n}",
+    "usage": "Text.Split(\"Name, the Customer, the Purchase Date\", \", the \")"
+   }
+  ],
+  "Text.SplitAny": [
+   {
+    "output": "{\n    \"Name\",\n    \"Customer ID\",\n    \"Purchase\",\n    \"Month\",\n    \"Day\",\n    \"Year\"\n}",
+    "usage": "Text.SplitAny(\"Name|Customer ID|Purchase|Month-Day-Year\", \"|-\")"
+   }
+  ],
+  "Text.Start": [
+   {
+    "output": "",
+    "usage": "Text.Start(\"Hello, World\", 5)"
+   },
+   {
+    "output": "#table(type table [First Name = text, Last Name = text, Email Address = text],\n{\n    {\"Douglas\", \"Elis\", \"DougEli@contoso.com\"},\n    {\"Ana\", \"Jorayew\", \"AnaJor@contoso.com\"},\n    {\"Rada\", \"Mihaylova\", \"RadaMih@contoso.com\"}\n})",
+    "usage": "let\n    Source = #table(type table [First Name = text, Last Name = text],\n    {\n        {\"Douglas\", \"Elis\"},\n        {\"Ana\", \"Jorayew\"},\n        {\"Rada\", \"Mihaylova\"}\n    }),\n    EmailAddress = Table.AddColumn(\n        Source,\n        \"Email Address\",\n        each Text.Combine({\n            Text.Start([First Name], 4),\n            Text.Start([Last Name], 3),\n            \"@contoso.com\"\n        })\n    )\nin\n    EmailAddress"
+   }
+  ],
+  "Text.StartsWith": [
+   {
+    "output": "",
+    "usage": "Text.StartsWith(\"Hello, World\", \"hello\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.StartsWith(\"Hello, World\", \"Hello\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.StartsWith(\"Hello, World\", \"hello\", Comparer.OrdinalIgnoreCase)"
+   }
+  ],
+  "Text.ToBinary": [
+   {
+    "output": "[\n    OriginalText = \"Testing 1-2-3\",\n    BinaryBase64 = \"VGVzdGluZyAxLTItMw==\",\n    DecodedText = \"Testing 1-2-3\"\n]",
+    "usage": "let\n    originalText = \"Testing 1-2-3\",\n\n    // Default UTF-8 binary\n    binaryData = Text.ToBinary(originalText),\n\n    // Convert binary to viewable Base64 string\n    encodedText = Binary.ToText(binaryData, BinaryEncoding.Base64),\n\n    // Decode back to text\n    decodedText = Text.FromBinary(binaryData),\n\n    result = [\n        OriginalText = originalText,\n        BinaryBase64 = encodedText,\n        DecodedText = decodedText\n    ]\nin\n    result"
+   },
+   {
+    "output": "[\n    OriginalText = \"Testing 1-2-3\",\n    BinaryHex = \"fffe540065007300740069006e006700200031002d0032002d003300\",\n    DecodedText = \"Testing 1-2-3\",\n    IsIdentical = true\n]",
+    "usage": "let\n    originalText = \"Testing 1-2-3\",\n\n    // Convert to binary with BOM\n    binaryData = Text.ToBinary(originalText, TextEncoding.Utf16, true),\n\n    // Show binary as hex to demonstrate presence of BOM (fffe)\n    binaryAsHex = Binary.ToText(binaryData, BinaryEncoding.Hex),\n\n    // Decode back to text\n    decodedText = Text.FromBinary(binaryData, TextEncoding.Utf16),\n\n    // Compare original text and decoded text\n    isIdentical = originalText = decodedText,\n\n    result = [\n        OriginalText = originalText,\n        BinaryHex = binaryAsHex,\n        DecodedText = decodedText,\n        IsIdentical = isIdentical\n    ]\nin\n    result"
+   }
+  ],
+  "Text.ToList": [
+   {
+    "output": "{\n    \"H\",\n    \"e\",\n    \"l\",\n    \"l\",\n    \"o\",\n    \" \",\n    \"W\",\n    \"o\",\n    \"r\",\n    \"l\",\n    \"d\"\n}",
+    "usage": "Text.ToList(\"Hello World\")"
+   }
+  ],
+  "Text.Trim": [
+   {
+    "output": "",
+    "usage": "Text.Trim(\"     a b c d    \")"
+   },
+   {
+    "output": "",
+    "usage": "Text.Trim(\"0000056.4200\", \"0\")"
+   },
+   {
+    "output": "",
+    "usage": "Text.Trim(\"<div/>\", {\"<\", \">\", \"/\"})"
+   },
+   {
+    "output": "#table(type table [Home Sale = text, Sales Date = date, Sales Status = text],\n{\n    {\"1620 Ferris Way\", #date(2024, 8, 22), \"Pending\"},\n    {\"757 1st Ave. S.\", #date(2024, 3, 15), \"Sold\"},\n    {\"22303 Fillmore\", #date(2024, 10, 2), \"Pending\"}\n})",
+    "usage": "let\n    Source = #table(type table [Home Sale = text, Sales Date = date, Sales Status = text],\n    {\n        {\"1620 Ferris Way\", #date(2024, 8, 22), \"##@@Pending@@##\"},\n        {\"757 1st Ave. S.\", #date(2024, 3, 15), \"Sold\"},\n        {\"22303 Fillmore\", #date(2024, 10, 2), \"##@@Pending@@##\"}\n    }),\n    #\"Trimmed Status\" = Table.TransformColumns(Source, {\"Sales Status\", each Text.Trim(_, {\"#\", \"@\"})})\nin\n    #\"Trimmed Status\""
+   }
+  ],
+  "Text.TrimEnd": [
+   {
+    "output": "",
+    "usage": "Text.TrimEnd(\"     a b c d    \")"
+   },
+   {
+    "output": "",
+    "usage": "Text.TrimEnd(\"03.487700000\", \"0\")"
+   },
+   {
+    "output": "#table(type table [Name = text, Account Name = text, Interest = number],\n{\n    {\"Bob\", \"US-847263\", 2.841},\n    {\"Leslie\", \"FR-4648\", 3.8392},\n    {\"Ringo\", \"DE-2046790\", 12.66}\n})",
+    "usage": "let\n    Source = #table(type table [Name = text, Account Name= text, Interest = number],\n    {\n        {\"Bob\", \"US-847263****@\", 2.8410},\n        {\"Leslie\", \"FR-4648****@**\", 3.8392},\n        {\"Ringo\", \"DE-2046790@***\", 12.6600}\n    }),\n    #\"Trimmed Account\" = Table.TransformColumns(Source, {{\"Account Name\", each Text.TrimEnd(_, {\"*\", \"@\"})}})\nin\n    #\"Trimmed Account\""
+   }
+  ],
+  "Text.TrimStart": [
+   {
+    "output": "",
+    "usage": "Text.TrimStart(\"   a b c d    \")"
+   },
+   {
+    "output": "",
+    "usage": "Text.TrimStart(\"0000056.420\", \"0\")"
+   },
+   {
+    "output": "#table(type table [Name = text, Account Name = text, Interest = number],\n{\n    {\"Bob\", \"847263-US\", 2.841},\n    {\"Leslie\", \"4648-FR\", 3.8392},\n    {\"Ringo\", \"2046790-DE\", 12.66}\n})",
+    "usage": "let\n    Source = #table(type table [Name = text, Account Name= text, Interest = number],\n    {\n        {\"Bob\", \"@****847263-US\", 2.8410},\n        {\"Leslie\", \"@******4648-FR\", 3.8392},\n        {\"Ringo\", \"@***2046790-DE\", 12.6600}\n    }),\n    #\"Trimmed Account\" = Table.TransformColumns(Source, {{\"Account Name\", each Text.TrimStart(_, {\"*\", \"@\"})}})\nin\n    #\"Trimmed Account\""
+   }
+  ],
+  "Text.Upper": [
+   {
+    "output": "",
+    "usage": "Text.Upper(\"aBcD\")"
+   }
+  ],
+  "Time.EndOfHour": [
+   {
+    "output": "",
+    "usage": "Time.EndOfHour(#datetime(2011, 5, 14, 17, 0, 0))"
+   },
+   {
+    "output": "",
+    "usage": "Time.EndOfHour(#datetimezone(2011, 5, 17, 5, 0, 0, -7, 0))"
+   }
+  ],
+  "Time.From": [
+   {
+    "output": "",
+    "usage": "Time.From(0.7575)"
+   },
+   {
+    "output": "",
+    "usage": "Time.From(#datetime(1899, 12, 30, 06, 45, 12))"
+   }
+  ],
+  "Time.FromText": [
+   {
+    "output": "",
+    "usage": "Time.FromText(\"10:12:31am\")"
+   },
+   {
+    "output": "",
+    "usage": "Time.FromText(\"1012\")"
+   },
+   {
+    "output": "",
+    "usage": "Time.FromText(\"10\")"
+   }
+  ],
+  "Time.Hour": [
+   {
+    "output": "",
+    "usage": "Time.Hour(#datetime(2011, 12, 31, 9, 15, 36))"
+   }
+  ],
+  "Time.Minute": [
+   {
+    "output": "",
+    "usage": "Time.Minute(#datetime(2011, 12, 31, 9, 15, 36))"
+   }
+  ],
+  "Time.Second": [
+   {
+    "output": "",
+    "usage": "Time.Second(#datetime(2011, 12, 31, 9, 15, 36.5))"
+   }
+  ],
+  "Time.StartOfHour": [
+   {
+    "output": "",
+    "usage": "Time.StartOfHour(#datetime(2011, 10, 10, 8, 10, 32))"
+   }
+  ],
+  "Time.ToRecord": [
+   {
+    "output": "[\n      Hour = 11,\n      Minute = 56,\n      Second = 2\n]",
+    "usage": "Time.ToRecord(#time(11, 56, 2))"
+   }
+  ],
+  "Time.ToText": [
+   {
+    "output": "",
+    "usage": "Time.ToText(#time(11, 56, 2))"
+   },
+   {
+    "output": "",
+    "usage": "Time.ToText(#time(11, 56, 2), [Format=\"hh:mm\", Culture=\"de-DE\"])"
+   },
+   {
+    "output": "",
+    "usage": "Time.ToText(#time(11, 56, 2), [Format=\"T\", Culture=\"de-DE\"])"
+   }
+  ],
+  "Type.ClosedRecord": [
+   {
+    "output": "",
+    "usage": "Type.ClosedRecord(type [A = number, ...])"
+   }
+  ],
+  "Type.ForFunction": [
+   {
+    "output": "",
+    "usage": "Type.ForFunction([ReturnType = type number, Parameters = [X = type number]], 1)"
+   }
+  ],
+  "Type.ForRecord": [
+   {
+    "output": "#table(\n    type table [Name = text, Score = number],\n    {{\"Betty\", 90.3}, {\"Carl\", 89.5}}\n)",
+    "usage": "let\n    columnNames = {\"Name\", \"Score\"},\n    columnTypes = {type text, type number},\n    rowColumnTypes = List.Transform(columnTypes, (t) => [Type = t, Optional = false]),\n    rowType = Type.ForRecord(Record.FromList(rowColumnTypes, columnNames), false)\nin\n    #table(type table rowType, {{\"Betty\", 90.3}, {\"Carl\", 89.5}})"
+   }
+  ],
+  "Type.FunctionParameters": [
+   {
+    "output": "",
+    "usage": "Type.FunctionParameters(type function (x as number, y as text) as any)"
+   }
+  ],
+  "Type.FunctionRequiredParameters": [
+   {
+    "output": "",
+    "usage": "Type.FunctionRequiredParameters(type function (x as number, optional y as text) as any)"
+   }
+  ],
+  "Type.FunctionReturn": [
+   {
+    "output": "",
+    "usage": "Type.FunctionReturn(type function () as any)"
+   }
+  ],
+  "Type.Is": [
+   {
+    "output": "",
+    "usage": "Type.Is(type number, type any)"
+   },
+   {
+    "output": "",
+    "usage": "Type.Is(type any, type number)"
+   }
+  ],
+  "Type.IsNullable": [
+   {
+    "output": "",
+    "usage": "Type.IsNullable(type number)"
+   },
+   {
+    "output": "",
+    "usage": "Type.IsNullable(type nullable number)"
+   }
+  ],
+  "Type.IsOpenRecord": [
+   {
+    "output": "",
+    "usage": "Type.IsOpenRecord(type [A = number, ...])"
+   }
+  ],
+  "Type.ListItem": [
+   {
+    "output": "",
+    "usage": "Type.ListItem(type {number})"
+   }
+  ],
+  "Type.NonNullable": [
+   {
+    "output": "",
+    "usage": "Type.NonNullable(type nullable number)"
+   }
+  ],
+  "Type.OpenRecord": [
+   {
+    "output": "",
+    "usage": "Type.OpenRecord(type [A = number])"
+   }
+  ],
+  "Type.RecordFields": [
+   {
+    "output": "[\n    A = [Type = type number, Optional = false],\n    B = [Type = type any, Optional = true]\n]",
+    "usage": "Type.RecordFields(type [A = number, optional B = any])"
+   }
+  ],
+  "Type.ReplaceTableKeys": [
+   {
+    "output": "{\n    [Columns = {\"ID\"}, Primary = true],\n    [Columns = {\"FirstName\", \"LastName\"}, Primary = false]\n}",
+    "usage": "let\n    BaseType = type table [ID = number, FirstName = text, LastName = text],\n    KeysAdded = Type.ReplaceTableKeys(\n        BaseType,\n        {\n            [Columns = {\"ID\"}, Primary = true],\n            [Columns = {\"FirstName\", \"LastName\"}, Primary = false]\n        }\n    ),\n    DetailsOfKeys = Type.TableKeys(KeysAdded)\nin\n    DetailsOfKeys"
+   },
+   {
+    "output": "",
+    "usage": "let\n    TypeWithKey = Type.AddTableKey(type table [ID = number, Name = text], {\"ID\"}, true),\n    KeyRemoved = Type.ReplaceTableKeys(TypeWithKey, {}),\n    DetailsOfKeys = Type.TableKeys(KeyRemoved)\nin\n    DetailsOfKeys"
+   }
+  ],
+  "Type.TableKeys": [
+   {
+    "output": "",
+    "usage": "let\n    BaseType = type table [ID = number, Name = text],\n    AddKey = Type.AddTableKey(BaseType, {\"ID\"}, true),\n    DetailsOfKeys = Type.TableKeys(AddKey)\nin\n    DetailsOfKeys"
+   }
+  ],
+  "Type.TableRow": [
+   {
+    "output": "",
+    "usage": "let\n    tableRowType = Type.TableRow(Value.Type(#table({\"Column1\"}, {})))\nin\n    Type.RecordFields(tableRowType)"
+   }
+  ],
+  "Uri.BuildQueryString": [
+   {
+    "output": "",
+    "usage": "Uri.BuildQueryString([a = \"1\", b = \"+$\"])"
+   }
+  ],
+  "Uri.EscapeDataString": [
+   {
+    "output": "",
+    "usage": "Uri.EscapeDataString(\"+money$\")"
+   }
+  ],
+  "Uri.Parts": [
+   {
+    "output": "[\n    Scheme = \"http\",\n    Host = \"www.adventure-works.com\",\n    Port = 80,\n    Path = \"/\",\n    Query = [],\n    Fragment = \"\",\n    UserName = \"\",\n    Password = \"\"\n]",
+    "usage": "Uri.Parts(\"www.adventure-works.com\")"
+   },
+   {
+    "output": "",
+    "usage": "let\n    UriUnescapeDataString = (data as text) as text => Uri.Parts(\"http://contoso?a=\" & data)[Query][a]\nin\n    UriUnescapeDataString(\"%2Bmoney%24\")"
+   }
+  ],
+  "Value.As": [
+   {
+    "output": "",
+    "usage": "Value.As(123, Number.Type)"
+   },
+   {
+    "output": "",
+    "usage": "Value.As(\"abc\", type number)"
+   }
+  ],
+  "Value.FromText": [
+   {
+    "output": "",
+    "usage": "Value.FromText(\"12345.6789\")"
+   },
+   {
+    "output": "",
+    "usage": "Value.FromText(\"25.4%\")"
+   },
+   {
+    "output": "",
+    "usage": "Value.FromText(\"€1,190\", \"fr-FR\")"
+   },
+   {
+    "output": "",
+    "usage": "Value.FromText(\"24 Dez 2024 14:33:20\", \"de-DE\")"
+   }
+  ],
+  "Value.Is": [
+   {
+    "output": "",
+    "usage": "Value.Is(123, Number.Type) = (123 is number)"
+   }
+  ],
+  "Value.Metadata": [
+   {
+    "output": "",
+    "usage": "let\n    valueWithMetadata = 1 meta [text = \"one\"]\nin\n    Value.Metadata(valueWithMetadata)"
+   }
+  ],
+  "Value.RemoveMetadata": [
+   {
+    "output": "",
+    "usage": "Value.Metadata(\n    Value.RemoveMetadata(\"abc\" meta [a = 1, b = 2])\n)"
+   },
+   {
+    "output": "",
+    "usage": "Value.Metadata(\n    Value.RemoveMetadata(\"abc\" meta [a = 1, b = 2], {\"a\"})\n)"
+   }
+  ],
+  "Value.ReplaceType": [
+   {
+    "output": "",
+    "usage": "Type.RecordFields(\n    Value.Type(\n        Value.ReplaceType(\n            [Column1 = 123],\n            type [Column1 = number]\n        )\n    )\n)[Column1][Type]"
+   }
+  ],
+  "Value.Type": [
+   {
+    "output": "",
+    "usage": "Value.Type(243.448)"
+   },
+   {
+    "output": "",
+    "usage": "Value.Type(#date(2010, 12, 31))"
+   },
+   {
+    "output": "",
+    "usage": "Value.Type([a = 1, b = 2])"
+   }
+  ],
+  "Web.BrowserContents": [
+   {
+    "output": "",
+    "usage": "Web.BrowserContents(\"https://microsoft.com\")"
+   },
+   {
+    "output": "",
+    "usage": "Web.BrowserContents(\"https://microsoft.com\", [WaitFor = [Selector = \"div.ready\"]])"
+   },
+   {
+    "output": "",
+    "usage": "Web.BrowserContents(\"https://microsoft.com\", [WaitFor = [Timeout = #duration(0,0,0,10)]])"
+   },
+   {
+    "output": "",
+    "usage": "Web.BrowserContents(\"https://microsoft.com\", [WaitFor = [Selector = \"div.ready\", Timeout = #duration(0,0,0,10)]])"
+   }
+  ],
+  "Web.Contents": [
+   {
+    "output": "",
+    "usage": "let\n    searchText = \"Power Query\"\nin\n    Web.Contents(\n        \"https://www.bing.com\",\n        [\n            RelativePath = \"search\",\n            Query = [q = searchText]\n        ]\n    )"
+   },
+   {
+    "output": "",
+    "usage": "let\n    url = ...,\n    headers = [#\"Content-Type\" = \"application/json\"],\n    postData = Json.FromValue([x = 235.7, y = 41.53]),\n    response = Web.Contents(\n        url,\n        [\n            Headers = headers,\n            Content = postData\n        ]\n    ),\n    jsonResponse = Json.Document(response)\nin\n    jsonResponse"
+   },
+   {
+    "output": "",
+    "usage": "Web.Contents(\"https://contoso.com/api/customers/get\", [ApiKeyName=\"api_key\"])"
+   }
+  ],
+  "Web.Headers": [
+   {
+    "output": "([\n    #\"Cache-Control\" = \"private, max-age=0\",\n    #\"Content-Encoding\" = \"gzip\",\n    #\"Content-Length\" = \"0\",\n    #\"Content-Type\" = \"text/html; charset=utf-8\",\n    Date = \"Tue, 14 Dec 2021 16:57:25 GMT\",\n    Expires = \"Tue, 14 Dec 2021 16:56:25 GMT\",\n    Vary = \"Accept-Encoding\"\n]\nmeta [\n    Response.Status = 200\n])",
+    "usage": "let\n    searchText = \"Power Query\"\nin\n    Web.Headers(\n        \"https://www.bing.com\",\n        [\n            RelativePath = \"search\",\n            Query = [q = searchText]\n        ]\n    )"
+   }
+  ],
+  "WebAction.Request": [
+   {
+    "output": "",
+    "usage": "WebAction.Request(WebMethod.Get, \"https://bing.com\")"
+   }
+  ],
+  "Xml.Tables": [
+   {
+    "output": "",
+    "usage": "Xml.Tables(File.Contents(\"C:\\invoices.xml\"))"
+   }
+  ]
+ },
+ "source": "https://learn.microsoft.com/en-us/powerquery-m/"
+}

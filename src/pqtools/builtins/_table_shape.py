@@ -27,8 +27,10 @@ Two design notes that apply to most functions below:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from ._list import _equation_criteria_predicate
 from ._shared import (
     EvalError,
     UnsupportedError,
@@ -1280,10 +1282,19 @@ def _table_remove_matching_rows(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Table.RemoveMatchingRows", args, 2, 3)
     table = _require_table(args[0])
     targets = [_require_record(r) for r in _require_list(args[1])]
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 3 and args[2] is not None:
+        # The third argument was accepted and then dropped on the floor, so
+        # the docs' own example - removing a "widget" row from a table
+        # holding "Widget" with Comparer.OrdinalIgnoreCase - kept the row it
+        # was called to remove. A wrong table, no error anywhere.
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "Table.RemoveMatchingRows", allow_custom_comparer=True
+        )
     return [
         row
         for row in table
-        if not any(all(_m_equal(row.get(k), v) for k, v in t.items()) for t in targets)
+        if not any(all(equal(row.get(k), v) for k, v in t.items()) for t in targets)
     ]
 
 

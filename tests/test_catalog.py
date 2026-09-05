@@ -58,6 +58,9 @@ ENUM_AND_TYPE_VALUES = {
     "JoinKind.FullOuter",
     "JoinKind.LeftAnti",
     "JoinKind.RightAnti",
+    # JoinKind.Type documents eight members; these two were absent.
+    "JoinKind.LeftSemi",
+    "JoinKind.RightSemi",
     "GroupKind.Global",
     "GroupKind.Local",
     # Csv.Document / Text options.
@@ -78,6 +81,30 @@ ENUM_AND_TYPE_VALUES = {
     "RankKind.Competition",
     "RankKind.Dense",
     "RankKind.Ordinal",
+    # Rounding, percentile and text-encoding modes. Each has its own
+    # `<name>-type` reference page carrying an "Allowed values" table with
+    # the numbers; `Number.PI` has its own page too and is a plain constant.
+    # All were found missing by running Microsoft's own worked examples.
+    # Number.PI is a CONSTANT, so it is absent from the number-functions
+    # table the inventory is scraped from, but learn.microsoft.com/en-us/
+    # powerquery-m/number-pi is a 200 and describes it as "a constant that
+    # represents 3.1415926535897932".
+    "Number.PI",
+    "RoundingMode.Up",
+    "RoundingMode.Down",
+    "RoundingMode.AwayFromZero",
+    "RoundingMode.TowardZero",
+    "RoundingMode.ToEven",
+    "PercentileMode.ExcelInc",
+    "PercentileMode.ExcelExc",
+    "PercentileMode.SqlDisc",
+    "PercentileMode.SqlCont",
+    "TextEncoding.Utf16",
+    "TextEncoding.Unicode",
+    "TextEncoding.BigEndianUnicode",
+    "TextEncoding.Windows",
+    "TextEncoding.Ascii",
+    "TextEncoding.Utf8",
     # Day-of-week constants.
     "Day.Monday",
     "Day.Tuesday",

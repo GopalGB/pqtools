@@ -223,7 +223,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 539 builtins.
+and calling them; `try ... otherwise ...`; and these 557 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -242,11 +242,11 @@ Number.BitwiseAnd Number.BitwiseNot Number.BitwiseOr Number.BitwiseShiftLeft
 Number.BitwiseShiftRight Number.BitwiseXor Number.Combinations Number.Cos
 Number.Cosh Number.Exp Number.Factorial Number.From Number.FromText
 Number.IntegerDivide Number.IsEven Number.IsNaN Number.IsOdd Number.Ln
-Number.Log Number.Log10 Number.Mod Number.Permutations Number.Power
-Number.Random Number.RandomBetween Number.Round Number.RoundAwayFromZero
-Number.RoundDown Number.RoundTowardZero Number.RoundUp Number.Sign
-Number.Sin Number.Sinh Number.Sqrt Number.Tan Number.Tanh Number.ToText
-Number.Type
+Number.Log Number.Log10 Number.Mod Number.PI Number.Permutations
+Number.Power Number.Random Number.RandomBetween Number.Round
+Number.RoundAwayFromZero Number.RoundDown Number.RoundTowardZero
+Number.RoundUp Number.Sign Number.Sin Number.Sinh Number.Sqrt Number.Tan
+Number.Tanh Number.ToText Number.Type
 Logical.From Logical.FromText Logical.ToText Logical.Type
 List.Accumulate List.AllTrue List.Alternate List.AnyTrue List.Average
 List.Buffer List.Combine List.Contains List.ContainsAll List.ContainsAny
@@ -368,11 +368,15 @@ Comparer.FromCulture Comparer.Ordinal Comparer.OrdinalIgnoreCase
 Precision.Decimal Precision.Double
 Order.Ascending Order.Descending
 JoinKind.FullOuter JoinKind.Inner JoinKind.LeftAnti JoinKind.LeftOuter
-JoinKind.RightAnti JoinKind.RightOuter
+JoinKind.LeftSemi JoinKind.RightAnti JoinKind.RightOuter JoinKind.RightSemi
 MissingField.Error MissingField.Ignore MissingField.UseNull
 Occurrence.All Occurrence.First Occurrence.Last
+RoundingMode.AwayFromZero RoundingMode.Down RoundingMode.ToEven
+RoundingMode.TowardZero RoundingMode.Up
 ExtraValues.Error ExtraValues.Ignore ExtraValues.List
 QuoteStyle.Csv QuoteStyle.None
+TextEncoding.Ascii TextEncoding.BigEndianUnicode TextEncoding.Unicode
+TextEncoding.Utf16 TextEncoding.Utf8 TextEncoding.Windows
 GroupKind.Global GroupKind.Local
 Int8.Type
 Int16.Type
@@ -386,8 +390,10 @@ Byte.Type
 Any.Type
 Expression.Constant Expression.Evaluate Expression.Identifier
 Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
-Day.Wednesday Percentage.Type RankKind.Competition RankKind.Dense
-RankKind.Ordinal RelativePosition.FromEnd RelativePosition.FromStart
+Day.Wednesday Percentage.Type PercentileMode.ExcelExc
+PercentileMode.ExcelInc PercentileMode.SqlCont PercentileMode.SqlDisc
+RankKind.Competition RankKind.Dense RankKind.Ordinal
+RelativePosition.FromEnd RelativePosition.FromStart
 #binary #date #datetime #datetimezone #duration #table #time
 ```
 

@@ -10,9 +10,16 @@ would be silent wrongness of the worst kind: `Text.PositionOf(t, s, Occurrence.L
 would quietly return the first match instead of the last, with no error anywhere.
 So an enum whose numbering could not be confirmed is deliberately absent, and a
 query using it gets an honest "unknown identifier" rather than a wrong answer.
-Deliberately absent for that reason: RoundingMode.*, TextEncoding.*,
-BinaryEncoding.*, Compression.*, CsvStyle.*, WebMethod.*. Nothing consumes them
-yet either, so registering them would add risk and buy nothing.
+RoundingMode.*, PercentileMode.* and TextEncoding.* were absent for that reason
+until 0.10.0. Both halves of the reason have since changed: the numbering is
+verified against their own `*-type` reference pages, and they are consumed -
+Text.ToBinary/Text.FromBinary/Lines.FromBinary already take a code page, and
+Number.Round now takes a rounding mode. They were found missing by running
+Microsoft's own worked examples, which is the only place a real query's
+vocabulary shows up.
+
+Still deliberately absent: CsvStyle.*, WebMethod.* - numbering unconfirmed and
+nothing consumes them.
 """
 
 from __future__ import annotations
@@ -54,9 +61,49 @@ _RELATIVE_POSITION = {
     "RelativePosition.FromEnd": 1,
 }
 
+
+# RoundingMode.Type - verified against Microsoft Learn's RoundingMode.Type page
+# ("Allowed values" table). Consumed by Number.Round's third argument. These
+# select the tie-break direction ONLY; a non-tie rounds the same way whatever
+# the mode.
+_ROUNDING_MODE = {
+    "RoundingMode.Up": 0,
+    "RoundingMode.Down": 1,
+    "RoundingMode.AwayFromZero": 2,
+    "RoundingMode.TowardZero": 3,
+    "RoundingMode.ToEven": 4,
+}
+
+# PercentileMode.Type - verified against its own page. Registered so a query
+# naming one reads as a real value; List.Percentile still refuses the option by
+# name, because the four interpolation methods give different answers and
+# picking one silently would be the wrong kind of helpful.
+_PERCENTILE_MODE = {
+    "PercentileMode.ExcelInc": 1,
+    "PercentileMode.ExcelExc": 2,
+    "PercentileMode.SqlDisc": 3,
+    "PercentileMode.SqlCont": 4,
+}
+
+# TextEncoding.Type - verified against its own page. The values ARE Windows
+# code page numbers, which Text.ToBinary/Text.FromBinary/Lines.FromBinary
+# already accept, so these names work the moment they resolve. Utf16 and
+# Unicode are the same code page (1200); that duplication is Microsoft's.
+_TEXT_ENCODING = {
+    "TextEncoding.Utf16": 1200,
+    "TextEncoding.Unicode": 1200,
+    "TextEncoding.BigEndianUnicode": 1201,
+    "TextEncoding.Windows": 1252,
+    "TextEncoding.Ascii": 20127,
+    "TextEncoding.Utf8": 65001,
+}
+
 BUILTINS: dict[str, Any] = {
     **_OCCURRENCE,
     **_ORDER,
     **_MISSING_FIELD,
     **_RELATIVE_POSITION,
+    **_ROUNDING_MODE,
+    **_PERCENTILE_MODE,
+    **_TEXT_ENCODING,
 }
