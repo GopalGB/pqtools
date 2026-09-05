@@ -41,7 +41,7 @@ def test_bare_try_distinguishes_a_failure_from_a_sentinel_value() -> None:
 
 def test_catch_receives_the_error_record() -> None:
     assert evaluate('try "a" + 1 catch (e) => e[Message]') == (
-        "expected a number, got text"
+        "operator + is not defined for text and number"
     )
 
 

@@ -109,20 +109,26 @@ def main() -> int:
         return 1
 
     rendered = "".join(
-        f"    {name!r}: {reason!r},\n" for name, reason in sorted(catalog.items())
+        # Double quotes: ruff format rewrites `!r`'s single quotes, so the
+        # generated file failed `ruff format --check` the moment it was written.
+        f'    "{name}": "{reason}",\n'
+        for name, reason in sorted(catalog.items())
     )
     source = CATALOG.read_text(encoding="utf-8")
-    updated = re.sub(
-        r"DOCUMENTED: dict\[str, str\] = \{.*?\}",
-        "DOCUMENTED: dict[str, str] = {\n" + rendered + "}",
-        source,
-        count=1,
-        flags=re.DOTALL,
-    )
-    if updated == source:
+    pattern = re.compile(r"DOCUMENTED: dict\[str, str\] = \{.*?\}", re.DOTALL)
+    # "no match" and "no change" are different outcomes. Conflating them made
+    # this script report failure on a run that was correctly a no-op, which is
+    # the kind of false alarm that teaches people to ignore the script.
+    if not pattern.search(source):
         print("could not find the DOCUMENTED table to replace", file=sys.stderr)
         return 1
-    CATALOG.write_text(updated, encoding="utf-8")
+    updated = pattern.sub(
+        "DOCUMENTED: dict[str, str] = {\n" + rendered + "}", source, count=1
+    )
+    if updated == source:
+        print("catalog already current, nothing to write")
+    else:
+        CATALOG.write_text(updated, encoding="utf-8")
 
     counts: dict[str, int] = {}
     for reason in catalog.values():

@@ -72,6 +72,12 @@ ENUM_AND_TYPE_VALUES = {
     "Compression.Deflate",
     "Precision.Double",
     "Precision.Decimal",
+    # Rank behaviour for Table.AddRankColumn (learn.microsoft.com/en-us/
+    # powerquery-m/rankkind-type returns 200; a made-up "bogus-type" 404s,
+    # which is the control that makes that check mean something).
+    "RankKind.Competition",
+    "RankKind.Dense",
+    "RankKind.Ordinal",
     # Day-of-week constants.
     "Day.Monday",
     "Day.Tuesday",

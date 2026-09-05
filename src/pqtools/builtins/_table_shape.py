@@ -42,6 +42,7 @@ from ._shared import (
     _require_record,
     _require_str,
     _require_table,
+    _sort_criteria,
     _type_name,
 )
 
@@ -87,42 +88,14 @@ def _to_column_name(value: Any, what: str) -> str:
 
 
 def _parse_comparison_keys(spec: Any, what: str) -> list[tuple[str, bool]]:
-    """Column-name(s) + direction, in the shapes Table.Sort/Max/Min accept.
+    """Kept as a name so call sites read the same; the logic lives in _shared.
 
-    Duplicated in miniature from ``_table.py``'s ``_table_sort`` (same
-    accepted shapes: a bare column name, a list of names, or
-    ``{{"Col", Order.Ascending|Descending}}`` pairs) rather than imported,
-    to keep this module self-contained while ``_table.py`` is edited
-    elsewhere.
+    It used to be a second copy of `_table.py`'s parser "to keep this module
+    self-contained". Both copies then rejected Microsoft's own documented
+    `{"Col", Order.Descending}` bare pair, which is what two copies of a rule
+    buys you.
     """
-    keys: list[tuple[str, bool]] = []
-    entries = [spec] if isinstance(spec, str) else spec
-    if not isinstance(entries, list):
-        raise UnsupportedError(
-            f"{what} with a {type(spec).__name__} comparisonCriteria"
-        )
-    for entry in entries:
-        if isinstance(entry, str):
-            keys.append((entry, False))
-        elif (
-            isinstance(entry, list)
-            and 1 <= len(entry) <= 2
-            and isinstance(entry[0], str)
-        ):
-            if len(entry) == 1:
-                keys.append((entry[0], False))
-            elif entry[1] in (0, 1):
-                keys.append((entry[0], entry[1] == 1))
-            else:
-                raise UnsupportedError(
-                    f"{what}: direction must be Order.Ascending or Order.Descending"
-                )
-        else:
-            raise UnsupportedError(
-                f"{what}: comparisonCriteria entries must be a column name or "
-                '{"Column", Order.Ascending}'
-            )
-    return keys
+    return _sort_criteria(spec, what)
 
 
 def _distribute_pieces(

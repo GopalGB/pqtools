@@ -74,6 +74,7 @@ from ._shared import (
     _field_name_list,
     _format_number,
     _m_equal,
+    _numeric_quotient,
     _parse_numeric_literal,
     _require_int,
     _require_list,
@@ -908,9 +909,11 @@ def _multiply(left: int | float, right: int | float) -> int | float:
 
 
 def _divide(left: int | float, right: int | float) -> int | float:
-    if right == 0:
-        raise EvalError("division by zero")
-    return left / right
+    # Documented as "the result of dividing value1 by value2" - the same
+    # operation as `/`, so it must give the same answer, IEEE zeros included.
+    # Number.IntegerDivide and Number.Mod still raise: integer division by
+    # zero has no IEEE result to return.
+    return _numeric_quotient(left, right)
 
 
 _value_add = _make_value_arithmetic("Value.Add", _add)

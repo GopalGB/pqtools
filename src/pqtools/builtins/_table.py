@@ -20,13 +20,13 @@ from typing import TYPE_CHECKING, Any
 
 from ._shared import (
     EvalError,
-    UnsupportedError,
     _arity,
     _field_name_list,
     _m_equal,
     _require_int,
     _require_str,
     _require_table,
+    _sort_criteria,
     _type_name,
 )
 
@@ -191,37 +191,10 @@ def _table_transform_columns(args: list[Any], ctx: _Ctx) -> Any:
 def _table_sort(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Table.Sort", args, 2)
     table = _require_table(args[0])
-    spec = args[1]
-    # Accepted shapes, all of which Power Query itself emits:
-    #   "Col"                                  one column, ascending
-    #   {"A", "B"}                             several columns, ascending
-    #   {{"Col", Order.Descending}}            column with an explicit direction
-    #   {{"A", Order.Ascending}, {"B", Order.Descending}}
-    keys: list[tuple[str, bool]] = []
-    entries = [spec] if isinstance(spec, str) else spec
-    if not isinstance(entries, list):
-        raise UnsupportedError(f"Table.Sort with a {type(spec).__name__} sort spec")
-    for entry in entries:
-        if isinstance(entry, str):
-            keys.append((entry, False))
-        elif (
-            isinstance(entry, list)
-            and 1 <= len(entry) <= 2
-            and isinstance(entry[0], str)
-        ):
-            if len(entry) == 1:
-                keys.append((entry[0], False))
-            elif entry[1] in (0, 1):
-                keys.append((entry[0], entry[1] == 1))
-            else:
-                raise UnsupportedError(
-                    "Table.Sort direction must be Order.Ascending or Order.Descending"
-                )
-        else:
-            raise UnsupportedError(
-                "Table.Sort entries must be a column name or "
-                '{"Column", Order.Ascending}'
-            )
+    # Shapes and their gotchas are documented on _sort_criteria. This used to
+    # be a hand-rolled copy that rejected the bare `{"Col", Order.Descending}`
+    # pair from the reference's own Example 2.
+    keys = _sort_criteria(args[1], "Table.Sort")
     for name, _ in keys:
         if table and name not in table[0]:
             raise EvalError(f"Table.Sort: no such column: {name}")

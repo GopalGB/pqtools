@@ -45,12 +45,17 @@ step "3. Lint, format, types"
 step "4. Documented coverage is computed, not remembered"
 # llms.txt spent two releases telling AI assistants that connectors shipped in
 # 0.8.0 were unsupported, because a human updated the prose and forgot.
+# Compare the files against themselves across the sync, NOT against HEAD.
+# `git diff` also reports every unrelated uncommitted edit, so a hand-written
+# paragraph in the same file failed this step and named the wrong cause.
+cp README.md /tmp/pq-gate-readme.before
+cp llms.txt /tmp/pq-gate-llms.before
 $PY scripts/sync_builtin_list.py >/tmp/pq-gate-sync.log 2>&1
 check $? "sync_builtin_list.py runs"
-if git diff --quiet -- README.md llms.txt; then
+if cmp -s README.md /tmp/pq-gate-readme.before && cmp -s llms.txt /tmp/pq-gate-llms.before; then
   check 0 "README/llms.txt coverage already current"
 else
-  check 1 "README/llms.txt were STALE - the sync just changed them, commit it"
+  check 1 "README/llms.txt were STALE - the sync just rewrote them, commit it"
 fi
 grep -E "^coverage:" /tmp/pq-gate-sync.log || true
 
@@ -91,10 +96,20 @@ step "7. Real Power Query M, end to end"
 # skip rather than fail when it is absent - but say so, because a skipped
 # check reporting green is how this class of bug survives.
 if [ -f .samples/Chapter06Sample1.xlsx ] && [ -f .samples/BrilliantBritishCars.xlsx ]; then
+  # Written to a file, not piped into `head`. Under `set -o pipefail` the
+  # early close made pq exit 120 and the whole pipeline report failure while
+  # grep had already matched - this step failed on healthy code, which is the
+  # fastest way to teach someone to ignore the one check that has actually
+  # caught things.
   .venv/bin/pq eval .samples/Chapter06Sample1.xlsx --member BaseData \
-    --bind "Source=.samples/BrilliantBritishCars.xlsx" --format csv 2>&1 \
-    | head -1 | grep -q "InvoiceDate,Make"
-  check $? "unmodified workbook-authored query runs and types correctly"
+    --bind "Source=.samples/BrilliantBritishCars.xlsx" --format csv \
+    >/tmp/pq-gate-workbook.csv 2>&1
+  eval_status=$?
+  head -1 /tmp/pq-gate-workbook.csv | grep -q "InvoiceDate,Make"
+  header_status=$?
+  check $(( eval_status | header_status )) \
+    "unmodified workbook-authored query runs and types correctly"
+  [ "$eval_status" -eq 0 ] || head -3 /tmp/pq-gate-workbook.csv
 else
   printf '  SKIP  no .samples/ workbooks present - THIS CHECK DID NOT RUN\n'
 fi

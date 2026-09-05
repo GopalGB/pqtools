@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from pqtools.evaluate import EvalError, UnsupportedError, evaluate
@@ -26,13 +28,23 @@ def test_arithmetic_operators():
     assert evaluate('"a" & "b"') == "ab"
 
 
-def test_division_by_zero_is_eval_error():
-    with pytest.raises(EvalError, match="division by zero"):
-        evaluate("1 / 0")
+def test_division_by_zero_follows_ieee_754_rather_than_raising():
+    """`8 / 0 // #infinity` and `0 / 0 // #nan` are the spec's own examples.
+
+    pqtools raised here until 0.10.0, so `[Total] / [Count]` failed on a zero
+    count where Power Query returns #infinity - a query that runs there and
+    breaks here, which is the divergence this package exists to prevent.
+    """
+    assert evaluate("8 / 0") == math.inf
+    assert evaluate("-8 / 0") == -math.inf
+    assert math.isnan(evaluate("0 / 0"))
+    assert evaluate("0 / null") is None
 
 
-def test_ampersand_requires_text_both_sides():
-    with pytest.raises(EvalError, match="& requires text"):
+def test_ampersand_rejects_a_kind_it_is_not_defined_for():
+    # `&` is defined over text, list, record, table and date-with-time. A
+    # number is on none of those rows.
+    with pytest.raises(EvalError, match="operator & is not defined"):
         evaluate('1 & "a"')
 
 
@@ -156,7 +168,10 @@ def test_lambda_wrong_arity_is_eval_error():
 
 
 def test_try_otherwise_recovers_from_runtime_error():
-    assert evaluate("try 1 / 0 otherwise -1") == -1
+    # `1 / 0` used to stand in for "a runtime error" here. It is not one:
+    # M returns #infinity, so `try 1 / 0 otherwise -1` is #infinity in Power
+    # Query too. A type mismatch is a real error.
+    assert evaluate('try "a" + 1 otherwise -1') == -1
     assert evaluate("try 1 + 1 otherwise -1") == 2
 
 

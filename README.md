@@ -17,7 +17,7 @@ pq check  report.pq                     # lint it in CI
 ```
 
 <!-- coverage:start -->
-pqtools implements **292 of the 634** functions in Microsoft's Power Query M reference (46%). Every one of the remaining 342 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+pqtools implements **476 of the 634** functions in Microsoft's Power Query M reference (75%). Every one of the remaining 158 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
 
 What it is for, in one line each:
@@ -212,13 +212,18 @@ from the machine that authored the query, bind the step's result instead:
 --bind Source=<local file>
 ```
 
-**Supported:** number/text/logical/null literals; `+ - * /`; `= <> < <= > >=`;
-`and or not`; text `&`; `if/then/else`; `let/in` (lazy, memoised, correctly
+**Supported:** number/text/logical/null literals; the arithmetic, relational,
+equality, combination (`&`) and unary operators over **every operand pair
+Microsoft's M specification defines for them** - so `null` propagates through
+arithmetic instead of raising, `#date + #duration` and `#datetime - #datetime`
+work, `8 / 0` is `#infinity` rather than an error, binaries and logicals order,
+and `&` merges records, joins a date with a time, and concatenates lists as
+well as text; `and or not`; `if/then/else`; `let/in` (lazy, memoised, correctly
 shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 353 builtins.
+and calling them; `try ... otherwise ...`; and these 539 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -226,65 +231,108 @@ silently drift, which a hand-maintained list can and did:
 ```
 Text.AfterDelimiter Text.At Text.BeforeDelimiter Text.BetweenDelimiters
 Text.Clean Text.Combine Text.Contains Text.End Text.EndsWith Text.From
-Text.FromBinary Text.Insert Text.Length Text.Lower Text.Middle Text.NewGuid
-Text.PadEnd Text.PadStart Text.PositionOf Text.PositionOfAny Text.Proper
-Text.Remove Text.Repeat Text.Replace Text.Reverse Text.Select Text.Split
-Text.SplitAny Text.Start Text.StartsWith Text.ToList Text.Trim Text.TrimEnd
-Text.TrimStart Text.Type Text.Upper
-Number.Abs Number.BitwiseAnd Number.BitwiseOr Number.BitwiseXor Number.Exp
-Number.Factorial Number.From Number.FromText Number.IntegerDivide
-Number.IsEven Number.IsNaN Number.IsOdd Number.Ln Number.Log Number.Log10
-Number.Mod Number.Power Number.Random Number.RandomBetween Number.Round
-Number.RoundAwayFromZero Number.RoundDown Number.RoundTowardZero
-Number.RoundUp Number.Sign Number.Sqrt Number.ToText Number.Type
-Logical.From Logical.FromText Logical.Type
-List.Accumulate List.AllTrue List.AnyTrue List.Average List.Buffer
-List.Combine List.Contains List.ContainsAll List.ContainsAny List.Count
-List.Difference List.Distinct List.First List.FirstN List.Generate
-List.InsertRange List.Intersect List.IsEmpty List.Last List.LastN List.Max
-List.Median List.Min List.Mode List.NonNullCount List.Numbers
-List.Percentile List.PositionOf List.PositionOfAny List.Positions List.Range
-List.RemoveItems List.RemoveNulls List.Repeat List.ReplaceValue List.Reverse
-List.Select List.Skip List.Sort List.Split List.StandardDeviation List.Sum
-List.Transform List.Union List.Zip
+Text.FromBinary Text.InferNumberType Text.Insert Text.Length Text.Lower
+Text.Middle Text.NewGuid Text.PadEnd Text.PadStart Text.PositionOf
+Text.PositionOfAny Text.Proper Text.Range Text.Remove Text.RemoveRange
+Text.Repeat Text.Replace Text.ReplaceRange Text.Reverse Text.Select
+Text.Split Text.SplitAny Text.Start Text.StartsWith Text.ToBinary
+Text.ToList Text.Trim Text.TrimEnd Text.TrimStart Text.Type Text.Upper
+Number.Abs Number.Acos Number.Asin Number.Atan Number.Atan2
+Number.BitwiseAnd Number.BitwiseNot Number.BitwiseOr Number.BitwiseShiftLeft
+Number.BitwiseShiftRight Number.BitwiseXor Number.Combinations Number.Cos
+Number.Cosh Number.Exp Number.Factorial Number.From Number.FromText
+Number.IntegerDivide Number.IsEven Number.IsNaN Number.IsOdd Number.Ln
+Number.Log Number.Log10 Number.Mod Number.Permutations Number.Power
+Number.Random Number.RandomBetween Number.Round Number.RoundAwayFromZero
+Number.RoundDown Number.RoundTowardZero Number.RoundUp Number.Sign
+Number.Sin Number.Sinh Number.Sqrt Number.Tan Number.Tanh Number.ToText
+Number.Type
+Logical.From Logical.FromText Logical.ToText Logical.Type
+List.Accumulate List.AllTrue List.Alternate List.AnyTrue List.Average
+List.Buffer List.Combine List.Contains List.ContainsAll List.ContainsAny
+List.Count List.Covariance List.DateTimeZones List.DateTimes List.Dates
+List.Difference List.Distinct List.Durations List.FindText List.First
+List.FirstN List.Generate List.InsertRange List.Intersect List.IsDistinct
+List.IsEmpty List.Last List.LastN List.MatchesAll List.MatchesAny List.Max
+List.MaxN List.Median List.Min List.MinN List.Mode List.Modes
+List.NonNullCount List.Numbers List.Percentile List.PositionOf
+List.PositionOfAny List.Positions List.Product List.Random List.Range
+List.RemoveFirstN List.RemoveItems List.RemoveLastN List.RemoveMatchingItems
+List.RemoveNulls List.RemoveRange List.Repeat List.ReplaceMatchingItems
+List.ReplaceRange List.ReplaceValue List.Reverse List.Select List.Single
+List.SingleOrDefault List.Skip List.Sort List.Split List.StandardDeviation
+List.Sum List.Times List.Transform List.TransformMany List.Union List.Zip
 Record.AddField Record.Combine Record.Field Record.FieldCount
 Record.FieldNames Record.FieldOrDefault Record.FieldValues Record.FromList
-Record.HasFields Record.RemoveFields Record.RenameFields
+Record.FromTable Record.HasFields Record.RemoveFields Record.RenameFields
 Record.ReorderFields Record.SelectFields Record.ToList Record.ToTable
 Record.TransformFields
-Table.AddColumn Table.AddIndexColumn Table.AlternateRows Table.Buffer
-Table.Column Table.ColumnCount Table.ColumnNames Table.Combine
-Table.Contains Table.DemoteHeaders Table.Distinct Table.DuplicateColumn
+Table.AddColumn Table.AddIndexColumn Table.AddJoinColumn Table.AddKey
+Table.AddRankColumn Table.AggregateTableColumn Table.AlternateRows
+Table.ApproximateRowCount Table.Buffer Table.Column Table.ColumnCount
+Table.ColumnNames Table.ColumnsOfType Table.Combine Table.CombineColumns
+Table.CombineColumnsToRecord Table.Contains Table.ContainsAll
+Table.ContainsAny Table.DemoteHeaders Table.Distinct Table.DuplicateColumn
 Table.ExpandListColumn Table.ExpandRecordColumn Table.ExpandTableColumn
-Table.FillDown Table.FillUp Table.FirstN Table.FromColumns Table.FromList
+Table.FillDown Table.FillUp Table.FindText Table.First Table.FirstN
+Table.FirstValue Table.FromColumns Table.FromList Table.FromPartitions
 Table.FromRecords Table.FromRows Table.FromValue Table.Group
-Table.HasColumns Table.InsertRows Table.IsEmpty Table.Join Table.LastN
-Table.MatchesAllRows Table.MatchesAnyRows Table.Max Table.Min
-Table.NestedJoin Table.Pivot Table.PositionOf Table.Profile
-Table.PromoteHeaders Table.Range Table.RemoveColumns
-Table.RemoveMatchingRows Table.RemoveRowsWithErrors Table.RenameColumns
-Table.ReorderColumns Table.Repeat Table.ReplaceErrorValues
-Table.ReplaceValue Table.ReverseRows Table.RowCount Table.Schema
-Table.SelectColumns Table.SelectDuplicates Table.SelectRows
-Table.SelectRowsWithErrors Table.Skip Table.Sort Table.SplitAt
-Table.SplitColumn Table.ToColumns Table.ToList Table.ToRecords Table.ToRows
+Table.HasColumns Table.InsertRows Table.IsDistinct Table.IsEmpty Table.Join
+Table.Keys Table.Last Table.LastN Table.MatchesAllRows Table.MatchesAnyRows
+Table.Max Table.MaxN Table.Min Table.MinN Table.NestedJoin Table.Partition
+Table.PartitionKey Table.PartitionValues Table.Pivot Table.PositionOf
+Table.PositionOfAny Table.PrefixColumns Table.Profile Table.PromoteHeaders
+Table.Range Table.RemoveColumns Table.RemoveFirstN Table.RemoveLastN
+Table.RemoveMatchingRows Table.RemoveRows Table.RemoveRowsWithErrors
+Table.RenameColumns Table.ReorderColumns Table.Repeat
+Table.ReplaceErrorValues Table.ReplaceKeys Table.ReplaceMatchingRows
+Table.ReplacePartitionKey Table.ReplaceRows Table.ReplaceValue
+Table.ReverseRows Table.RowCount Table.Schema Table.SelectColumns
+Table.SelectRows Table.SelectRowsWithErrors Table.SingleRow Table.Skip
+Table.Sort Table.Split Table.SplitAt Table.SplitColumn Table.StopFolding
+Table.ToColumns Table.ToList Table.ToRecords Table.ToRows
 Table.TransformColumnNames Table.TransformColumnTypes Table.TransformColumns
-Table.Transpose Table.Unpivot Table.UnpivotOtherColumns
-Type.Is
-Value.Compare Value.Equals Value.Is Value.Type
-Date.AddDays Date.AddMonths Date.AddWeeks Date.AddYears Date.Day
-Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.EndOfMonth
-Date.EndOfWeek Date.EndOfYear Date.From Date.FromText Date.IsInCurrentMonth
-Date.IsInCurrentYear Date.Month Date.MonthName Date.QuarterOfYear
-Date.StartOfMonth Date.StartOfWeek Date.StartOfYear Date.ToText Date.Type
-Date.WeekOfYear Date.Year
+Table.TransformRows Table.Transpose Table.Unpivot Table.UnpivotOtherColumns
+Type.Is Type.IsNullable Type.NonNullable
+Value.Add Value.As Value.Compare Value.Divide Value.Equals Value.Is
+Value.Metadata Value.Multiply Value.NativeQuery Value.NullableEquals
+Value.Optimize Value.RemoveMetadata Value.ReplaceMetadata Value.Subtract
+Value.Type
+Date.AddDays Date.AddMonths Date.AddQuarters Date.AddWeeks Date.AddYears
+Date.Day Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.DaysInMonth
+Date.EndOfDay Date.EndOfMonth Date.EndOfQuarter Date.EndOfWeek
+Date.EndOfYear Date.From Date.FromText Date.IsInCurrentDay
+Date.IsInCurrentMonth Date.IsInCurrentQuarter Date.IsInCurrentWeek
+Date.IsInCurrentYear Date.IsInNextDay Date.IsInNextMonth Date.IsInNextNDays
+Date.IsInNextNMonths Date.IsInNextNQuarters Date.IsInNextNWeeks
+Date.IsInNextNYears Date.IsInNextQuarter Date.IsInNextWeek Date.IsInNextYear
+Date.IsInPreviousDay Date.IsInPreviousMonth Date.IsInPreviousNDays
+Date.IsInPreviousNMonths Date.IsInPreviousNQuarters Date.IsInPreviousNWeeks
+Date.IsInPreviousNYears Date.IsInPreviousQuarter Date.IsInPreviousWeek
+Date.IsInPreviousYear Date.IsInYearToDate Date.IsLeapYear Date.Month
+Date.MonthName Date.QuarterOfYear Date.StartOfDay Date.StartOfMonth
+Date.StartOfQuarter Date.StartOfWeek Date.StartOfYear Date.ToRecord
+Date.ToText Date.Type Date.WeekOfMonth Date.WeekOfYear Date.Year
 DateTime.AddZone DateTime.Date DateTime.FixedLocalNow DateTime.From
-DateTime.FromText DateTime.LocalNow DateTime.Time DateTime.ToText
-DateTime.Type
-Time.From Time.FromText Time.Hour Time.Minute Time.Second Time.ToText
+DateTime.FromFileTime DateTime.FromText DateTime.IsInCurrentHour
+DateTime.IsInCurrentMinute DateTime.IsInCurrentSecond DateTime.IsInNextHour
+DateTime.IsInNextMinute DateTime.IsInNextNHours DateTime.IsInNextNMinutes
+DateTime.IsInNextNSeconds DateTime.IsInNextSecond DateTime.IsInPreviousHour
+DateTime.IsInPreviousMinute DateTime.IsInPreviousNHours
+DateTime.IsInPreviousNMinutes DateTime.IsInPreviousNSeconds
+DateTime.IsInPreviousSecond DateTime.LocalNow DateTime.Time
+DateTime.ToRecord DateTime.ToText DateTime.Type
+DateTimeZone.FixedLocalNow DateTimeZone.FixedUtcNow DateTimeZone.From
+DateTimeZone.FromFileTime DateTimeZone.FromText DateTimeZone.LocalNow
+DateTimeZone.RemoveZone DateTimeZone.SwitchZone DateTimeZone.ToLocal
+DateTimeZone.ToRecord DateTimeZone.ToText DateTimeZone.ToUtc
+DateTimeZone.UtcNow DateTimeZone.ZoneHours DateTimeZone.ZoneMinutes
+Time.EndOfHour Time.From Time.FromText Time.Hour Time.Minute Time.Second
+Time.StartOfHour Time.ToRecord Time.ToText
 Duration.Days Duration.From Duration.FromText Duration.Hours
-Duration.Minutes Duration.Seconds Duration.ToText Duration.TotalDays
-Duration.TotalHours Duration.TotalMinutes Duration.TotalSeconds
+Duration.Minutes Duration.Seconds Duration.ToRecord Duration.ToText
+Duration.TotalDays Duration.TotalHours Duration.TotalMinutes
+Duration.TotalSeconds
 Csv.Document
 Json.Document Json.FromValue
 Lines.FromBinary Lines.FromText Lines.ToBinary Lines.ToText
@@ -299,17 +347,22 @@ PostgreSQL.Database
 MySQL.Database
 Oracle.Database
 Uri.BuildQueryString Uri.Combine Uri.EscapeDataString Uri.Parts
-Binary.Buffer Binary.Combine Binary.Decompress Binary.FromText Binary.Length
-Binary.ToText
+Binary.ApproximateLength Binary.Buffer Binary.Combine Binary.Compress
+Binary.Decompress Binary.From Binary.FromList Binary.FromText
+Binary.InferContentType Binary.Length Binary.Range Binary.Split
+Binary.ToList Binary.ToText Binary.View Binary.ViewError Binary.ViewFunction
 BinaryEncoding.Base64 BinaryEncoding.Hex
 Compression.Deflate Compression.GZip Compression.None
 Character.FromNumber Character.ToNumber
 Guid.From
+Splitter.SplitByNothing Splitter.SplitTextByAnyDelimiter
 Splitter.SplitTextByCharacterTransition Splitter.SplitTextByDelimiter
 Splitter.SplitTextByEachDelimiter Splitter.SplitTextByLengths
-Splitter.SplitTextByPositions
+Splitter.SplitTextByPositions Splitter.SplitTextByRanges
+Splitter.SplitTextByRepeatedLengths Splitter.SplitTextByWhitespace
 Combiner.CombineTextByDelimiter Combiner.CombineTextByEachDelimiter
 Combiner.CombineTextByLengths Combiner.CombineTextByPositions
+Combiner.CombineTextByRanges
 Replacer.ReplaceText Replacer.ReplaceValue
 Comparer.FromCulture Comparer.Ordinal Comparer.OrdinalIgnoreCase
 Precision.Decimal Precision.Double
@@ -331,9 +384,10 @@ Decimal.Type
 Currency.Type
 Byte.Type
 Any.Type
+Expression.Constant Expression.Evaluate Expression.Identifier
 Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
-Day.Wednesday Percentage.Type RelativePosition.FromEnd
-RelativePosition.FromStart
+Day.Wednesday Percentage.Type RankKind.Competition RankKind.Dense
+RankKind.Ordinal RelativePosition.FromEnd RelativePosition.FromStart
 #binary #date #datetime #datetimezone #duration #table #time
 ```
 

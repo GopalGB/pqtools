@@ -32,9 +32,9 @@ from .builtins._shared import (
     EvalError,
     UnsupportedError,
     _m_equal,
+    _numeric_quotient,
     _parse_numeric_literal,
     _require_int,
-    _require_number,
     _type_name,
 )
 from .builtins._type import _PRIMITIVE_TYPES, _classify, _MType
@@ -743,7 +743,226 @@ def _eval_try(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 
 # --------------------------------------------------------------------------
 # Operators
+#
+# The operand tables below are Microsoft's own, transcribed from the M
+# specification (learn.microsoft.com/en-us/powerquery-m/m-spec-operators)
+# rather than inferred from what a query "probably" means.
+#
+# Until 0.10.0 every arithmetic operator called ``_require_number`` on both
+# sides, so the language outside numbers was simply not here. Three of the
+# consequences were ordinary queries, not corner cases:
+#
+#     [Amount] + [Fee]         raised the moment either cell was blank
+#     DateTime.LocalNow() + #duration(0,1,0,0)
+#                              could not run at all, though the reference
+#                              writes half its temporal examples that way
+#     [Total] / [Count]        raised on a zero count, where Power Query
+#                              returns #infinity
+#
+# Each of those runs in Power Query and failed here, which is the direction
+# of divergence this package exists to prevent.
 # --------------------------------------------------------------------------
+
+# A `time` has no date to carry into, so time arithmetic is done against a
+# fixed anchor and the anchor must still be there afterwards.
+_TIME_ANCHOR = datetime.date(2000, 1, 1)
+
+
+def _is_number(value: Any) -> bool:
+    # `bool` subclasses `int` in Python. A logical is not a number in M.
+    return not isinstance(value, bool) and isinstance(value, (int, float))
+
+
+def _is_duration(value: Any) -> bool:
+    return isinstance(value, datetime.timedelta)
+
+
+def _is_temporal(value: Any) -> bool:
+    """The spec's "type datetime": date, datetime, datetimezone or time."""
+    return isinstance(value, (datetime.date, datetime.time))
+
+
+def _same_temporal_kind(left: Any, right: Any) -> bool:
+    """Both values are the SAME one of date/datetime/datetimezone/time/duration.
+
+    datetime is tested first because ``datetime.datetime`` subclasses
+    ``datetime.date``, and an aware/naive pair is a datetimezone-vs-datetime
+    mismatch that Python itself refuses to order.
+    """
+    if isinstance(left, datetime.datetime) or isinstance(right, datetime.datetime):
+        return (
+            isinstance(left, datetime.datetime)
+            and isinstance(right, datetime.datetime)
+            and (left.tzinfo is None) == (right.tzinfo is None)
+        )
+    return any(
+        isinstance(left, kind) and isinstance(right, kind)
+        for kind in (datetime.date, datetime.time, datetime.timedelta)
+    )
+
+
+def _time_as_duration(value: datetime.time) -> datetime.timedelta:
+    return datetime.timedelta(
+        hours=value.hour,
+        minutes=value.minute,
+        seconds=value.second,
+        microseconds=value.microsecond,
+    )
+
+
+def _shift_temporal(value: Any, delta: datetime.timedelta) -> Any:
+    """Offset a date/datetime/datetimezone/time, keeping its own type.
+
+    "When adding a duration and a value of some type datetime, the resulting
+    value is of that same type." For a `date` that means the sub-day part of
+    the duration is dropped, which is what Python's `date + timedelta`
+    already does.
+    """
+    if isinstance(value, datetime.time):
+        moved = datetime.datetime.combine(_TIME_ANCHOR, value) + delta
+        if moved.date() != _TIME_ANCHOR:
+            raise EvalError(
+                f"time arithmetic left the day: {value} offset by {delta} is "
+                "not a time (M's time has no date to carry into)"
+            )
+        return moved.time()
+    return value + delta
+
+
+def _operand_error(operator: str, left: Any, right: Any) -> EvalError:
+    return EvalError(
+        f"operator {operator} is not defined for {_type_name(left)} and "
+        f"{_type_name(right)}"
+    )
+
+
+def _op_add(left: Any, right: Any) -> Any:
+    if _is_number(left) and _is_number(right):
+        return left + right
+    if _is_duration(left) and _is_duration(right):
+        return left + right
+    if _is_temporal(left) and _is_duration(right):
+        return _shift_temporal(left, right)
+    if _is_duration(left) and _is_temporal(right):
+        return _shift_temporal(right, left)
+    raise _operand_error("+", left, right)
+
+
+def _op_subtract(left: Any, right: Any) -> Any:
+    if _is_number(left) and _is_number(right):
+        return left - right
+    if _is_duration(left) and _is_duration(right):
+        return left - right
+    if _is_temporal(left) and _is_duration(right):
+        return _shift_temporal(left, -right)
+    if _is_temporal(left) and _is_temporal(right) and _same_temporal_kind(left, right):
+        # "Duration between datetimes". Two aware datetimes subtract across
+        # their offsets, which is the normalise-to-UTC rule the spec states.
+        if isinstance(left, datetime.time):
+            return _time_as_duration(left) - _time_as_duration(right)
+        return left - right
+    # `duration - datetime` has no row in the spec's table, and there is no
+    # sensible value for "an hour minus Tuesday".
+    raise _operand_error("-", left, right)
+
+
+def _op_multiply(left: Any, right: Any) -> Any:
+    if _is_number(left) and _is_number(right):
+        return left * right
+    if _is_duration(left) and _is_number(right):
+        return left * right
+    if _is_number(left) and _is_duration(right):
+        return right * left
+    raise _operand_error("*", left, right)
+
+
+def _op_divide(left: Any, right: Any) -> Any:
+    if _is_number(left) and _is_number(right):
+        return _numeric_quotient(left, right)
+    if _is_duration(left) and _is_number(right):
+        if right == 0:
+            # Unlike numbers, a duration has no infinity to divide into.
+            raise EvalError("division of a duration by zero")
+        return left / right
+    if _is_duration(left) and _is_duration(right):
+        if not right:
+            raise EvalError("division of a duration by a zero duration")
+        return left / right
+    # `number / duration` has no row in the spec's table.
+    raise _operand_error("/", left, right)
+
+
+def _table_fields(value: list[Any]) -> list[str] | None:
+    """The column names if this list reads as a table, else None."""
+    if not value or not all(isinstance(item, dict) for item in value):
+        return None
+    return list(value[0])
+
+
+def _concatenate(left: list[Any], right: list[Any]) -> list[Any]:
+    """`x & y` over two lists - or two tables, which look identical here.
+
+    A table in this evaluator is a list of records, so `{...} & {...}` is
+    genuinely ambiguous. M concatenates two LISTS item by item, but
+    concatenates two TABLES by taking the union of their columns and filling
+    the gaps with null. The two readings agree unless the records carry
+    different fields; where they differ they disagree about the answer, not
+    merely about the type.
+
+    Guessing returns a ragged list where a table was meant, or invents null
+    cells where a plain list was meant. Both are wrong quietly, so this
+    refuses and names the function that says which was intended.
+    """
+    left_fields = _table_fields(left)
+    right_fields = _table_fields(right)
+    if (
+        left_fields is not None
+        and right_fields is not None
+        and left_fields != right_fields
+    ):
+        raise UnsupportedError(
+            "& between two lists of records whose fields differ is ambiguous "
+            "here: as lists M keeps the rows unchanged, as tables it unions "
+            "the columns and fills the gaps with null, and this evaluator "
+            "models both as a list of records. Write Table.Combine({x, y}) "
+            "for the table meaning or List.Combine({x, y}) for the list one."
+        )
+    return [*left, *right]
+
+
+def _op_combine(left: Any, right: Any) -> Any:
+    if isinstance(left, str) and isinstance(right, str):
+        return left + right
+    if (
+        isinstance(left, datetime.date)
+        and not isinstance(left, datetime.datetime)
+        and isinstance(right, datetime.time)
+    ):
+        # #date(2013,02,26) & #time(09,17,00) // #datetime(2013,02,26,09,17,00)
+        return datetime.datetime.combine(left, right)
+    if isinstance(left, dict) and isinstance(right, dict):
+        # "If a field appears in both x and y, the value from y is used", and
+        # the field order is x's followed by y's new fields - exactly what
+        # dict unpacking gives.
+        return {**left, **right}
+    if isinstance(left, list) and isinstance(right, list):
+        return _concatenate(left, right)
+    if left is None or right is None:
+        other = left if right is None else right
+        # The table pairs null with text, date and time. A list, record or
+        # table has nothing to absorb a null operand into, so those stay
+        # errors rather than quietly evaporating into null.
+        if other is None or isinstance(other, (str, datetime.date, datetime.time)):
+            return None
+    raise _operand_error("&", left, right)
+
+
+_ARITHMETIC: dict[str, Callable[[Any, Any], Any]] = {
+    "+": _op_add,
+    "-": _op_subtract,
+    "*": _op_multiply,
+    "/": _op_divide,
+}
 
 
 def _eval_arithmetic(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -751,26 +970,20 @@ def _eval_arithmetic(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     left = _eval(left_node, scope, ctx)
     right = _eval(right_node, scope, ctx)
     if operator == "&":
-        if not isinstance(left, str) or not isinstance(right, str):
-            raise EvalError(
-                "& requires text on both sides "
-                f"(got {_type_name(left)} and {_type_name(right)}; "
-                "use Text.From to convert first)"
-            )
-        return left + right
-    left_number = _require_number(left)
-    right_number = _require_number(right)
-    if operator == "+":
-        return left_number + right_number
-    if operator == "-":
-        return left_number - right_number
-    if operator == "*":
-        return left_number * right_number
-    if operator == "/":
-        if right_number == 0:
-            raise EvalError("division by zero")
-        return left_number / right_number
-    raise UnsupportedError(f"arithmetic operator: {operator}")
+        # `&` has its own null rule - it accepts kinds arithmetic does not.
+        return _op_combine(left, right)
+    apply = _ARITHMETIC.get(operator)
+    if apply is None:
+        raise UnsupportedError(f"arithmetic operator: {operator}")
+    if left is None or right is None:
+        # Every row of the four arithmetic tables that pairs a value with
+        # null yields null. `null + null` is not enumerated; null is chosen
+        # over an error because the relational section states the rule in
+        # general terms ("if either or both operands are null, the result is
+        # the null value"), and because adding two blank cells is an
+        # ordinary thing for a query to do.
+        return None
+    return apply(left, right)
 
 
 def _eval_equality(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -784,42 +997,43 @@ def _eval_equality(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     raise UnsupportedError(f"equality operator: {operator}")
 
 
+def _same_orderable_kind(left: Any, right: Any) -> bool:
+    """The spec's operand rule for `<`, `>`, `<=` and `>=`.
+
+    "The values ... must be a binary, date, datetime, datetimezone, duration,
+    logical, number, null, text or time value", and "both operands must be
+    the same kind of value or null".
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        # "Two logicals are compared such that true is considered to be
+        # greater than false" - which is Python's own bool ordering.
+        return isinstance(left, bool) and isinstance(right, bool)
+    if _is_number(left) and _is_number(right):
+        return True
+    for kind in (str, bytes):
+        # "Two binaries are compared byte by byte" - Python's bytes ordering,
+        # exactly.
+        if isinstance(left, kind) and isinstance(right, kind):
+            return True
+    return _same_temporal_kind(left, right)
+
+
 def _eval_relational(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     left_node, operator, right_node = _binop_parts(node)
     left = _eval(left_node, scope, ctx)
     right = _eval(right_node, scope, ctx)
-
-    # Temporal values are ordered in M (a date range filter is one of the most
-    # common things a real query does), so they are comparable here. Each kind
-    # only compares against its own kind: datetime is tested before date because
-    # datetime.datetime subclasses datetime.date, and an aware/naive pair is a
-    # datetimezone-vs-datetime mismatch that Python itself refuses to order.
-    def _same_temporal(a: Any, b: Any) -> bool:
-        if isinstance(a, datetime.datetime) or isinstance(b, datetime.datetime):
-            return (
-                isinstance(a, datetime.datetime)
-                and isinstance(b, datetime.datetime)
-                and (a.tzinfo is None) == (b.tzinfo is None)
-            )
-        return any(
-            isinstance(a, kind) and isinstance(b, kind)
-            for kind in (datetime.date, datetime.time, datetime.timedelta)
-        )
-
-    comparable = (
-        not isinstance(left, bool)
-        and not isinstance(right, bool)
-        and (
-            (isinstance(left, (int, float)) and isinstance(right, (int, float)))
-            or (isinstance(left, str) and isinstance(right, str))
-            or _same_temporal(left, right)
-        )
-    )
-    if not comparable:
+    if left is None or right is None:
+        # "If either or both operands are null, the result is the null
+        # value." Not false and not an error: `[Ship Date] < #date(...)` over
+        # a blank cell is a null that the surrounding filter then treats as
+        # not-true, which is how Power Query drops those rows.
+        return None
+    if not _same_orderable_kind(left, right):
         raise EvalError(
-            "relational operators require two numbers, two text values or two "
-            "temporal values of the same kind "
-            f"(got {_type_name(left)} and {_type_name(right)})"
+            "relational operators require two values of the same kind "
+            "(binary, date, datetime, datetimezone, duration, logical, "
+            f"number, text or time); got {_type_name(left)} and "
+            f"{_type_name(right)}"
         )
     if operator == "<":
         return left < right
@@ -851,15 +1065,37 @@ def _eval_logical(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     raise UnsupportedError(f"logical operator: {operator}")
 
 
+def _op_plus(value: Any) -> Any:
+    """Unary `+` over number, duration and null.
+
+    The spec's prose says "if the result of evaluating x is not a number
+    value, then an error ... is raised", but its own table for this operator
+    lists duration and null, and its own example is
+    `+ #duration(0,1,30,0) // #duration(0,1,30,0)`. The table and the example
+    agree with each other, so they win over the sentence.
+    """
+    if value is None or _is_number(value) or _is_duration(value):
+        return value
+    raise EvalError(f"unary + is not defined for {_type_name(value)}")
+
+
+def _op_negate(value: Any) -> Any:
+    if value is None:
+        return None
+    if _is_number(value) or _is_duration(value):
+        return -value
+    raise EvalError(f"unary - is not defined for {_type_name(value)}")
+
+
 def _eval_unary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     operators_wrapper, operand_node = _children(node)
     value = _eval(operand_node, scope, ctx)
     operators = [str(item["value"]) for item in _children(operators_wrapper)]
     for operator in reversed(operators):
         if operator == "-":
-            value = -_require_number(value)
+            value = _op_negate(value)
         elif operator == "+":
-            value = _require_number(value)
+            value = _op_plus(value)
         elif operator == "not":
             if not isinstance(value, bool):
                 raise EvalError(

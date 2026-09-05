@@ -14,8 +14,13 @@ affiliated with or endorsed by Microsoft.
   `File.Contents`, `Text.FromBinary`) run natively, then the whole
   transformation chain: `Table.PromoteHeaders`, `Table.TransformColumnTypes`,
   `Table.SelectRows`, `Table.Group`, all six `JoinKind` values, pivot/unpivot,
-  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 353 M builtins.
+  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 539 M builtins.
   Output as JSON or CSV.
+- The M operators follow the specification's own operand tables, not just the
+  numeric rows: `null` propagates through arithmetic instead of raising,
+  `#date + #duration` and `#datetime - #datetime` work, `8 / 0` is
+  `#infinity`, binaries and logicals order, and `&` merges records, joins a
+  date with a time, and concatenates lists as well as text.
 - `pq list report.pbix` - name every query inside a .pbix / .pbit / .xlsx.
   Each name is usable directly as `pq eval FILE --member NAME`.
 - `pq eval report.pbix --member Sales` - run one query out of a container,
@@ -32,7 +37,7 @@ affiliated with or endorsed by Microsoft.
   brand-new query. Any `--write` on a container writes a `<file>.bak` first.
 
 <!-- coverage:start -->
-pqtools implements **292 of the 634** functions in Microsoft's Power Query M reference (46%). Every one of the remaining 342 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+pqtools implements **476 of the 634** functions in Microsoft's Power Query M reference (75%). Every one of the remaining 158 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
 
 ## What it deliberately does NOT do

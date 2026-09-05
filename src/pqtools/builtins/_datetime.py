@@ -29,38 +29,23 @@ Consequences of that choice (traced through, not assumed):
 2. **Text.From on a date is a clean, correct refusal, not a silent wrong
    answer.** ``_text.py``'s ``Text.From`` only recognises
    ``None``/``bool``/``(int, float)``/``str``; anything else falls through
-   to ``EvalError(f"unsupported value type: {_type_name(value)}")``, and
-   ``_type_name`` reports ``type(value).__name__`` for an unrecognised type
-   - i.e. ``"date"``/``"datetime"``/``"time"``/``"timedelta"``. That is
-   actually correct Power Query behaviour: real ``Text.From`` does not
-   accept date-family values either - callers are expected to reach for
-   ``Date.ToText``/``DateTime.ToText``/``Time.ToText``/``Duration.ToText``,
-   which this module provides.
-3. **The M `=`/`<>`/`<`/`<=`/`>`/`>=` operators do NOT behave correctly on
-   these values, and this module cannot fix that.** ``_shared._m_equal``
-   (used by `=`/`<>`) and ``evaluate._eval_relational`` (used by
-   `<`/`<=`/`>`/`>=`) both predate date support and only recognise
-   ``None``/``bool``/``(int, float)``/``str``/``list``/``dict``.
-   Concretely: ``#date(2024,1,1) = #date(2024,1,1)`` evaluates to ``False``
-   (silently - ``_m_equal`` falls through to its default ``return False``
-   for an unrecognised type pair), and ``#date(2024,1,2) > #date(2024,1,1)``
-   raises ``EvalError`` ("relational operators require two numbers or two
-   text values"). The relational case is at least loud; the equality case
-   is a genuine silent-wrong-answer gap. Fixing it requires adding
-   date-family branches to ``_m_equal`` and ``_eval_relational``, both of
-   which live in files this task does not own (``_shared.py``,
-   ``evaluate.py``). **Flagged here for a follow-up task with permission to
-   touch those files** - not fixed, because fixing it silently by choosing
-   a different value representation (e.g. a ``float`` subclass so the
-   existing number branches "just work") would trade this narrow, honest
-   gap for a much bigger one: every ``Number.*``/arithmetic builtin would
-   then silently accept a date as a bare number too, and
-   ``Text.From(someDate)`` would silently print the day-serial number
-   instead of raising - a real silent-wrong-answer regression instead of a
-   documented one. None of the four `tests/fixtures/realworld/` goal
-   queries compare dates with a raw operator (04 only uses
-   ``Date.Year``/``Date.MonthName`` and a numeric ``<>``), so this gap does
-   not block the PRD's stated goal.
+   to ``EvalError(f"unsupported value type: {_type_name(value)}")``, which
+   now names the M type - ``date``/``datetime``/``datetimezone``/``time``/
+   ``duration``. That is correct Power Query behaviour: real ``Text.From``
+   does not accept date-family values either - callers are expected to
+   reach for ``Date.ToText``/``DateTime.ToText``/``Time.ToText``/
+   ``Duration.ToText``, which this module provides.
+3. **The M comparison and arithmetic operators DO work on these values as
+   of 0.10.0.** This note recorded the opposite for three releases, and the
+   gap was real: ``#date(2024,1,1) = #date(2024,1,1)`` was silently
+   ``False``, and ``#date(2024,1,2) > #date(2024,1,1)`` raised. Both are
+   fixed in the files this module cannot reach - ``_shared._m_equal`` grew
+   a temporal branch, and ``evaluate``'s operator layer was rewritten
+   against the M specification's own operand tables. ``#date + #duration``,
+   ``#datetime - #datetime``, the four relational operators and
+   ``=``/``<>`` now behave here as they do in Power Query, so the values
+   this module produces can be compared and offset directly. See
+   ``tests/test_operators.py`` and ``tests/test_temporal_comparison.py``.
 4. **DateTimeZone is a plain ``datetime`` with ``tzinfo`` attached**, not a
    separate wrapper type. ``DateTime.AddZone`` builds the ``tzinfo`` and
    ``.replace()``s it onto a naive value without shifting the wall-clock

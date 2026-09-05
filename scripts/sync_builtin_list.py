@@ -163,7 +163,7 @@ def main() -> int:
         f"Every one of the remaining {documented - covered} is recognised by "
         "name and refuses with a typed error saying which outside system it "
         "would need - never a wrong answer, and never the bare "
-        "\"unknown identifier\" that a typo produces."
+        '"unknown identifier" that a typo produces.'
     )
     for path in (readme, llms):
         body = path.read_text(encoding="utf-8")

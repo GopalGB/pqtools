@@ -60,6 +60,17 @@ def _type_name(value: Any) -> str:
         return "list"
     if isinstance(value, dict):
         return "record"
+    # The temporal family, named as M names it. These reach users inside
+    # error messages, and "timedelta" is not a type Power Query has - a
+    # reader who greps their query for it finds nothing.
+    if isinstance(value, datetime.datetime):
+        return "datetimezone" if value.tzinfo is not None else "datetime"
+    if isinstance(value, datetime.date):
+        return "date"
+    if isinstance(value, datetime.time):
+        return "time"
+    if isinstance(value, datetime.timedelta):
+        return "duration"
     return type(value).__name__
 
 
@@ -72,6 +83,13 @@ def _m_equal(left: Any, right: Any) -> bool:
         return left == right
     if isinstance(left, str) and isinstance(right, str):
         return left == right
+    # Binary compares by content in M. Without this clause two identical
+    # binaries compared FALSE - so `List.Contains(files, someBinary)` was
+    # always false and `Binary.Compress` round-trip checks silently failed
+    # with no error. Exactly the failure the datetime note below describes,
+    # in a type nobody thought to add when that one was fixed.
+    if isinstance(left, bytes) or isinstance(right, bytes):
+        return isinstance(left, bytes) and isinstance(right, bytes) and left == right
     # Temporal values compare by value in M, and this function is what `=` and
     # `<>` reach. Before this clause a date only ever compared FALSE to itself,
     # so `each [d] = #date(...)` silently filtered every row away with no error -
@@ -111,6 +129,22 @@ def _format_number(value: int | float) -> str:
     if value.is_integer():
         return str(int(value))
     return str(value)
+
+
+def _numeric_quotient(left: int | float, right: int | float) -> int | float:
+    """M follows IEEE 754 here, and IEEE 754 does not raise.
+
+    The spec's own examples are `8 / 0 // #infinity` and `0 / 0 // #nan`.
+    Raising instead - which this evaluator used to do - turns a query that
+    runs in Power Query into one that fails here.
+    """
+    if right == 0:
+        if left == 0 or (isinstance(left, float) and math.isnan(left)):
+            return math.nan
+        # Sign of the result is sign(left) * sign(right); `copysign` reads
+        # the sign of a negative zero denominator, which `right < 0` cannot.
+        return math.copysign(math.inf, left) * math.copysign(1.0, right)
+    return left / right
 
 
 def _require_number(value: Any) -> int | float:
@@ -185,3 +219,73 @@ def _check_invariant_culture(name: str, culture: Any, detail: str) -> None:
 
 
 _CULTURE_SCOPE = "(pqtools only implements invariant/en-US)"
+
+
+def _sort_criteria(spec: Any, what: str) -> list[tuple[str, bool]]:
+    """Parse Table.Sort/Max/Min ``comparisonCriteria`` into (column, descending).
+
+    One implementation, because there were two and they had the same bug. Both
+    enumerated the accepted shapes and both missed the one Microsoft's own
+    Table.Sort Example 2 uses verbatim:
+
+        Table.Sort(t, {"OrderID", Order.Descending})
+
+    - a BARE pair, not wrapped in an outer list. pqtools rejected it with
+    "entries must be a column name or {"Column", Order.Ascending}", so a query
+    copied straight out of the reference did not run.
+
+    The bare pair is unambiguous despite looking like a two-column list:
+    column names are text, so a NUMBER in second position can only be an
+    Order value. ``{"a", "b"}`` therefore stays two columns, and
+    ``{"a", Order.Descending}`` is one column descending.
+
+    Accepted, all of which Power Query emits:
+        "Col"                                       one column, ascending
+        {"A", "B"}                                  several columns, ascending
+        {"Col", Order.Descending}                   bare pair (docs Example 2)
+        {{"Col", Order.Descending}}                 wrapped pair
+        {{"A", Order.Ascending}, "B"}               mixed (docs Example 3)
+    """
+    if isinstance(spec, str):
+        return [(spec, False)]
+    if not isinstance(spec, list):
+        raise UnsupportedError(
+            f"{what} with a {type(spec).__name__} comparisonCriteria"
+        )
+
+    def order_value(value: Any) -> bool | None:
+        # `bool` is a subclass of int in Python; an M logical is not an Order.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return None if value not in (0, 1) else value == 1
+
+    if len(spec) == 2 and isinstance(spec[0], str):
+        descending = order_value(spec[1])
+        if descending is not None:
+            return [(spec[0], descending)]
+
+    keys: list[tuple[str, bool]] = []
+    for entry in spec:
+        if isinstance(entry, str):
+            keys.append((entry, False))
+            continue
+        if (
+            isinstance(entry, list)
+            and 1 <= len(entry) <= 2
+            and isinstance(entry[0], str)
+        ):
+            if len(entry) == 1:
+                keys.append((entry[0], False))
+                continue
+            descending = order_value(entry[1])
+            if descending is None:
+                raise UnsupportedError(
+                    f"{what}: direction must be Order.Ascending or Order.Descending"
+                )
+            keys.append((entry[0], descending))
+            continue
+        raise UnsupportedError(
+            f"{what}: comparisonCriteria entries must be a column name, "
+            '{"Column", Order.Ascending}, or a list of those'
+        )
+    return keys
