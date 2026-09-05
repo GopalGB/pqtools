@@ -106,3 +106,58 @@ def test_a_combined_text_round_trips_through_a_split() -> None:
         'in Text.Split(joined, "#(lf)")'
     )
     assert evaluate(source) == ["a", "b", "c"]
+
+
+# --------------------------------------------------------------------------
+# The same escapes, in a quoted IDENTIFIER
+# --------------------------------------------------------------------------
+# M's grammar spells a quoted identifier as `#"` followed by text-literal
+# characters - the very same characters a string is made of, escapes and all.
+# pqtools decoded them in one place and not the other, so a column named
+# `#"Col#(tab)umn"` was read as the twelve literal characters `Col#(tab)umn`.
+#
+# This is the third layer of one bug. 0.6.1 found that `#"First Name"` was
+# not being unquoted at all; 0.8.0 found the same thing again in the
+# container splitter; this is the escape half, which survived both. All
+# three were quiet for the same reason: a name that round-trips against
+# itself matches itself, so nothing fails until the name meets the outside
+# world - a real column header, or Text.Clean.
+
+
+def test_a_quoted_identifier_decodes_its_escapes() -> None:
+    assert evaluate('[#"Col#(tab)umn" = 1]') == {"Col\tumn": 1}
+
+
+def test_the_documented_transform_column_names_example() -> None:
+    """Microsoft's Table.TransformColumnNames Example 1, and the proof.
+
+    Text.Clean removes control characters. The page's expected output is
+    `Column`, which is only reachable if the identifier really does hold a
+    tab - so the example itself settles what `#(tab)` means inside `#"..."`.
+    """
+    assert evaluate(
+        'Table.TransformColumnNames(Table.FromRecords({[#"Col#(tab)umn" = 1]}), '
+        "Text.Clean)"
+    ) == [{"Column": 1}]
+
+
+def test_a_quoted_identifier_still_handles_a_doubled_quote() -> None:
+    assert evaluate('[#"He said ""hi""" = 1]') == {'He said "hi"': 1}
+
+
+def test_an_ordinary_quoted_identifier_is_unchanged() -> None:
+    # The overwhelmingly common case: a space, no escapes, no `#` at all.
+    assert evaluate('[#"First Name" = 1]') == {"First Name": 1}
+
+
+def test_a_bad_escape_in_a_NAME_keeps_the_raw_name() -> None:
+    """A name is not data, so it is decoded leniently.
+
+    `pq list` over a real workbook must not refuse the whole file because one
+    query name contains a `#(` that is not a valid escape. A text LITERAL
+    takes the strict path instead, because there a bad escape is a bad value
+    and passing it through would corrupt the result rather than the label.
+    """
+    assert evaluate('[#"a#(nonsense)b" = 1]') == {"a#(nonsense)b": 1}
+    with pytest.raises(Exception, match="unknown escape"):
+        evaluate('"a#(nonsense)b"')

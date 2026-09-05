@@ -26,15 +26,16 @@ Consequences of that choice (traced through, not assumed):
    whatever the column holds. ``date``/``datetime``/``time``/``timedelta``
    all implement ``__lt__`` against same-typed values natively, so sorting a
    date column needs zero special-casing here.
-2. **Text.From on a date is a clean, correct refusal, not a silent wrong
-   answer.** ``_text.py``'s ``Text.From`` only recognises
-   ``None``/``bool``/``(int, float)``/``str``; anything else falls through
-   to ``EvalError(f"unsupported value type: {_type_name(value)}")``, which
-   now names the M type - ``date``/``datetime``/``datetimezone``/``time``/
-   ``duration``. That is correct Power Query behaviour: real ``Text.From``
-   does not accept date-family values either - callers are expected to
-   reach for ``Date.ToText``/``DateTime.ToText``/``Time.ToText``/
-   ``Duration.ToText``, which this module provides.
+2. **Text.From DOES accept these values, and delegates here.** This note
+   said the opposite for four releases - that refusing a date was "correct
+   Power Query behaviour" - and it was wrong: ``Text.From``'s own reference
+   page says "The value can be a number, date, time, datetime,
+   datetimezone, logical, duration, or binary value", word for word. The
+   refusal was a defect dressed up as a design decision, and the docstring
+   is what kept it alive. ``_text.py``'s ``Text.From`` now routes each
+   temporal shape to this module's own ``Date.ToText`` / ``DateTime.ToText``
+   / ``Time.ToText`` / ``DateTimeZone.ToText`` / ``Duration.ToText`` rather
+   than growing a second renderer.
 3. **The M comparison and arithmetic operators DO work on these values as
    of 0.10.0.** This note recorded the opposite for three releases, and the
    gap was real: ``#date(2024,1,1) = #date(2024,1,1)`` was silently
@@ -514,7 +515,12 @@ _KNOWN_FORMAT_TOKENS = frozenset(
         "m",
         "ss",
         "s",
+        "f",
+        "ff",
         "fff",
+        "ffff",
+        "fffff",
+        "ffffff",
         "fffffff",
         "tt",
     }
@@ -571,12 +577,14 @@ def _render_time_token(
         return f"{second:02d}"
     if token == "s":
         return str(second)
-    if token == "fff":
-        return f"{microsecond // 1000:03d}"
-    if token == "fffffff":
-        # 100-nanosecond "ticks" - a `datetime.time` only carries
+    if token[0] == "f":
+        # .NET spells the fraction one to seven digits wide; the widest is
+        # 100-nanosecond "ticks", and a `datetime.time` only carries
         # microsecond precision, so the 7th digit is always 0, not a guess.
-        return f"{microsecond * 10:07d}"
+        # Narrower widths truncate rather than round, matching .NET and
+        # matching the parser, which cannot recover digits the text does
+        # not carry.
+        return f"{microsecond * 10:07d}"[: len(token)]
     # token == "tt" is the only possibility left: every member of
     # _KNOWN_FORMAT_TOKENS not in _DATE_FORMAT_TOKENS/_ZONE_FORMAT_TOKENS is
     # handled above or by _render_zone_token.
@@ -803,6 +811,300 @@ def _resolve_standard_format(
             "time value does not have"
         )
     raise UnsupportedError(f"{name}: format {letter!r}")
+
+
+# --------------------------------------------------------------------------
+# Parsing WITH a format string - the exact inverse of the renderer above.
+#
+# `Date.FromText(text, [Format = "dd MMM yyyy"])` is the half of the round
+# trip that shipped as an UnsupportedError while the formatting half was
+# complete. It reuses the renderer's tokenizer shape rather than growing a
+# second one, because the two directions have to agree on what a token IS:
+# .NET's rule that "yyyyMMdd" is three tokens and that "yyy" is not a token
+# at all is exactly the sort of detail two independent scanners drift on,
+# and the symptom of that drift is a value that formats one way and parses
+# back another.
+#
+# What is deliberately NOT here: a missing component is never filled in from
+# the machine's clock. Real .NET completes a time-only pattern with TODAY's
+# date, which would make `DateTime.FromText("013000", [Format = "HHmmss"])`
+# return a different value tomorrow. `_render_universal_full` already
+# refuses that class of host dependence; so does this.
+# --------------------------------------------------------------------------
+
+
+def _name_alternation(names: tuple[str, ...], length: int | None) -> str:
+    # Longest first: "June" must win over a hypothetical "Jun" prefix in the
+    # same alternation, and regex alternation is first-match, not longest.
+    trimmed = {n if length is None else n[:length] for n in names}
+    return "|".join(re.escape(n) for n in sorted(trimmed, key=len, reverse=True))
+
+
+# One regex fragment per renderable token. A single-letter numeric token
+# ("M", "d", "H", ...) accepts one OR two digits: those specifiers mean "no
+# leading zero" on the way out, not "exactly one digit" on the way in, so
+# "M/d/yyyy" has to read both "1/2/2020" and "12/31/2020".
+_TOKEN_PATTERNS: dict[str, str] = {
+    "yyyy": r"\d{4}",
+    "yy": r"\d{2}",
+    "MMMM": _name_alternation(_MONTH_NAMES, None),
+    "MMM": _name_alternation(_MONTH_NAMES, 3),
+    "MM": r"\d{2}",
+    "M": r"\d{1,2}",
+    "dddd": _name_alternation(_DAY_NAMES_SUNDAY_FIRST, None),
+    "ddd": _name_alternation(_DAY_NAMES_SUNDAY_FIRST, 3),
+    "dd": r"\d{2}",
+    "d": r"\d{1,2}",
+    "HH": r"\d{2}",
+    "H": r"\d{1,2}",
+    "hh": r"\d{2}",
+    "h": r"\d{1,2}",
+    "mm": r"\d{2}",
+    "m": r"\d{1,2}",
+    "ss": r"\d{2}",
+    "s": r"\d{1,2}",
+    "tt": "AM|PM",
+    "zzz": r"[+-]\d{2}:\d{2}",
+}
+_TOKEN_PATTERNS.update({"f" * width: rf"\d{{{width}}}" for width in range(1, 8)})
+
+_MONTH_BY_NAME = {name.lower(): i for i, name in enumerate(_MONTH_NAMES, 1)}
+_MONTH_BY_NAME.update({name[:3].lower(): i for i, name in enumerate(_MONTH_NAMES, 1)})
+
+_WEEKDAY_BY_NAME = {n.lower(): i for i, n in enumerate(_DAY_NAMES_SUNDAY_FIRST)}
+_WEEKDAY_BY_NAME.update(
+    {n[:3].lower(): i for i, n in enumerate(_DAY_NAMES_SUNDAY_FIRST)}
+)
+
+_PARSE_KINDS = {
+    "Date": "date",
+    "DateTime": "datetime",
+    "DateTimeZone": "datetimezone",
+    "Time": "time",
+}
+
+# The standard single-letter formats that are expressible as a custom
+# pattern, so there is one parsing engine rather than two. "o"/"O" is the
+# exception below (its offset may be a literal "Z"), and "U" stays refused
+# for the same machine-local-time-zone reason `_render_universal_full`
+# refuses it.
+_STANDARD_PARSE_PATTERNS: dict[str, str] = dict(_STANDARD_DATETIME_PATTERNS)
+_STANDARD_PARSE_PATTERNS.update(
+    {
+        "s": "yyyy-MM-dd'T'HH:mm:ss",
+        "r": "ddd, dd MMM yyyy HH:mm:ss 'GMT'",
+        "R": "ddd, dd MMM yyyy HH:mm:ss 'GMT'",
+        "u": "yyyy-MM-dd HH:mm:ss'Z'",
+    }
+)
+
+_ROUND_TRIP_RE = re.compile(
+    r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})"
+    r"T(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})"
+    r"(?:\.(?P<fraction>\d+))?"
+    r"(?P<zone>Z|[+-]\d{2}:\d{2})?\Z"
+)
+
+
+def _compile_format(name: str, fmt: str) -> tuple[re.Pattern[str], list[str]]:
+    """Custom format string -> (anchored regex, token per capture group)."""
+    parts: list[str] = []
+    tokens: list[str] = []
+    i, n = 0, len(fmt)
+    while i < n:
+        ch = fmt[i]
+        if ch in ("'", '"'):
+            end = fmt.find(ch, i + 1)
+            if end == -1:
+                raise EvalError(f"{name}: unterminated literal in format {fmt!r}")
+            parts.append(re.escape(fmt[i + 1 : end]))
+            i = end + 1
+            continue
+        if ch == "\\":
+            if i + 1 >= n:
+                raise EvalError(f"{name}: trailing '\\\\' in format {fmt!r}")
+            parts.append(re.escape(fmt[i + 1]))
+            i += 2
+            continue
+        if ch.isalpha():
+            j = i
+            while j < n and fmt[j] == ch:
+                j += 1
+            token = fmt[i:j]
+            pattern = _TOKEN_PATTERNS.get(token)
+            if pattern is None:
+                raise UnsupportedError(f"{name}: format specifier {token!r}")
+            parts.append(f"(?P<g{len(tokens)}>{pattern})")
+            tokens.append(token)
+            i = j
+            continue
+        parts.append(re.escape(ch))
+        i += 1
+    return re.compile("".join(parts) + r"\Z", re.IGNORECASE), tokens
+
+
+def _absorb_token(token: str, raw: str, got: dict[str, Any]) -> None:
+    if token == "yyyy":
+        got["year"] = int(raw)
+    elif token == "yy":
+        # .NET's invariant TwoDigitYearMax is 2029, so "29" is 2029 and
+        # "30" is 1930 (Calendar.TwoDigitYearMax). Picking the current
+        # century instead would make a two-digit year mean different things
+        # in different decades.
+        two = int(raw)
+        got["year"] = 2000 + two if two <= 29 else 1900 + two
+    elif token in ("MMMM", "MMM"):
+        got["month"] = _MONTH_BY_NAME[raw.lower()]
+    elif token in ("MM", "M"):
+        got["month"] = int(raw)
+    elif token in ("dddd", "ddd"):
+        got["weekday"] = _WEEKDAY_BY_NAME[raw.lower()]
+    elif token in ("dd", "d"):
+        got["day"] = int(raw)
+    elif token in ("HH", "H"):
+        got["hour"] = int(raw)
+    elif token in ("hh", "h"):
+        got["hour12"] = int(raw)
+    elif token in ("mm", "m"):
+        got["minute"] = int(raw)
+    elif token in ("ss", "s"):
+        got["second"] = int(raw)
+    elif token[0] == "f":
+        # The text carries the leading digits of a 7-digit tick count; the
+        # rest are zero, not unknown. A `datetime` holds microseconds, so
+        # the 7th digit is truncated, never rounded - rounding it could
+        # carry into the next second and silently change the answer.
+        got["microsecond"] = int(raw.ljust(7, "0")) // 10
+    elif token == "tt":
+        got["pm"] = raw.strip().lower().startswith("p")
+    else:  # "zzz" - the only token left.
+        sign = -1 if raw[0] == "-" else 1
+        hours, _, minutes = raw[1:].partition(":")
+        got["offset"] = timezone(
+            sign * timedelta(hours=int(hours), minutes=int(minutes))
+        )
+
+
+def _resolve_parsed_hour(name: str, fmt: str, got: dict[str, Any]) -> int | None:
+    hour12: int | None = got.get("hour12")
+    if hour12 is None:
+        hour24: int | None = got.get("hour")
+        return hour24
+    if not 1 <= hour12 <= 12:
+        raise EvalError(f"{name}: format {fmt!r} read a 12-hour clock hour {hour12}")
+    hour: int = hour12 % 12
+    if got.get("pm"):
+        hour += 12
+    return hour
+
+
+def _assemble_parsed(
+    name: str, kind: str, fmt: str, text: str, got: dict[str, Any]
+) -> Any:
+    hour = _resolve_parsed_hour(name, fmt, got)
+    minute = got.get("minute", 0)
+    second = got.get("second", 0)
+    microsecond = got.get("microsecond", 0)
+
+    if kind == "time":
+        if hour is None:
+            raise EvalError(f"{name}: format {fmt!r} carries no time of day")
+        return _build_time(name, hour, minute, second, microsecond)
+
+    if got.get("year") is None:
+        raise UnsupportedError(
+            f"{name}: format {fmt!r} carries no year, and completing the date "
+            "from the machine's clock would make the result depend on the day "
+            "it ran"
+        )
+    try:
+        d = date(got["year"], got.get("month", 1), got.get("day", 1))
+    except ValueError as error:
+        raise EvalError(f"{name}: {text!r} is not a real date: {error}") from error
+    if "weekday" in got and _sunday_based_weekday(d) != got["weekday"]:
+        raise EvalError(f"{name}: {text!r} names a weekday that {d.isoformat()} is not")
+    if kind == "date":
+        return d
+
+    dt = datetime(d.year, d.month, d.day, 0, 0, 0, 0) + timedelta(
+        hours=hour or 0, minutes=minute, seconds=second, microseconds=microsecond
+    )
+    _reject_rolled_over_time(name, text, hour or 0, minute, second)
+    if kind == "datetime":
+        # A `zzz` in a DateTime.FromText format is read (so the text still
+        # has to match) and then dropped: the function's return type is
+        # `datetime`, which in this module is naive by definition.
+        return dt
+    offset = got.get("offset")
+    if offset is None:
+        raise EvalError(f"{name}: format {fmt!r} carries no time-zone offset")
+    return dt.replace(tzinfo=offset)
+
+
+def _build_time(
+    name: str, hour: int, minute: int, second: int, microsecond: int
+) -> time:
+    try:
+        return time(hour, minute, second, microsecond)
+    except ValueError as error:
+        raise EvalError(f"{name}: not a real time of day: {error}") from error
+
+
+def _reject_rolled_over_time(
+    name: str, text: str, hour: int, minute: int, second: int
+) -> None:
+    # `timedelta` addition above is what lets "24:00:00" through, so the
+    # ranges are checked explicitly rather than trusted to `datetime`.
+    if hour > 23 or minute > 59 or second > 59:
+        raise EvalError(f"{name}: {text!r} is not a real time of day")
+
+
+def _parse_round_trip(name: str, kind: str, text: str) -> Any:
+    match = _ROUND_TRIP_RE.match(text.strip())
+    if match is None:
+        raise EvalError(f"{name}: {text!r} is not a round-trip ('O') date/time")
+    fraction = match.group("fraction") or ""
+    got: dict[str, Any] = {
+        "year": int(match.group("year")),
+        "month": int(match.group("month")),
+        "day": int(match.group("day")),
+        "hour": int(match.group("hour")),
+        "minute": int(match.group("minute")),
+        "second": int(match.group("second")),
+        "microsecond": int(fraction[:6].ljust(6, "0")) if fraction else 0,
+    }
+    zone = match.group("zone")
+    if zone == "Z":
+        got["offset"] = UTC
+    elif zone:
+        sign = -1 if zone[0] == "-" else 1
+        got["offset"] = timezone(
+            sign * timedelta(hours=int(zone[1:3]), minutes=int(zone[4:6]))
+        )
+    return _assemble_parsed(name, kind, "O", text, got)
+
+
+def _parse_with_format(name: str, text: str, fmt: str) -> Any:
+    """`X.FromText(text, [Format = fmt])` for the four temporal families."""
+    kind = _PARSE_KINDS.get(name.split(".")[0])
+    if kind is None:
+        raise UnsupportedError(f"{name}: a Format string for parsing")
+    stripped = text.strip()
+    if len(fmt) == 1:
+        if fmt in ("o", "O"):
+            return _parse_round_trip(name, kind, stripped)
+        pattern = _STANDARD_PARSE_PATTERNS.get(fmt)
+        if pattern is None:
+            raise UnsupportedError(f"{name}: format {fmt!r} for parsing")
+        fmt = pattern
+    regex, tokens = _compile_format(name, fmt)
+    match = regex.match(stripped)
+    if match is None:
+        raise EvalError(f"{name}: {text!r} does not match format {fmt!r}")
+    got: dict[str, Any] = {}
+    for index, token in enumerate(tokens):
+        _absorb_token(token, match.group(f"g{index}"), got)
+    return _assemble_parsed(name, kind, fmt, stripped, got)
 
 
 # --------------------------------------------------------------------------
@@ -1724,10 +2026,7 @@ def _datetimezone_from_text(args: list[Any], ctx: _Ctx) -> Any:
     fmt, culture = _from_text_options("DateTimeZone.FromText", args[1:])
     _shared_check_culture("DateTimeZone.FromText", culture, "culture-specific parsing")
     if fmt is not None:
-        raise UnsupportedError(
-            "DateTimeZone.FromText: a custom/standard Format string for "
-            "parsing (as opposed to formatting) is not implemented"
-        )
+        return _parse_with_format("DateTimeZone.FromText", text, fmt)
     stripped = text.strip()
     try:
         dt = datetime.fromisoformat(stripped)
@@ -2086,9 +2385,15 @@ def _time_to_record(args: list[Any], ctx: _Ctx) -> Any:
 # special-cased directly in evaluate.py instead, but the BUILTINS path works
 # identically and is the only one this module can reach).
 BUILTINS: dict[str, Any] = {
-    "Date.FromText": _from_text("Date.FromText", _date_from),
-    "DateTime.FromText": _from_text("DateTime.FromText", _datetime_from),
-    "Time.FromText": _from_text("Time.FromText", _time_from),
+    "Date.FromText": _from_text(
+        "Date.FromText", _date_from, parse_format=_parse_with_format
+    ),
+    "DateTime.FromText": _from_text(
+        "DateTime.FromText", _datetime_from, parse_format=_parse_with_format
+    ),
+    "Time.FromText": _from_text(
+        "Time.FromText", _time_from, parse_format=_parse_with_format
+    ),
     # Duration.FromText(text as nullable text) - one argument, per its
     # own Syntax block. pqtools took a second one.
     "Duration.FromText": _from_text(

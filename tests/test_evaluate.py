@@ -108,7 +108,14 @@ def test_let_binding_is_memoised_not_recomputed():
 
 
 def test_let_circular_reference_is_eval_error():
-    with pytest.raises(EvalError, match="circular"):
+    # `let A = B, B = A in A` is a real cycle. `let A = A in A` is NOT one
+    # and used to be the case pinned here: M's plain identifier is the
+    # EXCLUSIVE form, so the `A` on the right skips the `A` being defined
+    # and looks outward - "unknown identifier: A", the same answer Power
+    # Query gives. `@A` is the spelling that means the binding itself.
+    with pytest.raises(EvalError, match="circular reference in 'A'"):
+        evaluate("let A = B, B = A in A")
+    with pytest.raises(UnsupportedError, match="unknown identifier: A"):
         evaluate("let A = A in A")
 
 
@@ -413,9 +420,20 @@ def test_text_builtins():
     assert evaluate('Text.Trim("xxhixx", "x")') == "hi"
 
 
-def test_text_from_unsupported_extra_argument():
-    with pytest.raises(UnsupportedError, match="Text.From with 2"):
-        evaluate('Text.From(1, "en-US")')
+def test_text_from_culture_argument():
+    # This used to pin `Text.From(1, "en-US")` as an arity error ("Text.From
+    # with 2 argument(s)") - that was itself the bug: Text.From's own Syntax
+    # (learn.microsoft.com/en-us/powerquery-m/text-from) documents
+    # `optional culture as nullable text` as a real second argument, so
+    # rejecting it outright was refusing a documented call shape, not
+    # protecting against an undocumented one. An invariant-equivalent
+    # culture is now accepted (and has no effect on a plain number); a real
+    # non-invariant culture still refuses by name - Text.From's own
+    # Example 3 uses "de-DE" for exactly this reason - which is the
+    # boundary this test now actually pins.
+    assert evaluate('Text.From(1, "en-US")') == "1"
+    with pytest.raises(UnsupportedError, match="de-DE"):
+        evaluate('Text.From(1, "de-DE")')
 
 
 # --------------------------------------------------------------------------
@@ -442,7 +460,15 @@ def test_number_builtins():
 def test_list_builtins():
     assert evaluate("List.Count({1,2,3})") == 3
     assert evaluate("List.Sum({1,2,3})") == 6
-    assert evaluate("List.Sum({})") == 0
+    # Not 0. "Returns null if there are no non-null values in the list" is
+    # List.Sum's own About text; 0 is Python's convention for an empty sum,
+    # and this line asserted it for two releases because the author reached
+    # for the language they were writing in rather than the one being
+    # modelled. Downstream that matters: null propagates through the next
+    # arithmetic step, 0 silently does not.
+    assert evaluate("List.Sum({})") is None
+    assert evaluate("List.Sum({null, null})") is None
+    assert evaluate("List.Sum({1, null, 3})") == 4
     assert evaluate("List.Max({1,5,3})") == 5
     assert evaluate("List.Max({}, 0)") == 0
     assert evaluate("List.Max({})") is None

@@ -105,6 +105,25 @@ ENUM_AND_TYPE_VALUES = {
     "TextEncoding.Windows",
     "TextEncoding.Ascii",
     "TextEncoding.Utf8",
+    # Trace levels, byte order, and binary-occurrence kinds. Each has its own
+    # `<name>-type` page carrying an "Allowed values" table listing exactly
+    # these members (tracelevel-type, byteorder-type, binaryoccurrence-type
+    # all return 200; a made-up "bogus-nonexistent-type" 404s, which is the
+    # control that makes those three checks mean anything). Diagnostics.Trace
+    # and the BinaryFormat.* combinators are their only consumers, and
+    # Microsoft's own worked examples for BinaryFormat.Group use
+    # BinaryOccurrence.* by name - an example that cannot resolve its own
+    # identifiers is the one thing the doc-example gate never tolerates.
+    "TraceLevel.Critical",
+    "TraceLevel.Error",
+    "TraceLevel.Warning",
+    "TraceLevel.Information",
+    "TraceLevel.Verbose",
+    "ByteOrder.LittleEndian",
+    "ByteOrder.BigEndian",
+    "BinaryOccurrence.Optional",
+    "BinaryOccurrence.Required",
+    "BinaryOccurrence.Repeating",
     # Day-of-week constants.
     "Day.Monday",
     "Day.Tuesday",

@@ -624,9 +624,9 @@ def test_time_to_text_rejects_other_culture():
 
 
 # --------------------------------------------------------------------------
-# Table.Sort / Text.From behave as documented for date-family values
-# (module docstring points 1 and 2 - verified end-to-end, not asserted from
-# the outside, since those functions live in files this task does not own)
+# Table.Sort behaves as documented for date-family values (module docstring
+# point 1 - verified end-to-end, not asserted from the outside, since that
+# function lives in a file this task does not own)
 # --------------------------------------------------------------------------
 
 
@@ -643,13 +643,24 @@ def test_table_sort_orders_a_date_column_correctly():
     ]
 
 
-def test_text_from_on_a_date_is_a_clean_refusal_not_a_silent_answer():
-    # Matches real Power Query: Text.From does not accept date-family
-    # values - Date.ToText exists for that. This is _text.py's own
+def test_text_from_on_a_date_agrees_with_date_totext():
+    # This test used to pin the OPPOSITE: Text.From(#date(...)) raising
+    # EvalError, on the theory that "real Text.From does not accept
+    # date-family values either". That theory was wrong - Text.From's own
+    # page (learn.microsoft.com/en-us/powerquery-m/text-from) lists "The
+    # value can be a number, date, time, datetime, datetimezone, logical,
+    # duration, or binary value" in its own About text, and _datetime.py's
+    # module docstring point 2 (which this test quoted) is now stale for
+    # the same reason - out of scope to fix here since this task does not
+    # own that file. Text.From on a date is grounded in Text.Format's own
+    # Example 2, which renders #date(2015, 3, 10) as "3/10/2015" - exactly
+    # Date.ToText's "d" (short date) pattern. This is _text.py's own
     # behaviour (unowned by this module), verified end-to-end so a future
     # change to either module surfaces here if it regresses.
-    with pytest.raises(EvalError, match="date"):
-        evaluate("Text.From(#date(2024,1,31))")
+    assert evaluate("Text.From(#date(2024,1,31))") == "1/31/2024"
+    assert evaluate("Text.From(#date(2024,1,31))") == evaluate(
+        'Date.ToText(#date(2024,1,31), "d")'
+    )
 
 
 # --------------------------------------------------------------------------

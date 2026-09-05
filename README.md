@@ -17,7 +17,7 @@ pq check  report.pq                     # lint it in CI
 ```
 
 <!-- coverage:start -->
-pqtools implements **476 of the 634** functions in Microsoft's Power Query M reference (75%). Every one of the remaining 158 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+pqtools implements **547 of the 635** functions in Microsoft's Power Query M reference (86%). Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
 
 What it is for, in one line each:
@@ -223,20 +223,21 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 557 builtins.
+and calling them; `try ... otherwise ...`; and these 638 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
 
 ```
 Text.AfterDelimiter Text.At Text.BeforeDelimiter Text.BetweenDelimiters
-Text.Clean Text.Combine Text.Contains Text.End Text.EndsWith Text.From
-Text.FromBinary Text.InferNumberType Text.Insert Text.Length Text.Lower
-Text.Middle Text.NewGuid Text.PadEnd Text.PadStart Text.PositionOf
-Text.PositionOfAny Text.Proper Text.Range Text.Remove Text.RemoveRange
-Text.Repeat Text.Replace Text.ReplaceRange Text.Reverse Text.Select
-Text.Split Text.SplitAny Text.Start Text.StartsWith Text.ToBinary
-Text.ToList Text.Trim Text.TrimEnd Text.TrimStart Text.Type Text.Upper
+Text.Clean Text.Combine Text.Contains Text.End Text.EndsWith Text.Format
+Text.From Text.FromBinary Text.InferNumberType Text.Insert Text.Length
+Text.Lower Text.Middle Text.NewGuid Text.PadEnd Text.PadStart
+Text.PositionOf Text.PositionOfAny Text.Proper Text.Range Text.Remove
+Text.RemoveRange Text.Repeat Text.Replace Text.ReplaceRange Text.Reverse
+Text.Select Text.Split Text.SplitAny Text.Start Text.StartsWith
+Text.ToBinary Text.ToList Text.Trim Text.TrimEnd Text.TrimStart Text.Type
+Text.Upper
 Number.Abs Number.Acos Number.Asin Number.Atan Number.Atan2
 Number.BitwiseAnd Number.BitwiseNot Number.BitwiseOr Number.BitwiseShiftLeft
 Number.BitwiseShiftRight Number.BitwiseXor Number.Combinations Number.Cos
@@ -293,11 +294,18 @@ Table.Sort Table.Split Table.SplitAt Table.SplitColumn Table.StopFolding
 Table.ToColumns Table.ToList Table.ToRecords Table.ToRows
 Table.TransformColumnNames Table.TransformColumnTypes Table.TransformColumns
 Table.TransformRows Table.Transpose Table.Unpivot Table.UnpivotOtherColumns
-Type.Is Type.IsNullable Type.NonNullable
-Value.Add Value.As Value.Compare Value.Divide Value.Equals Value.Is
-Value.Metadata Value.Multiply Value.NativeQuery Value.NullableEquals
-Value.Optimize Value.RemoveMetadata Value.ReplaceMetadata Value.Subtract
-Value.Type
+Type.AddTableKey Type.ClosedRecord Type.Facets Type.ForFunction
+Type.ForRecord Type.FunctionParameters Type.FunctionRequiredParameters
+Type.FunctionReturn Type.Is Type.IsNullable Type.IsOpenRecord Type.ListItem
+Type.NonNullable Type.OpenRecord Type.RecordFields Type.ReplaceFacets
+Type.ReplaceTableKeys Type.ReplaceTablePartitionKey Type.TableColumn
+Type.TableKeys Type.TablePartitionKey Type.TableRow Type.TableSchema
+Type.Union
+Value.Add Value.Alternates Value.As Value.Compare Value.Divide Value.Equals
+Value.Expression Value.FromText Value.Is Value.Metadata Value.Multiply
+Value.NativeQuery Value.NullableEquals Value.Optimize Value.RemoveMetadata
+Value.ReplaceMetadata Value.ReplaceType Value.Subtract Value.Type
+Value.VersionIdentity Value.Versions
 Date.AddDays Date.AddMonths Date.AddQuarters Date.AddWeeks Date.AddYears
 Date.Day Date.DayOfWeek Date.DayOfWeekName Date.DayOfYear Date.DaysInMonth
 Date.EndOfDay Date.EndOfMonth Date.EndOfQuarter Date.EndOfWeek
@@ -364,7 +372,8 @@ Combiner.CombineTextByDelimiter Combiner.CombineTextByEachDelimiter
 Combiner.CombineTextByLengths Combiner.CombineTextByPositions
 Combiner.CombineTextByRanges
 Replacer.ReplaceText Replacer.ReplaceValue
-Comparer.FromCulture Comparer.Ordinal Comparer.OrdinalIgnoreCase
+Comparer.Equals Comparer.FromCulture Comparer.Ordinal
+Comparer.OrdinalIgnoreCase
 Precision.Decimal Precision.Double
 Order.Ascending Order.Descending
 JoinKind.FullOuter JoinKind.Inner JoinKind.LeftAnti JoinKind.LeftOuter
@@ -378,22 +387,37 @@ QuoteStyle.Csv QuoteStyle.None
 TextEncoding.Ascii TextEncoding.BigEndianUnicode TextEncoding.Unicode
 TextEncoding.Utf16 TextEncoding.Utf8 TextEncoding.Windows
 GroupKind.Global GroupKind.Local
-Int8.Type
-Int16.Type
-Int32.Type
-Int64.Type
-Single.Type
-Double.Type
-Decimal.Type
-Currency.Type
-Byte.Type
+Int8.From Int8.Type
+Int16.From Int16.Type
+Int32.From Int32.Type
+Int64.From Int64.Type
+Single.From Single.Type
+Double.From Double.Type
+Decimal.From Decimal.Type
+Currency.From Currency.Type
+Byte.From Byte.Type
 Any.Type
+Function.From Function.Invoke Function.InvokeAfter Function.ScalarVector
 Expression.Constant Expression.Evaluate Expression.Identifier
-Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
-Day.Wednesday Percentage.Type PercentileMode.ExcelExc
+BinaryFormat.Binary BinaryFormat.Byte BinaryFormat.ByteOrder
+BinaryFormat.Choice BinaryFormat.Decimal BinaryFormat.Double
+BinaryFormat.Group BinaryFormat.Length BinaryFormat.List BinaryFormat.Null
+BinaryFormat.Record BinaryFormat.SignedInteger16
+BinaryFormat.SignedInteger32 BinaryFormat.SignedInteger64
+BinaryFormat.Single BinaryFormat.Text BinaryFormat.Transform
+BinaryFormat.UnsignedInteger16 BinaryFormat.UnsignedInteger32
+BinaryFormat.UnsignedInteger64 BinaryOccurrence.Optional
+BinaryOccurrence.Repeating BinaryOccurrence.Required ByteOrder.BigEndian
+ByteOrder.LittleEndian Day.Friday Day.Monday Day.Saturday Day.Sunday
+Day.Thursday Day.Tuesday Day.Wednesday Diagnostics.Trace Error.Record
+Geography.FromWellKnownText Geography.ToWellKnownText GeographyPoint.From
+Geometry.FromWellKnownText Geometry.ToWellKnownText GeometryPoint.From
+Percentage.From Percentage.Type PercentileMode.ExcelExc
 PercentileMode.ExcelInc PercentileMode.SqlCont PercentileMode.SqlDisc
 RankKind.Competition RankKind.Dense RankKind.Ordinal
-RelativePosition.FromEnd RelativePosition.FromStart
+RelativePosition.FromEnd RelativePosition.FromStart TraceLevel.Critical
+TraceLevel.Error TraceLevel.Information TraceLevel.Verbose
+TraceLevel.Warning
 #binary #date #datetime #datetimezone #duration #table #time
 ```
 

@@ -14,7 +14,7 @@ import datetime as dt
 
 import pytest
 
-from pqtools import EvalError, evaluate
+from pqtools import EvalError, UnsupportedError, evaluate
 from pqtools.io import IOBlockedError, IOPolicy
 
 # --------------------------------------------------------------------------
@@ -80,19 +80,32 @@ def test_a_handler_still_catches_ordinary_data_errors() -> None:
 
 
 # --------------------------------------------------------------------------
-# @ outer-scope reference
+# @ - M's inclusive identifier reference
 # --------------------------------------------------------------------------
 
 
-def test_at_prefixed_name_resolves_the_enclosing_binding() -> None:
+def test_at_prefixed_name_resolves_the_binding_being_defined() -> None:
     source = "let f = (n) => if n <= 1 then 1 else n * @f(n - 1) in f(5)"
     assert evaluate(source) == 120
 
 
-def test_at_prefixed_and_plain_recursion_agree() -> None:
-    plain = "let f = (n) => if n <= 1 then 1 else n * f(n - 1) in f(6)"
+def test_at_prefixed_and_plain_recursion_do_not_agree() -> None:
+    """This test used to assert they agree. That was the bug it was hiding.
+
+    M's grammar has two identifier references, and the difference is the
+    whole point of the `@`: a plain `f` is EXCLUSIVE and skips the binding
+    currently being defined, so it is not recursion at all; `@f` is
+    INCLUSIVE and names f itself. That is why every recursive M function in
+    the wild carries the `@`.
+
+    Treating them as interchangeable let a query run here and fail in Power
+    Query - the one outcome this package exists to prevent.
+    """
     at = "let f = (n) => if n <= 1 then 1 else n * @f(n - 1) in f(6)"
-    assert evaluate(plain) == evaluate(at) == 720
+    plain = "let f = (n) => if n <= 1 then 1 else n * f(n - 1) in f(6)"
+    assert evaluate(at) == 720
+    with pytest.raises(UnsupportedError, match="unknown identifier: f"):
+        evaluate(plain)
 
 
 # --------------------------------------------------------------------------
@@ -181,3 +194,145 @@ def test_policy_default_still_denies_after_all_this() -> None:
         evaluate('let S = Web.Contents("https://example.com") in S')
     assert IOPolicy().allow_net is False
     assert IOPolicy().allow_db is False
+
+
+# --------------------------------------------------------------------------
+# Record scope - a field expression can name its siblings
+# --------------------------------------------------------------------------
+#
+# `[a = 1, b = a + 1]` raised "unknown identifier: a" here for six releases,
+# through a suite that tested records constantly. Every one of those tests
+# wrote a record of literals or of already-bound names, because that is what
+# a test author reaches for when they need "a record". The reference does
+# not: `List.Generate`'s second documented example is
+#
+#     each [x = List.Count([y]), y = [y] & {x}]
+#
+# where the bare `x` in the second field is the first field and there is
+# nothing else in scope by that name. The example was unrunnable.
+
+
+def test_a_record_field_can_name_a_later_one() -> None:
+    """Order must not matter - the fields are lazy, exactly like `let`."""
+    assert evaluate("[a = b, b = 1]") == {"a": 1, "b": 1}
+
+
+def test_a_record_field_can_name_an_earlier_one() -> None:
+    assert evaluate("[a = 1, b = a + 1]") == {"a": 1, "b": 2}
+
+
+def test_a_record_cycle_is_an_error_naming_the_field() -> None:
+    """Not a hang, and not a silent fallback to an outer binding."""
+    with pytest.raises(EvalError, match="circular reference in 'a'"):
+        evaluate("[a = b, b = a]")
+
+
+def test_a_field_expression_sees_siblings_but_not_the_field_it_defines() -> None:
+    """M's exclusive-identifier rule, which three doc pages pin between them.
+
+    A plain `x` skips the binding CURRENTLY BEING DEFINED and resolves
+    outward; `@x` names it. Getting this wrong in either direction breaks a
+    documented result:
+
+      - fields not in scope at all   -> the List.Generate example below
+                                        dies on "unknown identifier: x"
+      - fields in scope unconditionally -> `[List.Sum = List.Sum]` becomes
+                                        a cycle, and expression-evaluate's
+                                        example 2 says the answer is 6
+
+    Both were implemented here, in that order, before the rule that makes
+    all three documented outputs true at once was found.
+    """
+    # A sibling: in scope.
+    assert evaluate("let x = 5 in [x = 1, y = x]") == {"x": 1, "y": 1}
+    # The field's own name: excluded, so it resolves outward.
+    assert evaluate("let x = 5 in [x = x]") == {"x": 5}
+    # A name the record does not define at all: resolves outward as ever.
+    assert evaluate("let x = 5 in [y = x]") == {"y": 5}
+    # With nothing outside to find, the exclusion is an honest error.
+    with pytest.raises(UnsupportedError, match="unknown identifier: a"):
+        evaluate("[a = a]")
+
+
+def test_the_expression_evaluate_environment_idiom_works() -> None:
+    """expression-evaluate, example 2 verbatim, stated output 6.
+
+    `[List.Sum = List.Sum]` is how M's own docs pass a library function
+    into an evaluated expression. Reading it as a cycle would break the
+    documented idiom for the whole function.
+    """
+    assert (
+        evaluate('Expression.Evaluate("List.Sum({1, 2, 3})", [List.Sum = List.Sum])')
+        == 6
+    )
+
+
+def test_a_let_binding_may_be_defined_from_the_one_it_shadows() -> None:
+    """`let a = 1 in let a = a + 1 in a` - the same rule, one level up.
+
+    This used to report a circular reference, because the inner `a` found
+    itself instead of the outer one.
+    """
+    assert evaluate("let a = 1 in let a = a + 1 in a") == 2
+
+
+def test_the_list_generate_example_from_the_reference_runs() -> None:
+    """list-generate, example 2, verbatim. It is the reason this exists."""
+    assert evaluate(
+        "List.Generate(\n"
+        "    () => [x = 1, y = {}],\n"
+        "    each [x] < 10,\n"
+        "    each [x = List.Count([y]), y = [y] & {x}],\n"
+        "    each [x]\n"
+        ")"
+    ) == [1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+def test_a_nested_record_sees_the_outer_record_it_is_defined_in() -> None:
+    assert evaluate("[a = 1, b = [c = a + 1]]") == {"a": 1, "b": {"c": 2}}
+
+
+# --------------------------------------------------------------------------
+# `optional` parameters on a user-defined function
+# --------------------------------------------------------------------------
+
+
+def test_an_optional_parameter_may_be_omitted() -> None:
+    """`(x, optional y) => ...` called with one argument.
+
+    Every parameter was treated as required, so the plainest custom
+    function with a default - the shape an author writes the moment one
+    argument is not always wanted - failed at the call site with an arity
+    error. The `optional` keyword parses as a Constant, and `_semantic`
+    filters Constants out, so the name and the declared type both read
+    correctly and only the flag was silently dropped.
+    """
+    assert evaluate("((x, optional y) => if y = null then x else x + y)(1)") == 1
+    assert evaluate("((x, optional y) => if y = null then x else x + y)(1, 2)") == 3
+
+
+def test_an_omitted_optional_parameter_is_null_inside_the_body() -> None:
+    assert evaluate("let f = (a, optional b, optional c) => {a, b, c} in f(1, 2)") == [
+        1,
+        2,
+        None,
+    ]
+
+
+def test_an_optional_parameters_declared_type_still_holds_when_supplied() -> None:
+    """`optional y as number` is a NULLABLE number, not an unchecked one.
+
+    Skipping the check entirely would throw away a real guarantee; applying
+    it to the absence would reject the very thing the parameter exists to
+    allow.
+    """
+    assert evaluate("((x, optional y as number) => x)(1)") == 1
+    with pytest.raises(EvalError, match="argument 'y': expected number, got text"):
+        evaluate('((x, optional y as number) => x)(1, "a")')
+
+
+def test_too_many_arguments_still_names_the_range() -> None:
+    with pytest.raises(EvalError, match=r"expects between 1 and 2 argument"):
+        evaluate("((x, optional y) => x)(1, 2, 3)")
+    with pytest.raises(EvalError, match=r"expects 1 argument"):
+        evaluate("((x) => x)()")

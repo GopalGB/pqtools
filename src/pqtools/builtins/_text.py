@@ -6,6 +6,7 @@ zero behaviour change) - see PRD-0.5.0-builtins.md.
 
 from __future__ import annotations
 
+import datetime
 import re
 import uuid as _uuid
 from typing import TYPE_CHECKING, Any
@@ -38,8 +39,17 @@ def _consume_budget(ctx: _Ctx, count: int) -> None:
 
 
 def _text_from(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.From", args, 1)
+    # Text.From(value as any, optional culture as nullable text) as
+    # nullable text. "The value can be a number, date, time, datetime,
+    # datetimezone, logical, duration, or binary value" (About, verbatim) -
+    # every one of those is handled below; culture is validated ONCE up
+    # front so every branch's refusal reads "Text.From: ..." rather than
+    # the name of whichever *.ToText/Binary.ToText it delegates to (all of
+    # which would reject the exact same non-invariant culture anyway).
+    _arity("Text.From", args, 1, 2)
     value = args[0]
+    culture = args[1] if len(args) == 2 else None
+    _check_invariant_culture("Text.From", culture, "culture-specific text formatting")
     if value is None:
         return None
     if isinstance(value, bool):
@@ -48,7 +58,163 @@ def _text_from(args: list[Any], ctx: _Ctx) -> Any:
         return _format_number(value)
     if isinstance(value, str):
         return value
+    if isinstance(value, bytes):
+        # Example 4 on Text.From's own page: converting
+        # Binary.FromText("10FF", BinaryEncoding.Hex) back with Text.From
+        # gives "EP8=" - base64, Binary.ToText's own default encoding
+        # (verified: base64.b64encode(bytes([0x10, 0xFF])) == b"EP8=").
+        # Delegating to Binary.ToText rather than re-encoding here is the
+        # same "one formatter per concept" reasoning the temporal branches
+        # below give for _datetime.py - imported lazily, the pattern
+        # _table.py's Table.AddColumn documents (the common non-binary
+        # path never pays for the import).
+        from ._connectors import _binary_to_text
+
+        return _binary_to_text([value], ctx)
+    if isinstance(value, datetime.datetime):
+        # datetime/datetimezone - checked before `datetime.date` below
+        # because datetime.datetime IS a datetime.date subclass (the same
+        # ordering trap _shared._type_name/_m_equal already document).
+        from ._datetime import _datetime_to_text, _datetimezone_to_text
+
+        if value.tzinfo is not None:
+            # No worked example anywhere in the M reference shows
+            # Text.From on a datetimezone value. DOCUMENTED CHOICE, not a
+            # verified fact: agree with DateTimeZone.ToText's own bare
+            # (no format argument) default rather than guess a
+            # locale "general" pattern nobody has pinned - that default
+            # is itself a deliberate, already-documented simplification
+            # (see _datetime.py's DateTimeZone.ToText: an unambiguous
+            # invariant ISO string that keeps the offset, chosen over a
+            # locale-formatted one). Pinned by
+            # test_text_format.py::test_text_from_datetimezone_has_no_ms_grounding.
+            return _datetimezone_to_text([value], ctx)
+        # GROUNDED: Text.From's own Example 2 -
+        # Text.From(#datetime(2024, 6, 24, 14, 32, 22)) ->
+        # "6/24/2024 2:32:22 PM". That is exactly DateTime.ToText's "G"
+        # (general date/long time) standard pattern - verified by running
+        # DateTime.ToText(#datetime(2024, 6, 24, 14, 32, 22), "G") through
+        # this package's own evaluator (`pq eval`) and getting the
+        # identical string back, not assumed from .NET documentation.
+        return _datetime_to_text([value, "G"], ctx)
+    if isinstance(value, datetime.date):
+        # GROUNDED: Text.Format's own Example 2 (this module's Text.Format
+        # is graded against it) renders #date(2015, 3, 10) as "3/10/2015",
+        # which is Date.ToText's "d" (short date) standard pattern -
+        # verified the same way as the datetime branch above:
+        # Date.ToText(#date(2015, 3, 10), "d") reproduces "3/10/2015"
+        # exactly.
+        from ._datetime import _date_to_text
+
+        return _date_to_text([value, "d"], ctx)
+    if isinstance(value, datetime.time):
+        # No worked example shows Text.From on a bare time value either.
+        # DOCUMENTED CHOICE, same reasoning as datetimezone above: agree
+        # with Time.ToText's own bare (ISO) default rather than guess an
+        # unpinned locale pattern.
+        from ._datetime import _time_to_text
+
+        return _time_to_text([value], ctx)
+    if isinstance(value, datetime.timedelta):
+        # GROUNDED: Text.Format's own Example 2 renders
+        # #duration(0, 0, 54, 40) as "00:54:40", which is exactly
+        # Duration.ToText's bare default - verified directly:
+        # Duration.ToText(#duration(0, 0, 54, 40)) reproduces "00:54:40".
+        # Duration.ToText has no culture parameter at all (its Syntax
+        # block is `(duration, optional format)` - the `format` argument
+        # is documented "Deprecated, will raise an error if not null"), so
+        # the upfront _check_invariant_culture call above is the only
+        # culture validation this branch gets; nothing is passed through.
+        from ._datetime import _duration_to_text
+
+        return _duration_to_text([value], ctx)
     raise EvalError(f"Text.From: unsupported value type: {_type_name(value)}")
+
+
+# #{0}/#{1}/... index a LIST argument; #[name] indexes a RECORD argument -
+# Text.Format's own two worked examples, one of each shape. The character
+# class excludes `[`/`]` rather than matching `\w+`, since a real M record
+# field name can contain spaces (Example 2's own #[distance]/#[city] are
+# plain identifiers, but nothing on the page says field names with spaces
+# are excluded, and #"Company ID"-style names appear elsewhere in this
+# reference).
+_FORMAT_TOKEN_RE = re.compile(r"#\{(\d+)\}|#\[([^\[\]]+)\]")
+
+
+def _text_format(args: list[Any], ctx: _Ctx) -> Any:
+    # Text.Format(formatString as text, arguments as any, optional culture
+    # as nullable text) as text. "Returns formatted text that is created
+    # by applying arguments from a list or record to a format string" -
+    # About, verbatim. Each substituted value is rendered by delegating to
+    # Text.From with the same culture, rather than a second formatter:
+    # Example 2's own output ("3/10/2015" for the date, "00:54:40" for the
+    # duration) is byte-for-byte what Text.From already produces for those
+    # same values under "en-US" (see _text_from above) - two independent
+    # renderers for one concept is the exact bug class this package keeps
+    # finding (module docstring cross-references throughout this file).
+    _arity("Text.Format", args, 2, 3)
+    format_string = _require_str(args[0])
+    arguments = args[1]
+    culture = args[2] if len(args) == 3 else None
+    _check_invariant_culture("Text.Format", culture, "culture-specific text formatting")
+    if not isinstance(arguments, (list, dict)):
+        raise EvalError(
+            "Text.Format: arguments must be a list (for #{N} placeholders) "
+            f"or a record (for #[name] placeholders), got {_type_name(arguments)}"
+        )
+
+    def substitute(match: re.Match[str]) -> str:
+        index_token, name_token = match.group(1), match.group(2)
+        if index_token is not None:
+            if not isinstance(arguments, list):
+                raise EvalError(
+                    f"Text.Format: format string references #{{{index_token}}} "
+                    "(a list index) but arguments is a record, not a list"
+                )
+            index = int(index_token)
+            # Microsoft's page does not say what an out-of-range index
+            # does - no example exercises it, and guessing "" (the way a
+            # naive str.format-style renderer would) is exactly the
+            # plausible-wrong-answer failure this package refuses to
+            # produce elsewhere (see _text_infer_number_type above for the
+            # same call). This fails loudly instead, naming the index and
+            # the list's real length. Pinned by test_text_format.py.
+            if index >= len(arguments):
+                raise EvalError(
+                    f"Text.Format: argument index {index} is out of range "
+                    f"for a list of {len(arguments)} value(s)"
+                )
+            value = arguments[index]
+        else:
+            assert name_token is not None  # one alternative always matches
+            if not isinstance(arguments, dict):
+                raise EvalError(
+                    f"Text.Format: format string references #[{name_token}] "
+                    "(a record field) but arguments is a list, not a record"
+                )
+            # Same "Microsoft does not say" gap as the index case above,
+            # same choice: name the missing field rather than substitute
+            # "". Pinned by test_text_format.py.
+            if name_token not in arguments:
+                raise EvalError(
+                    f"Text.Format: field {name_token!r} not found in the "
+                    f"arguments record (available: {sorted(arguments)})"
+                )
+            value = arguments[name_token]
+        rendered = _text_from([value, culture], ctx)
+        if rendered is None:
+            raise EvalError(
+                "Text.Format: cannot format a null value into text "
+                f"({match.group(0)} resolved to null)"
+            )
+        # _text_from is declared `-> Any` like every builtin in this
+        # registry; every one of its non-None branches already returns a
+        # str, so this is a defensive narrowing (satisfies mypy --strict
+        # and catches a future _text_from regression here rather than
+        # silently embedding a wrong-typed value in the result string).
+        return _require_str(rendered)
+
+    return _FORMAT_TOKEN_RE.sub(substitute, format_string)
 
 
 def _text_upper(args: list[Any], ctx: _Ctx) -> Any:
@@ -396,15 +562,53 @@ def _ordinal_sign(left: str, right: str) -> int:
     return 0
 
 
+def _non_text_compare(name: str, left: Any, right: Any) -> int:
+    """Ordering for the values an "Ordinal" comparison says nothing about.
+
+    These were text-only, on the stated grounds that every verified example
+    compared text and there was "no confirmed non-text behaviour to
+    implement". The evidence has since turned up: Table.RemoveMatchingRows
+    Example 2 passes Comparer.OrdinalIgnoreCase as the equation criteria for
+    a table whose columns are `OrderID = number`, `Product = text`,
+    `Quantity = number`, and the page's documented output has the matching
+    row REMOVED - which requires the comparer to accept the two numbers. The
+    signature agrees: `(x as any, y as any)`, not `(x as text, ...)`.
+
+    "Ordinal" describes how TEXT is compared; for anything else there is no
+    codepoint order to take and nothing to case-fold, so these fall back to
+    M's own default ordering - the same rule Value.Compare implements.
+    """
+    # Lazy, for the reason Table.AddColumn documents: _type imports nothing
+    # from here, and the common text path should not pay for the import.
+    from ._type import _default_compare
+
+    try:
+        return _default_compare(left, right)
+    except UnsupportedError as error:
+        raise UnsupportedError(f"{name}: {error}") from error
+
+
+def _compare_any(name: str, left: Any, right: Any, *, fold: bool) -> int:
+    if isinstance(left, str) and isinstance(right, str):
+        return _ordinal_sign(
+            left.casefold() if fold else left,
+            right.casefold() if fold else right,
+        )
+    if isinstance(left, str) or isinstance(right, str):
+        # One side text and the other not: M has no cross-type ordering, and
+        # inventing one here would silently decide a comparison the language
+        # itself refuses.
+        raise UnsupportedError(
+            f"{name}: cannot compare {_type_name(left)} with {_type_name(right)}"
+        )
+    return _non_text_compare(name, left, right)
+
+
 def _comparer_ordinal(args: list[Any], ctx: _Ctx) -> Any:
-    # Comparer.Ordinal(x as any, y as any) as number. Scoped to text: an
-    # "Ordinal" comparison is a raw codepoint comparison, which is a text
-    # concept, and every verified MS docs example compares text - there is
-    # no confirmed non-text behaviour to implement (Rule: never
-    # approximate). Python's `<`/`>` on `str` already compares by codepoint,
-    # which is exactly Ordinal semantics.
+    # Comparer.Ordinal(x as any, y as any) as number. Python's `<`/`>` on
+    # `str` compares by codepoint, which is exactly Ordinal semantics.
     _arity("Comparer.Ordinal", args, 2)
-    return _ordinal_sign(_require_str(args[0]), _require_str(args[1]))
+    return _compare_any("Comparer.Ordinal", args[0], args[1], fold=False)
 
 
 _comparer_ordinal.m_is_builtin_comparer = True  # type: ignore[attr-defined]
@@ -418,9 +622,7 @@ def _comparer_ordinal_ignore_case(args: list[Any], ctx: _Ctx) -> Any:
     # text is the literal reading of "Ordinal, ignoring case", not a guess
     # at a different algorithm.
     _arity("Comparer.OrdinalIgnoreCase", args, 2)
-    left = _require_str(args[0]).casefold()
-    right = _require_str(args[1]).casefold()
-    return _ordinal_sign(left, right)
+    return _compare_any("Comparer.OrdinalIgnoreCase", args[0], args[1], fold=True)
 
 
 _comparer_ordinal_ignore_case.m_is_builtin_comparer = True  # type: ignore[attr-defined]
@@ -452,6 +654,37 @@ def _comparer_from_culture(args: list[Any], ctx: _Ctx) -> Any:
 
 
 _comparer_from_culture.m_is_builtin_comparer = True  # type: ignore[attr-defined]
+
+
+def _comparer_equals(args: list[Any], ctx: _Ctx) -> Any:
+    # Comparer.Equals(comparer as function, x as any, y as any) as logical.
+    # "Returns a logical value based on the equality check over the two
+    # given values ... using the provided comparer" - a comparer is
+    # "a function that accepts two arguments and returns -1, 0, or 1", so
+    # this invokes it and reads whether the result is exactly 0. No
+    # upfront "is `comparer` a function" check: ctx.invoke already raises
+    # `"<type> value is not a function"` for a non-invocable value, the
+    # same way every OTHER comparer-accepting function in this codebase
+    # (List.Sort's criteria, List.PositionOf's equationCriteria, ...)
+    # already lets that error come from the call itself rather than
+    # duplicating the check.
+    #
+    # The page's only worked example - Comparer.Equals(Comparer.
+    # FromCulture("en-US"), "1", "A") -> false - never actually reaches
+    # this function: `Comparer.FromCulture("en-US")` is itself a call, and
+    # M evaluates call arguments eagerly, so `_comparer_from_culture`
+    # above raises UnsupportedError before Comparer.Equals is ever
+    # invoked. Pinned instead against Comparer.Ordinal/
+    # Comparer.OrdinalIgnoreCase, the two comparers this package actually
+    # implements - see test_tail_namespaces.py.
+    _arity("Comparer.Equals", args, 3)
+    comparer, x, y = args
+    result = ctx.invoke(comparer, [x, y], ctx)
+    if isinstance(result, bool) or not isinstance(result, (int, float)):
+        raise EvalError(
+            f"Comparer.Equals: comparer must return a number, got {_type_name(result)}"
+        )
+    return result == 0
 
 
 def _resolve_text_comparer(value: Any, fn_name: str) -> bool:
@@ -942,6 +1175,7 @@ def _text_infer_number_type(args: list[Any], ctx: _Ctx) -> Any:
 # families are implemented in parallel.
 BUILTINS: dict[str, Any] = {
     "Text.From": _text_from,
+    "Text.Format": _text_format,
     "Text.Upper": _text_upper,
     "Text.Lower": _text_lower,
     "Text.Length": _text_length,
@@ -969,6 +1203,7 @@ BUILTINS: dict[str, Any] = {
     "Comparer.Ordinal": _comparer_ordinal,
     "Comparer.OrdinalIgnoreCase": _comparer_ordinal_ignore_case,
     "Comparer.FromCulture": _comparer_from_culture,
+    "Comparer.Equals": _comparer_equals,
     "Text.Insert": _text_insert,
     "Text.Proper": _text_proper,
     "Text.Clean": _text_clean,

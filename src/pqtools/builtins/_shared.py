@@ -207,7 +207,12 @@ def _from_text_options(name: str, rest: list[Any]) -> tuple[str | None, Any]:
     return fmt, culture
 
 
-def _from_text(name: str, delegate: Any, options: str = "record") -> Any:
+def _from_text(
+    name: str,
+    delegate: Any,
+    options: str = "record",
+    parse_format: Any = None,
+) -> Any:
     """Build ``X.FromText`` from the family's own ``X.From``.
 
     Delegating rather than re-parsing is the point: a second parser for the
@@ -230,6 +235,12 @@ def _from_text(name: str, delegate: Any, options: str = "record") -> Any:
                    same defect as an invented function name: the call runs
                    here and fails in Power Query.
 
+    ``parse_format`` is the family's ``[Format = ...]`` parser, supplied by
+    the temporal module (this one cannot import it - ``_datetime`` imports
+    ``_shared``). Without it a Format string is refused rather than
+    silently ignored, which is the behaviour Number/Duration/Logical keep:
+    none of them documents a Format option at all.
+
     There were two copies of this factory, one per module, differing only in
     what they imported. Table.Sort had two copies of its criteria parser and
     both carried the same bug, so this one lives in exactly one place.
@@ -239,13 +250,9 @@ def _from_text(name: str, delegate: Any, options: str = "record") -> Any:
 
     def run(args: list[Any], ctx: Any) -> Any:
         _arity(name, args, 1, 1 if options == "none" else 2)
+        fmt = None
         if options == "record":
             fmt, culture = _from_text_options(name, args[1:])
-            if fmt is not None:
-                raise UnsupportedError(
-                    f"{name}: a custom/standard Format string for parsing "
-                    "(as opposed to formatting) is not implemented"
-                )
         elif options == "culture":
             culture = args[1] if len(args) == 2 else None
             if isinstance(culture, dict):
@@ -264,6 +271,13 @@ def _from_text(name: str, delegate: Any, options: str = "record") -> Any:
             return None
         if not isinstance(value, str):
             raise EvalError(f"{name}: expected text, got {_type_name(value)}")
+        if fmt is not None:
+            if parse_format is None:
+                raise UnsupportedError(
+                    f"{name}: a custom/standard Format string for parsing "
+                    "(as opposed to formatting) is not implemented"
+                )
+            return parse_format(name, value, fmt)
         try:
             return delegate([value], ctx)
         except EvalError as error:
@@ -319,6 +333,59 @@ def _check_invariant_culture(name: str, culture: Any, detail: str) -> None:
 
 
 _CULTURE_SCOPE = "(pqtools only implements invariant/en-US)"
+
+
+def _column_selection(value: Any, what: str) -> list[str] | None:
+    """`columns` as either a list of names or a table TYPE.
+
+    "columns: (Optional) A list of the table's column names, or the table's
+    type" - Table.FromRecords, verbatim. Only the names are read: which
+    columns the result has, and in what order, is all this argument decides
+    here. The declared field TYPES are not applied, because Power Query
+    ascribes them without converting - `type table [A = number]` over text
+    data does not parse the text - so honouring the names and ignoring the
+    types is the faithful half, not a shortcut.
+    """
+    if value is None:
+        return None
+    # Imported inside the branch for the reason Table.AddColumn documents:
+    # _type imports nothing from here, and the common path should not pay.
+    from ._type import _MType
+
+    if isinstance(value, _MType):
+        if value.field_names is None:
+            raise EvalError(
+                f"{what}: that type value names no columns (expected a table "
+                "type such as `type table [A = text, B = number]`)"
+            )
+        return list(value.field_names)
+    return _field_name_list(value)
+
+
+# MissingField.Error / Ignore / UseNull, the real M enum values (0 / 1 / 2,
+# confirmed against the MissingField.Type page). This lived in _record.py
+# while three Table.* functions needed it too, and a fourth
+# (Table.ReorderColumns) simply refused the argument for want of it.
+_MISSING_FIELD_ERROR = 0
+_MISSING_FIELD_IGNORE = 1
+_MISSING_FIELD_USE_NULL = 2
+
+
+def _missing_field_mode(value: Any) -> int:
+    """Validate an optional `missingField as nullable number` argument."""
+    if value is None:
+        return _MISSING_FIELD_ERROR
+    mode = _require_int(value)
+    if mode not in (
+        _MISSING_FIELD_ERROR,
+        _MISSING_FIELD_IGNORE,
+        _MISSING_FIELD_USE_NULL,
+    ):
+        raise UnsupportedError(
+            "missingField must be MissingField.Error (0), MissingField.Ignore "
+            "(1), or MissingField.UseNull (2)"
+        )
+    return mode
 
 
 def _sort_criteria(spec: Any, what: str) -> list[tuple[str, bool]]:

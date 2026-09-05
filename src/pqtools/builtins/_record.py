@@ -9,11 +9,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ._shared import (
+    _MISSING_FIELD_ERROR,
+    _MISSING_FIELD_USE_NULL,
     EvalError,
     UnsupportedError,
     _arity,
     _field_name_list,
-    _require_int,
+    _missing_field_mode,
     _require_list,
     _require_record,
     _require_str,
@@ -23,30 +25,10 @@ from ._shared import (
 if TYPE_CHECKING:
     from ..evaluate import _Ctx
 
-# MissingField.Error / Ignore / UseNull are the real M enum values (0 / 1 /
-# 2 respectively - confirmed against MissingField.Type docs). As with
-# Occurrence.* (see _text.py), the bare identifiers can only resolve via
-# evaluate.py's hardcoded enum-import mechanism (out of this module's
-# ownership for this task) - passing the literal integer works today.
-_MISSING_FIELD_ERROR = 0
-_MISSING_FIELD_IGNORE = 1
-_MISSING_FIELD_USE_NULL = 2
-
-
-def _missing_field_mode(value: Any) -> int:
-    if value is None:
-        return _MISSING_FIELD_ERROR
-    mode = _require_int(value)
-    if mode not in (
-        _MISSING_FIELD_ERROR,
-        _MISSING_FIELD_IGNORE,
-        _MISSING_FIELD_USE_NULL,
-    ):
-        raise UnsupportedError(
-            "missingField must be MissingField.Error (0), MissingField.Ignore "
-            "(1), or MissingField.UseNull (2)"
-        )
-    return mode
+# MissingField.Error / Ignore / UseNull now live in _shared.py: the Table.*
+# family needs the same three values, and the note that used to sit here -
+# that the bare identifiers could not resolve - is no longer true. _enums.py
+# registers them, so `MissingField.UseNull` works in a query as written.
 
 
 def _record_field_builtin(args: list[Any], ctx: _Ctx) -> Any:

@@ -814,15 +814,20 @@ def test_datetimezone_from_text_refuses_a_non_invariant_culture() -> None:
         evaluate('DateTimeZone.FromText("30.12.2010 02:04:50 +02:00", "de-DE")')
 
 
-def test_datetimezone_from_text_refuses_a_format_string() -> None:
-    # REFUSAL: parsing by a custom/standard format string is the reverse of
-    # `_format_custom` and is not implemented. Silently ignoring the option
-    # would parse text the caller never asked to be parsed that way.
-    with pytest.raises(UnsupportedError, match="Format"):
-        evaluate(
-            'DateTimeZone.FromText("2009-06-15T13:45:30.0000000-07:00", '
-            '[Format="O", Culture="en-US"])'
-        )
+def test_datetimezone_from_text_honours_the_round_trip_format() -> None:
+    # This was a REFUSAL, and the refusal was the defect: the expression
+    # below is example 3 on Microsoft's own datetimezone-fromtext page, so
+    # the documented behaviour was to return a value. `_format_custom`'s
+    # inverse now exists (tests/test_datetime_format_parsing.py); "O" is
+    # the one standard format that is not expressible as a custom pattern,
+    # because its offset may be a literal "Z".
+    assert evaluate(
+        'DateTimeZone.FromText("2009-06-15T13:45:30.0000000-07:00", '
+        '[Format="O", Culture="en-US"])'
+    ) == evaluate("#datetimezone(2009, 6, 15, 13, 45, 30, -7, 0)")
+    assert evaluate(
+        'DateTimeZone.FromText("2009-06-15T13:45:30.0000000Z", [Format="O"])'
+    ) == evaluate("#datetimezone(2009, 6, 15, 13, 45, 30, 0, 0)")
 
 
 def test_datetimezone_from_text_refuses_an_unknown_option() -> None:

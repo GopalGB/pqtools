@@ -258,12 +258,82 @@ def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
     return response
 
 
+# M's character escapes. `""` is handled alongside them below (it is a
+# doubled delimiter, not a `#(...)` sequence).
+_TEXT_ESCAPES = {"cr": "\r", "lf": "\n", "tab": "\t", "#": "#"}
+
+
+def _decode_escape(inner: str, token: str) -> str:
+    """Decode the body of one ``#(...)`` sequence.
+
+    Comma-separated, so `#(cr,lf)` is one sequence producing two characters -
+    which is how every M query that wants a Windows line ending writes it.
+    """
+    if not inner:
+        raise ParseError(f"empty escape sequence #() in {token}")
+    out = []
+    for item in inner.split(","):
+        if item in _TEXT_ESCAPES:
+            out.append(_TEXT_ESCAPES[item])
+            continue
+        if len(item) in (4, 8) and all(c in "0123456789abcdefABCDEF" for c in item):
+            code = int(item, 16)
+            if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
+                raise ParseError(
+                    f"escape #({item}) is not a Unicode code point, in {token}"
+                )
+            out.append(chr(code))
+            continue
+        raise ParseError(
+            f"unknown escape #({item}) in {token}: expected cr, lf, tab, #, "
+            "or 4 or 8 hex digits"
+        )
+    return "".join(out)
+
+
+def decode_escapes(body: str, token: str) -> str:
+    """Decode the BODY of a text literal or quoted identifier.
+
+    M gives both forms the same contents: the grammar spells a
+    quoted-identifier as ``#"`` followed by text-literal characters, which
+    include the ``#(...)`` escape sequences. One decoder for both, because
+    there were two and only one of them decoded anything - see
+    `unquote_identifier` for what that cost.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == '"' and body[index + 1 : index + 2] == '"':
+            out.append('"')
+            index += 2
+        elif char == "#" and body[index + 1 : index + 2] == "(":
+            close = body.find(")", index + 2)
+            if close == -1:
+                raise ParseError(f"unterminated escape sequence in {token}")
+            out.append(_decode_escape(body[index + 2 : close], token))
+            index = close + 1
+        else:
+            # A bare `#` is an ordinary character in M unless `(` follows it.
+            out.append(char)
+            index += 1
+    return "".join(out)
+
+
 def unquote_identifier(text: str) -> str:
     """``#"First Name"`` -> ``First Name``; anything else unchanged.
 
-    M spells an identifier that is not a bare name as ``#"..."``, with ``""``
-    for an embedded quote. The ``#"`` and ``"`` are syntax, not part of the
-    name.
+    M spells an identifier that is not a bare name as ``#"..."``. The ``#"``
+    and ``"`` are syntax, not part of the name, and what sits between them is
+    text-literal content - so ``""`` is an embedded quote AND ``#(tab)`` is a
+    tab, exactly as in a string.
+
+    That second half was missing, and Microsoft's own Table.TransformColumnNames
+    Example 1 is the proof: it names a column ``#"Col#(tab)umn"`` and expects
+    ``Text.Clean`` to yield ``Column``. Text.Clean strips control characters,
+    so it can only produce ``Column`` if the identifier really does contain a
+    tab. pqtools read the name as the twelve literal characters
+    ``Col#(tab)umn``, which Text.Clean then left alone.
 
     This lives in core because two independent code paths read identifiers -
     the evaluator (`evaluate._identifier_text`) and the section splitter
@@ -273,7 +343,17 @@ def unquote_identifier(text: str) -> str:
     by that name.
     """
     if len(text) >= 3 and text.startswith('#"') and text.endswith('"'):
-        return text[2:-1].replace('""', '"')
+        body = text[2:-1]
+        try:
+            return decode_escapes(body, text)
+        except ParseError:
+            # A name is not data. `pq list` on a real workbook must not refuse
+            # the whole file because one query name holds a `#(` that is not a
+            # valid escape; keeping the raw name lists it and lets the user
+            # act. Text literals take the strict path - see
+            # evaluate._parse_text_literal - because there a bad escape is a
+            # bad VALUE, and passing it through would corrupt the result.
+            return body.replace('""', '"')
     return text
 
 

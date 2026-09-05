@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from . import (
+    _binaryformat,
     _connectors,
     _datetime,
     _enums,
@@ -58,6 +59,7 @@ _MODULES = (
     _table_shape,
     _datetime,
     _misc,
+    _binaryformat,
 )
 
 

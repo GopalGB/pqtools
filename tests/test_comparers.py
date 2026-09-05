@@ -34,11 +34,33 @@ def test_comparer_ordinal_ignore_case_verified_example():
     assert evaluate('Comparer.OrdinalIgnoreCase("abc", "abd")') == -1
 
 
-def test_comparer_ordinal_requires_text():
-    # Scoped to text (never approximate a non-text "Ordinal" rule with no
-    # verified definition) - a clear type error, not a silent wrong answer.
-    with pytest.raises(EvalError):
-        evaluate("Comparer.Ordinal(1, 2)")
+def test_comparer_ordinal_compares_non_text_values_too():
+    """This asserted the opposite, on a premise that has since been settled.
+
+    The old reasoning was sound at the time: an "Ordinal" comparison is a
+    codepoint rule, every verified example compared text, and inventing a
+    non-text rule would have been approximation. But the evidence existed and
+    had not been looked for. Table.RemoveMatchingRows Example 2 passes
+    Comparer.OrdinalIgnoreCase as the equation criteria for a table whose
+    columns are `OrderID = number`, `Product = text`, `Quantity = number`,
+    and the page's printed output has the matching row REMOVED - which is
+    only reachable if the comparer accepts the two numbers. The signature
+    says the same thing plainly: `(x as any, y as any)`.
+
+    "Ordinal" governs how TEXT is compared. For everything else there is no
+    codepoint order to take, so these defer to M's own default ordering -
+    the rule Value.Compare already implements here.
+    """
+    assert evaluate("Comparer.Ordinal(1, 2)") == -1
+    assert evaluate("Comparer.OrdinalIgnoreCase(2, 2)") == 0
+    assert evaluate("Comparer.Ordinal(#date(2021, 1, 1), #date(2020, 1, 1))") == 1
+
+
+def test_comparer_ordinal_still_refuses_to_compare_across_types():
+    # M has no cross-type ordering. Inventing one here would silently decide
+    # a comparison the language itself declines to make.
+    with pytest.raises((EvalError, UnsupportedError)):
+        evaluate('Comparer.Ordinal("a", 2)')
 
 
 def test_comparer_from_culture_is_refused_when_called():

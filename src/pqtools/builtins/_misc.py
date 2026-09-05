@@ -33,8 +33,10 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _format_number,
     _require_int,
     _require_list,
+    _require_number,
     _require_record,
     _require_str,
     _type_name,
@@ -933,6 +935,530 @@ def _combiner_combine_text_by_ranges(args: list[Any], ctx: _Ctx) -> Any:
     return _combine
 
 
+# --------------------------------------------------------------------------
+# Function.* - function-values.html functions. Verified against each one's
+# own page (function-from, function-invoke, function-invokeafter,
+# function-scalarvector); none of the four has any dependency outside pure
+# computation, which is what puts them here rather than in catalog.py's
+# "engine" bucket (Function.IsDataSource is a genuine "engine" case - see
+# scripts/sync_m_catalog.py - because IT asks the Mashup Engine's own
+# function-classification metadata a question, where these four only ever
+# combine values the caller already handed them).
+#
+# All four accept ``functionType``/``scalarFunctionType`` without
+# inspecting its declared parameter COUNT, because pqtools's type system
+# does not model ``type function (...) as ...`` values at all -
+# builtins/_type.py's own module docstring lists "type function ..."
+# explicitly among the compound type shapes it refuses, and
+# evaluate.py's `_eval_type_primary` raises before that literal ever
+# becomes a value. That means Microsoft's own worked examples for
+# Function.From and Function.ScalarVector - both of which open with a
+# `type function (...)` literal - cannot reach either function at all in
+# pqtools today: the failure happens one AST node up, in a file this task
+# does not touch. It is a real, pre-existing gap, not something to paper
+# over here, so both functions are written to need nothing from that type
+# value beyond what a caller can also supply through `--bind` (an
+# arbitrary object exposing a `field_names` tuple, the same attribute
+# `_MType` already carries for `type table [...]`) - see
+# test_tail_namespaces.py, which exercises the real logic that way.
+# --------------------------------------------------------------------------
+
+
+def _function_from(args: list[Any], ctx: _Ctx) -> Any:
+    # Function.From(functionType as type, function as function) as
+    # function. "Takes a unary function `function` and creates a new
+    # function ... that constructs a list out of its arguments and passes
+    # it to `function`" - verified against both worked examples (List.Sum
+    # over {2,1} -> 3; a lambda over {"2","1"} -> "21"). The returned
+    # function is a plain Python callable, so it accepts however many
+    # arguments a call site gives it - `functionType`'s declared arity is
+    # advisory to a real M type-checker, not something this evaluator's
+    # calling convention needs to enforce (a bare ``_Lambda`` already
+    # enforces its OWN arity in evaluate.py's `_invoke`).
+    _arity("Function.From", args, 2)
+    _function_type, delegate = args
+
+    def _wrapper(call_args: list[Any], call_ctx: _Ctx) -> Any:
+        return call_ctx.invoke(delegate, [list(call_args)], call_ctx)
+
+    return _wrapper
+
+
+def _function_invoke(args: list[Any], ctx: _Ctx) -> Any:
+    # Function.Invoke(function as function, args as list) as any. Verified:
+    # Function.Invoke(Record.FieldNames, {[A = 1, B = 2]}) -> {"A", "B"}.
+    # Unlike Function.From/Function.ScalarVector, this example carries no
+    # `type function (...)` literal at all, so it runs end to end.
+    _arity("Function.Invoke", args, 2)
+    function, call_args = args
+    return ctx.invoke(function, _require_list(call_args), ctx)
+
+
+def _function_invoke_after(args: list[Any], ctx: _Ctx) -> Any:
+    # Function.InvokeAfter(function as function, delay as duration) as any.
+    # "Returns the result of invoking `function` after `delay` has passed."
+    # The page has no worked example to pin a return value against, only
+    # the About sentence above.
+    #
+    # pqtools evaluates one expression tree synchronously, on one thread,
+    # with no scheduler or event loop - there is nothing here for a real
+    # wait to accomplish, since the RESULT of invoking `function` does not
+    # depend on how long the wait lasted, and an actual `time.sleep(delay)`
+    # would make every query - and this package's own test suite - as slow
+    # as its authors' longest chosen timeout for zero observable benefit.
+    # `delay` is still validated as a genuine duration (catching a caller
+    # who passed the wrong argument by mistake), and `function` is invoked
+    # immediately: "invoke now" is the honest behaviour for a deterministic
+    # evaluator, where "invoke never" would silently drop the result and
+    # "block until delay elapses" would only be honest in a host that
+    # actually has a clock loop to hand control back to. Pinned in
+    # test_tail_namespaces.py together with this reasoning.
+    _arity("Function.InvokeAfter", args, 2)
+    function, delay = args
+    if not isinstance(delay, datetime.timedelta):
+        raise EvalError(
+            f"Function.InvokeAfter: delay must be a duration, got {_type_name(delay)}"
+        )
+    return ctx.invoke(function, [], ctx)
+
+
+def _scalarvector_param_names(function_type: Any, arity: int) -> list[str]:
+    """Column names for the one-row table handed to ``vectorFunction``.
+
+    Real M reads these off ``scalarFunctionType``'s own
+    ``type function (name as T, ...) as R`` parameter list - see the
+    module comment above for why pqtools cannot evaluate that literal at
+    all. ``_MType`` (builtins/_type.py) already carries a ``field_names``
+    tuple for ``type table [...]``; duck-typing onto that same attribute
+    here, rather than inventing a second name for the same idea, means the
+    day function-type support is added there this starts reading the real
+    parameter names with no change in this file.
+    """
+    names = getattr(function_type, "field_names", None)
+    if isinstance(names, tuple) and len(names) == arity:
+        return list(names)
+    return [f"Column{i + 1}" for i in range(arity)]
+
+
+def _function_scalarvector(args: list[Any], ctx: _Ctx) -> Any:
+    # Function.ScalarVector(scalarFunctionType as type, vectorFunction as
+    # function) as function. Verified against both worked examples by hand
+    # (see test_tail_namespaces.py, which runs the same computation
+    # through `--bind` since the doc's own `type function (...)` literal
+    # cannot evaluate here - see the module comment above): the returned
+    # scalar function packs its call arguments into a ONE-ROW table and
+    # hands that to `vectorFunction`, then unwraps the one-item result list
+    # `vectorFunction` must return for one input row.
+    #
+    # This never batches multiple calls into one `vectorFunction`
+    # invocation the way "when the scalar function is repeatedly applied
+    # for each row of a table ... vectorFunction will be applied once for
+    # all inputs" describes - pqtools has no query-plan analysis to notice
+    # a Table.AddColumn calling the same scalar function once per row and
+    # rewrite that into one batched call. The documented CONTRACT still
+    # holds for a batch of exactly one: "vectorFunction must return a list
+    # of the same length as the input table, whose item at each position
+    # must be the same result as evaluating the scalar function on the
+    # input row of the same position." Only the performance benefit
+    # batching exists for is left unrealised here, not correctness - both
+    # worked examples' printed Output is reachable by a evaluator that
+    # never batches, because both are written to tolerate any chunk size
+    # down to one (Table.Split's own contract).
+    _arity("Function.ScalarVector", args, 2)
+    scalar_function_type, vector_function = args
+
+    def _scalar(call_args: list[Any], call_ctx: _Ctx) -> Any:
+        names = _scalarvector_param_names(scalar_function_type, len(call_args))
+        row = dict(zip(names, call_args, strict=True))
+        result = call_ctx.invoke(vector_function, [[row]], call_ctx)
+        result_list = _require_list(result)
+        if len(result_list) != 1:
+            raise EvalError(
+                "Function.ScalarVector: vectorFunction must return a list "
+                f"with one item per input row (got {len(result_list)} "
+                "item(s) for 1 row)"
+            )
+        return result_list[0]
+
+    return _scalar
+
+
+# --------------------------------------------------------------------------
+# Diagnostics.Trace - error-handling.html. TraceLevel.* is registered here
+# (not in _enums.py) because this function is its only consumer; numbering
+# verified against learn.microsoft.com/en-us/powerquery-m/tracelevel-type's
+# own "Allowed values" table (a bit-flag scheme - 1/2/4/8/16 - not a plain
+# 0..4 ordinal, so it was checked rather than guessed at the obvious
+# numbering).
+# --------------------------------------------------------------------------
+
+_TRACE_LEVEL: dict[str, int] = {
+    "TraceLevel.Critical": 1,
+    "TraceLevel.Error": 2,
+    "TraceLevel.Warning": 4,
+    "TraceLevel.Information": 8,
+    "TraceLevel.Verbose": 16,
+}
+
+
+def _diagnostics_trace(args: list[Any], ctx: _Ctx) -> Any:
+    # Diagnostics.Trace(traceLevel as number, message as anynonnull, value
+    # as any, optional delayed as nullable logical) as any. "Writes a
+    # trace message, if tracing is enabled, and returns value." pqtools has
+    # no host diagnostics pane, log file, or telemetry pipe for a trace
+    # message to reach, so there is nowhere honest for the tracing half of
+    # this function to go - it implements exactly the half a query's
+    # RESULT depends on (returning `value`) and is silent about tracing
+    # rather than pretending to write somewhere real.
+    #
+    # "An optional parameter delayed specifies whether to delay the
+    # evaluation of value until the message is traced" - verified against
+    # the page's own (only) worked example: `value` is passed as a
+    # zero-argument function precisely when `delayed` is true, and the
+    # printed Output is the CALLED result, not the function itself.
+    _arity("Diagnostics.Trace", args, 3, 4)
+    _require_number(args[0])
+    message = args[1]
+    if message is None:
+        raise EvalError("Diagnostics.Trace: message must not be null")
+    value = args[2]
+    delayed = args[3] if len(args) == 4 else None
+    if delayed is not None and not isinstance(delayed, bool):
+        raise EvalError("Diagnostics.Trace: delayed must be logical")
+    if delayed:
+        return ctx.invoke(value, [], ctx)
+    return value
+
+
+# --------------------------------------------------------------------------
+# Error.Record - error-handling.html.
+# --------------------------------------------------------------------------
+
+
+def _error_record(args: list[Any], ctx: _Ctx) -> Any:
+    # Error.Record(reason as text, optional message as nullable text,
+    # optional detail as any, optional parameters as nullable list,
+    # optional errorCode as nullable text) as record. Field names, order,
+    # and the Message.Format/Message.Parameters split verified against
+    # both of the page's own worked examples (the `Error = [...]`
+    # sub-record `try` prints back).
+    #
+    # `Message.Format` mirrors `message` ONLY when `parameters` is also
+    # supplied, and is null otherwise EVEN THOUGH `message` itself is not
+    # null. That is not a stated rule anywhere in the About text (which
+    # only describes what each parameter IS) - it is what BOTH examples
+    # show: Example 1 gives a message and omits parameters and prints
+    # Message.Format = null; Example 2 gives both and prints
+    # Message.Format equal to Message verbatim. Pinned to that pair of
+    # examples, not derived from a stated principle - see
+    # test_tail_namespaces.py.
+    #
+    # Calling this bare (not wrapped in `error ... `) is the only way to
+    # observe the full six-field record: evaluate.py's own
+    # `_eval_error_raising` rebuilds whatever `error <record>` raises into
+    # a NEW three-field record (Reason/Message/Detail only) before `try`
+    # ever sees it, which is evaluator-core code this task does not touch.
+    # Microsoft's two worked examples both wrap this function in
+    # `try ... error Error.Record(...)`, so pqtools's actual output for
+    # them is missing Message.Format/Message.Parameters/ErrorCode - a real
+    # divergence from the printed Output, caused by that unrelated
+    # function, not by anything here. Reported rather than hidden.
+    _arity("Error.Record", args, 1, 5)
+    reason = _require_str(args[0])
+    message = args[1] if len(args) >= 2 else None
+    if message is not None:
+        message = _require_str(message)
+    detail = args[2] if len(args) >= 3 else None
+    parameters = args[3] if len(args) >= 4 else None
+    if parameters is not None:
+        parameters = _require_list(parameters)
+    error_code = args[4] if len(args) >= 5 else None
+    if error_code is not None:
+        error_code = _require_str(error_code)
+    return {
+        "Reason": reason,
+        "Message": message,
+        "Detail": detail,
+        "Message.Format": message if parameters is not None else None,
+        "Message.Parameters": parameters,
+        "ErrorCode": error_code,
+    }
+
+
+# --------------------------------------------------------------------------
+# Geography.*/Geometry.* - record-functions.html's spatial pair. Neither
+# page (nor GeographyPoint.From's/GeometryPoint.From's own pages) carries a
+# single worked example, so no OUTPUT record shape is pinned by Microsoft
+# anywhere pqtools was told to ground against. The WKT grammar itself is
+# not Microsoft's to document, though - the About text on both
+# *WellKnownText pages says it verbatim: "WKT is a standard format defined
+# by the Open Geospatial Consortium (OGC)". So this implements the one
+# WKT geometry kind whose fields ARE fully pinned - POINT, via
+# GeographyPoint.From/GeometryPoint.From's own fully-specified parameter
+# lists (longitude/latitude or x/y, optional z, optional m, optional srid
+# with a documented default) - and refuses every other WKT geometry kind
+# (LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON,
+# GEOMETRYCOLLECTION) by name, because inventing a record shape for those
+# would be exactly the "parse succeeds, next step reads the wrong column"
+# failure catalog.py's own "shape" reason exists to name.
+#
+# The chosen record shape - `Kind = "Point"` plus the coordinate fields
+# spelled exactly as each constructor's own Syntax block spells its
+# parameters (Longitude/Latitude for Geography, X/Y for Geometry), plus Z/M
+# /SRID - is a pqtools-internal convention, not a Microsoft one, so all six
+# functions below share it consistently: GeographyPoint.From's own output
+# round-trips through Geography.ToWellKnownText and back through
+# Geography.FromWellKnownText unchanged, and likewise for the Geometry
+# pair. This is the single largest doc ambiguity in this batch - see
+# test_tail_namespaces.py and the implementation report for the full note,
+# including the one grounded clue the Syntax block itself provides:
+# `Geography.ToWellKnownText`'s `optional omitSRID` parameter would have
+# nothing to omit unless the default output already carries a SRID, which
+# is why the default WKT text below is prefixed `SRID=<n>;` (the common
+# OGC "EWKT" convention) rather than bare OGC WKT.
+# --------------------------------------------------------------------------
+
+
+def _geographypoint_from(args: list[Any], ctx: _Ctx) -> Any:
+    # GeographyPoint.From(longitude as number, latitude as number, optional
+    # z as nullable number, optional m as nullable number, optional srid as
+    # nullable number) as record. "An optional spatial reference identifier
+    # (SRID) can be given if different from the default value (4326)" -
+    # the page's own About text, so 4326 is the default when srid is
+    # omitted, not null.
+    _arity("GeographyPoint.From", args, 2, 5)
+    longitude = _require_number(args[0])
+    latitude = _require_number(args[1])
+    z = args[2] if len(args) >= 3 else None
+    if z is not None:
+        z = _require_number(z)
+    m = args[3] if len(args) >= 4 else None
+    if m is not None:
+        m = _require_number(m)
+    srid = args[4] if len(args) >= 5 and args[4] is not None else 4326
+    srid = _require_number(srid)
+    return {
+        "Kind": "Point",
+        "Longitude": longitude,
+        "Latitude": latitude,
+        "Z": z,
+        "M": m,
+        "SRID": srid,
+    }
+
+
+def _geometrypoint_from(args: list[Any], ctx: _Ctx) -> Any:
+    # GeometryPoint.From(x as number, y as number, optional z as nullable
+    # number, optional m as nullable number, optional srid as nullable
+    # number) as record. Default SRID is 0 here (Geometry's own default,
+    # distinct from Geography's 4326 - verified on this page specifically).
+    _arity("GeometryPoint.From", args, 2, 5)
+    x = _require_number(args[0])
+    y = _require_number(args[1])
+    z = args[2] if len(args) >= 3 else None
+    if z is not None:
+        z = _require_number(z)
+    m = args[3] if len(args) >= 4 else None
+    if m is not None:
+        m = _require_number(m)
+    srid = args[4] if len(args) >= 5 and args[4] is not None else 0
+    srid = _require_number(srid)
+    return {"Kind": "Point", "X": x, "Y": y, "Z": z, "M": m, "SRID": srid}
+
+
+_WKT_POINT_EMPTY_RE = re.compile(
+    r"^\s*(?:SRID\s*=\s*-?\d+\s*;\s*)?POINT\s+EMPTY\s*$", re.IGNORECASE
+)
+
+_WKT_POINT_RE = re.compile(
+    r"^\s*(?:SRID\s*=\s*(?P<srid>-?\d+)\s*;\s*)?"
+    r"POINT\s*(?P<dim>Z|M|ZM)?\s*\(\s*(?P<coords>[^()]*)\)\s*$",
+    re.IGNORECASE,
+)
+
+_WKT_DIM_COORD_COUNT = {"": 2, "Z": 3, "M": 3, "ZM": 4}
+
+
+def _parse_wkt_number(token: str, fn_name: str) -> int | float:
+    token = token.strip()
+    if re.fullmatch(r"[+-]?\d+", token):
+        return int(token)
+    try:
+        return float(token)
+    except ValueError as error:
+        raise EvalError(
+            f"{fn_name}: {token!r} is not a WKT coordinate number"
+        ) from error
+
+
+def _parse_wkt_point(
+    text: str, fn_name: str
+) -> tuple[
+    int | float, int | float, int | float | None, int | float | None, int | float | None
+]:
+    """A ``POINT``/``POINT Z``/``POINT M``/``POINT ZM`` WKT literal, with an
+    optional leading ``SRID=<n>;`` (the common OGC "EWKT" spelling) -> its
+    ``(x, y, z, m, srid)`` parts. See the module comment above for scope
+    (POINT only) and why.
+    """
+    if _WKT_POINT_EMPTY_RE.match(text):
+        raise UnsupportedError(
+            f"{fn_name}: POINT EMPTY has no coordinates to build a "
+            "Longitude/Latitude (or X/Y) record from, and Microsoft's "
+            "reference does not document a record shape for an empty "
+            "spatial value - refusing rather than inventing one"
+        )
+    match = _WKT_POINT_RE.match(text)
+    if match is None:
+        raise UnsupportedError(
+            f"{fn_name}: only POINT well-known text is implemented here. "
+            "LINESTRING/POLYGON/MULTIPOINT/MULTILINESTRING/MULTIPOLYGON/"
+            "GEOMETRYCOLLECTION are real WKT, but no page on Microsoft's M "
+            "reference documents the record shape any of them would "
+            f"produce, so pqtools refuses them instead of guessing one; "
+            f"got {text!r}"
+        )
+    dim = (match.group("dim") or "").upper()
+    parts = match.group("coords").split()
+    expected = _WKT_DIM_COORD_COUNT[dim]
+    if len(parts) != expected:
+        label = f"POINT {dim}" if dim else "POINT"
+        raise EvalError(
+            f"{fn_name}: {label} needs {expected} coordinate(s), got "
+            f"{len(parts)} in {text!r}"
+        )
+    numbers = [_parse_wkt_number(part, fn_name) for part in parts]
+    x, y = numbers[0], numbers[1]
+    z = numbers[2] if dim in ("Z", "ZM") else None
+    m = numbers[3] if dim == "ZM" else (numbers[2] if dim == "M" else None)
+    srid_text = match.group("srid")
+    srid = _parse_wkt_number(srid_text, fn_name) if srid_text else None
+    return x, y, z, m, srid
+
+
+def _geography_from_well_known_text(args: list[Any], ctx: _Ctx) -> Any:
+    # Geography.FromWellKnownText(input as nullable text) as nullable
+    # record.
+    _arity("Geography.FromWellKnownText", args, 1)
+    text = args[0]
+    if text is None:
+        return None
+    x, y, z, m, srid = _parse_wkt_point(
+        _require_str(text), "Geography.FromWellKnownText"
+    )
+    return {
+        "Kind": "Point",
+        "Longitude": x,
+        "Latitude": y,
+        "Z": z,
+        "M": m,
+        "SRID": 4326 if srid is None else srid,
+    }
+
+
+def _geometry_from_well_known_text(args: list[Any], ctx: _Ctx) -> Any:
+    # Geometry.FromWellKnownText(input as nullable text) as nullable
+    # record.
+    _arity("Geometry.FromWellKnownText", args, 1)
+    text = args[0]
+    if text is None:
+        return None
+    x, y, z, m, srid = _parse_wkt_point(
+        _require_str(text), "Geometry.FromWellKnownText"
+    )
+    return {
+        "Kind": "Point",
+        "X": x,
+        "Y": y,
+        "Z": z,
+        "M": m,
+        "SRID": 0 if srid is None else srid,
+    }
+
+
+def _render_wkt_point(
+    record: dict[str, Any],
+    fn_name: str,
+    x_name: str,
+    y_name: str,
+    default_srid: int,
+    omit_srid: bool,
+) -> str:
+    kind = record.get("Kind", "Point")
+    if kind != "Point":
+        builders = (
+            "GeographyPoint.From/Geography.FromWellKnownText"
+            if x_name == "Longitude"
+            else "GeometryPoint.From/Geometry.FromWellKnownText"
+        )
+        raise UnsupportedError(
+            f'{fn_name}: only a Point-shaped record (Kind = "Point", the '
+            f"shape {builders} build) is implemented here - got "
+            f"Kind = {kind!r}"
+        )
+    if x_name not in record or y_name not in record:
+        raise EvalError(
+            f"{fn_name}: input record must have {x_name!r} and {y_name!r} fields"
+        )
+    x = _require_number(record[x_name])
+    y = _require_number(record[y_name])
+    z = record.get("Z")
+    if z is not None:
+        z = _require_number(z)
+    m = record.get("M")
+    if m is not None:
+        m = _require_number(m)
+    srid = record.get("SRID")
+    srid = default_srid if srid is None else _require_number(srid)
+    if z is not None and m is not None:
+        dim, coords = " ZM", [x, y, z, m]
+    elif z is not None:
+        dim, coords = " Z", [x, y, z]
+    elif m is not None:
+        dim, coords = " M", [x, y, m]
+    else:
+        dim, coords = "", [x, y]
+    wkt = f"POINT{dim}({' '.join(_format_number(c) for c in coords)})"
+    if omit_srid:
+        return wkt
+    return f"SRID={_format_number(srid)};{wkt}"
+
+
+def _geography_to_well_known_text(args: list[Any], ctx: _Ctx) -> Any:
+    # Geography.ToWellKnownText(input as nullable record, optional
+    # omitSRID as nullable logical) as nullable text.
+    _arity("Geography.ToWellKnownText", args, 1, 2)
+    record = args[0]
+    if record is None:
+        return None
+    omit_srid = args[1] if len(args) == 2 and args[1] is not None else False
+    if not isinstance(omit_srid, bool):
+        raise EvalError("Geography.ToWellKnownText: omitSRID must be logical")
+    return _render_wkt_point(
+        _require_record(record),
+        "Geography.ToWellKnownText",
+        "Longitude",
+        "Latitude",
+        4326,
+        omit_srid,
+    )
+
+
+def _geometry_to_well_known_text(args: list[Any], ctx: _Ctx) -> Any:
+    # Geometry.ToWellKnownText(input as nullable record, optional omitSRID
+    # as nullable logical) as nullable text.
+    _arity("Geometry.ToWellKnownText", args, 1, 2)
+    record = args[0]
+    if record is None:
+        return None
+    omit_srid = args[1] if len(args) == 2 and args[1] is not None else False
+    if not isinstance(omit_srid, bool):
+        raise EvalError("Geometry.ToWellKnownText: omitSRID must be logical")
+    return _render_wkt_point(
+        _require_record(record), "Geometry.ToWellKnownText", "X", "Y", 0, omit_srid
+    )
+
+
 # The M-visible names this module owns. builtins/__init__.py merges every
 # module's BUILTINS into one registry, so a new function is added HERE and
 # nowhere else - no central file to edit, and no merge conflict when several
@@ -969,4 +1495,17 @@ BUILTINS: dict[str, Any] = {
     "Combiner.CombineTextByPositions": _combiner_combine_text_by_positions,
     "Combiner.CombineTextByLengths": _combiner_combine_text_by_lengths,
     "Combiner.CombineTextByRanges": _combiner_combine_text_by_ranges,
+    "Function.From": _function_from,
+    "Function.Invoke": _function_invoke,
+    "Function.InvokeAfter": _function_invoke_after,
+    "Function.ScalarVector": _function_scalarvector,
+    **_TRACE_LEVEL,
+    "Diagnostics.Trace": _diagnostics_trace,
+    "Error.Record": _error_record,
+    "GeographyPoint.From": _geographypoint_from,
+    "GeometryPoint.From": _geometrypoint_from,
+    "Geography.FromWellKnownText": _geography_from_well_known_text,
+    "Geometry.FromWellKnownText": _geometry_from_well_known_text,
+    "Geography.ToWellKnownText": _geography_to_well_known_text,
+    "Geometry.ToWellKnownText": _geometry_to_well_known_text,
 }

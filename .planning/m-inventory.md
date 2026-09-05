@@ -136,9 +136,15 @@ MISSING (5): Splitter.SplitByNothing, Splitter.SplitTextByAnyDelimiter, Splitter
 
 ## text-functions
 source: https://learn.microsoft.com/en-us/powerquery-m/text-functions
-total documented: 45
+total documented: 46
+note: the category page lists 45. Text.Format is the 46th - it has its own
+reference page (powerquery-m/text-format, HTTP 200, with two worked
+examples) but is absent from the category index, so a scrape of the index
+alone drops it. It was found by the doc-example corpus, not by this
+inventory, and is added here by hand so the catalog stops calling a real
+Power Query function a typo.
 internal-use-only (skip these): none
-ALREADY IMPLEMENTED (39): Text.Length, Character.FromNumber, Character.ToNumber, Guid.From, Json.FromValue, Text.From, Text.FromBinary, Text.NewGuid, Text.ToList, Text.At, Text.Middle, Text.Start, Text.End, Text.Insert, Text.Remove, Text.Replace, Text.Select, Text.Contains, Text.EndsWith, Text.PositionOf, Text.PositionOfAny, Text.StartsWith, Text.AfterDelimiter, Text.BeforeDelimiter, Text.BetweenDelimiters, Text.Clean, Text.Combine, Text.Lower, Text.PadEnd, Text.PadStart, Text.Proper, Text.Repeat, Text.Reverse, Text.Split, Text.SplitAny, Text.Trim, Text.TrimEnd, Text.TrimStart, Text.Upper
+ALREADY IMPLEMENTED (40): Text.Format, Text.Length, Character.FromNumber, Character.ToNumber, Guid.From, Json.FromValue, Text.From, Text.FromBinary, Text.NewGuid, Text.ToList, Text.At, Text.Middle, Text.Start, Text.End, Text.Insert, Text.Remove, Text.Replace, Text.Select, Text.Contains, Text.EndsWith, Text.PositionOf, Text.PositionOfAny, Text.StartsWith, Text.AfterDelimiter, Text.BeforeDelimiter, Text.BetweenDelimiters, Text.Clean, Text.Combine, Text.Lower, Text.PadEnd, Text.PadStart, Text.Proper, Text.Repeat, Text.Reverse, Text.Split, Text.SplitAny, Text.Trim, Text.TrimEnd, Text.TrimStart, Text.Upper
 MISSING (6): Text.InferNumberType, Text.ToBinary, Value.FromText, Text.Range, Text.RemoveRange, Text.ReplaceRange
 
 ## time-functions

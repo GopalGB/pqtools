@@ -22,6 +22,7 @@ builtin is a fixed, named Python function.
 
 from __future__ import annotations
 
+import dataclasses as _dataclasses
 import datetime
 from collections.abc import Callable
 from typing import Any
@@ -51,18 +52,41 @@ _MAX_STEPS_DEFAULT = 1_000_000
 
 
 class _Scope:
-    """A lexical scope: its own bindings, chained to an enclosing scope."""
+    """A lexical scope: its own bindings, chained to an enclosing scope.
 
-    __slots__ = ("vars", "parent")
+    ``excluded`` is M's exclusive/inclusive identifier rule, which this
+    evaluator ignored until three of Microsoft's own worked examples were
+    run against each other and turned out to need it. M's grammar names
+    two forms of identifier reference: a plain `x` is EXCLUSIVE - it skips
+    the binding currently being defined and resolves outward - and `@x` is
+    INCLUSIVE, naming that binding itself. That is why a recursive
+    function in M has to be written `@f`, and it is what makes all three
+    of these documented results true at once:
 
-    def __init__(self, parent: _Scope | None) -> None:
-        self.vars: dict[str, Any] = {}
+        [List.Sum = List.Sum]                       -> the library function
+        [x = List.Count([y]), y = [y] & {x}]        -> `x` is the sibling
+        [length = length, list = ...length...]      -> the outer parameter
+
+    Reading the first as a cycle, or the second as an unknown identifier,
+    are the two ways to get this wrong; both were tried here first.
+    """
+
+    __slots__ = ("vars", "parent", "excluded")
+
+    def __init__(
+        self,
+        parent: _Scope | None,
+        variables: dict[str, Any] | None = None,
+        excluded: str | None = None,
+    ) -> None:
+        self.vars: dict[str, Any] = {} if variables is None else variables
         self.parent = parent
+        self.excluded = excluded
 
-    def lookup(self, name: str) -> tuple[bool, Any]:
+    def lookup(self, name: str, inclusive: bool = False) -> tuple[bool, Any]:
         scope: _Scope | None = self
         while scope is not None:
-            if name in scope.vars:
+            if name in scope.vars and (inclusive or name != scope.excluded):
                 return True, scope.vars[name]
             scope = scope.parent
         return False, None
@@ -70,24 +94,47 @@ class _Scope:
     def child(self) -> _Scope:
         return _Scope(self)
 
+    def excluding(self, name: str) -> _Scope:
+        """This scope as seen from inside `name`'s own defining expression.
+
+        `vars` is shared by reference, not copied, so a sibling bound after
+        this view is created is still visible through it - which is what
+        makes `[a = b, b = 1]` work regardless of the order they appear in.
+        """
+        return _Scope(self.parent, self.vars, name)
+
 
 class _Thunk:
-    """A lazy, memoised ``let`` binding value."""
+    """A lazy, memoised ``let`` binding or record field value.
 
-    __slots__ = ("node", "scope", "value", "done", "active")
+    Records share this with ``let`` because M gives them the same rule: a
+    field's expression can name its siblings, so the fields have to be
+    bound before any of them is evaluated. ``name`` exists only so a cycle
+    can be reported by the identifier that closes it.
+    """
 
-    def __init__(self, node: dict[str, Any], scope: _Scope) -> None:
+    __slots__ = ("node", "scope", "value", "done", "active", "name")
+
+    def __init__(self, node: dict[str, Any], scope: _Scope, name: str = "") -> None:
         self.node = node
         self.scope = scope
         self.value: Any = None
         self.done = False
         self.active = False
+        self.name = name
 
 
 class _Lambda:
     """A closure created by ``each ...`` or ``(params) => ...``."""
 
-    __slots__ = ("params", "body", "scope", "param_types", "return_type")
+    __slots__ = (
+        "params",
+        "body",
+        "scope",
+        "param_types",
+        "return_type",
+        "optionals",
+    )
 
     def __init__(
         self,
@@ -96,10 +143,17 @@ class _Lambda:
         scope: _Scope,
         param_types: list[str | None] | None = None,
         return_type: str | None = None,
+        optionals: list[bool] | None = None,
     ) -> None:
         self.params = params
         self.body = body
         self.scope = scope
+        # `(x, optional y) => ...` may be called with one argument; the
+        # missing one arrives as null. Every parameter was treated as
+        # required, so a perfectly ordinary custom function - the shape the
+        # Power Query UI writes whenever an author adds a default - failed
+        # at the call site with an arity error.
+        self.optionals = optionals or [False] * len(params)
         # Declared types are enforced, not decorative. M raises when an
         # argument does not match, and a query that relies on that error is
         # relying on a real guarantee - accepting anything here would turn a
@@ -259,39 +313,6 @@ def _binop_parts(node: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, A
 # --------------------------------------------------------------------------
 
 
-# M's character escapes. `""` is handled separately (it is a doubled
-# delimiter, not a `#(...)` sequence).
-_TEXT_ESCAPES = {"cr": "\r", "lf": "\n", "tab": "\t", "#": "#"}
-
-
-def _decode_escape(inner: str, token: str) -> str:
-    """Decode the body of one ``#(...)`` sequence.
-
-    Comma-separated, so `#(cr,lf)` is one sequence producing two characters -
-    which is how every M query that wants a Windows line ending writes it.
-    """
-    if not inner:
-        raise EvalError(f"empty escape sequence #() in text literal {token}")
-    out = []
-    for item in inner.split(","):
-        if item in _TEXT_ESCAPES:
-            out.append(_TEXT_ESCAPES[item])
-            continue
-        if len(item) in (4, 8) and all(c in "0123456789abcdefABCDEF" for c in item):
-            code = int(item, 16)
-            if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
-                raise EvalError(
-                    f"escape #({item}) is not a Unicode code point, in {token}"
-                )
-            out.append(chr(code))
-            continue
-        raise EvalError(
-            f"unknown escape #({item}) in text literal {token}: expected cr, lf, "
-            "tab, #, or 4 or 8 hex digits"
-        )
-    return "".join(out)
-
-
 def _parse_text_literal(token: str) -> str:
     """Decode an M text literal, escapes included.
 
@@ -302,28 +323,18 @@ def _parse_text_literal(token: str) -> str:
     silently never matched and the query returned one long row instead of
     failing. Same shape as the `#table` gap - an idiom every real query uses
     and no fixture did.
+
+    The decoding itself moved to `core.decode_escapes` once it turned out
+    that quoted IDENTIFIERS carry the same escapes and were not decoding
+    them - see `core.unquote_identifier`. Two decoders, one of which did
+    nothing, is the shape of bug this file keeps finding.
     """
     if len(token) < 2 or token[0] != '"' or token[-1] != '"':
         raise EvalError("malformed text literal")
-    body = token[1:-1]
-    out: list[str] = []
-    index = 0
-    while index < len(body):
-        char = body[index]
-        if char == '"' and body[index + 1 : index + 2] == '"':
-            out.append('"')
-            index += 2
-        elif char == "#" and body[index + 1 : index + 2] == "(":
-            close = body.find(")", index + 2)
-            if close == -1:
-                raise EvalError(f"unterminated escape sequence in {token}")
-            out.append(_decode_escape(body[index + 2 : close], token))
-            index = close + 1
-        else:
-            # A bare `#` is an ordinary character in M unless `(` follows it.
-            out.append(char)
-            index += 1
-    return "".join(out)
+    try:
+        return _core.decode_escapes(token[1:-1], f"text literal {token}")
+    except _core.ParseError as error:
+        raise EvalError(str(error)) from error
 
 
 def _eval_literal(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -354,11 +365,22 @@ def _force(value: Any, ctx: _Ctx) -> Any:
     if value.done:
         return value.value
     if value.active:
-        raise EvalError("circular reference in let binding")
+        where = f" in {value.name!r}" if value.name else ""
+        raise EvalError(f"circular reference{where}")
     value.active = True
-    value.value = _eval(value.node, value.scope, ctx)
+    try:
+        value.value = _eval(value.node, value.scope, ctx)
+    finally:
+        # Cleared even when evaluation raises. Without the `finally` a
+        # binding that failed once stayed marked in-progress forever, so the
+        # NEXT reference to it reported "circular reference in let binding" -
+        # a diagnosis with nothing to do with the actual problem, in a query
+        # containing no cycle at all. Real Power BI queries hit this: an
+        # "Enter Data" step binds one `_t` and names it in every column, so
+        # a single unsupported binding turned into a phantom cycle on the
+        # second column.
+        value.active = False
     value.done = True
-    value.active = False
     return value.value
 
 
@@ -372,7 +394,9 @@ def _eval_let(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
         if name in ctx.bindings:
             child_scope.vars[name] = ctx.bindings[name]
         else:
-            child_scope.vars[name] = _Thunk(value_node, child_scope)
+            child_scope.vars[name] = _Thunk(
+                value_node, child_scope.excluding(name), name
+            )
     return _eval(body, child_scope, ctx)
 
 
@@ -385,13 +409,37 @@ def _eval_if(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 
 
 def _eval_record(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    """`[a = 1, b = a + 1]` - a field expression can name its siblings.
+
+    This used to evaluate each field in the ENCLOSING scope, so `b = a + 1`
+    reported "unknown identifier: a". The behaviour is not a corner: it is
+    what Microsoft's own `List.Generate` example is built on -
+
+        each [x = List.Count([y]), y = [y] & {x}]
+
+    where the bare `x` in the second field is the first field, and nothing
+    else in scope is called `x`. That example ran here as an unknown
+    identifier until the record grew a scope of its own.
+
+    Records get `let`'s exact machinery rather than a second one: the same
+    lazy `_Thunk`, so order does not matter (`[a = b, b = 1]` works), the
+    same cycle detection, so `[a = b, b = a]` is an error rather than a
+    hang, and the same exclusive-identifier rule, so `[List.Sum = List.Sum]`
+    still names the library function rather than reporting a cycle.
+    """
     (array_wrapper,) = _semantic(node)
+    child_scope = scope.child()
     record: dict[str, Any] = {}
     for csv in _children(array_wrapper):
         (pair,) = _semantic(csv)
         name_node, value_node = _semantic(pair)
-        record[_identifier_text(name_node)] = _eval(value_node, scope, ctx)
-    return record
+        name = _identifier_text(name_node)
+        thunk = _Thunk(value_node, child_scope.excluding(name), name)
+        child_scope.vars[name] = thunk
+        record[name] = thunk
+    # Forced here, not left lazy: a record is a value, and handing a caller
+    # a half-evaluated one would leak thunks into every builtin.
+    return {name: _force(value, ctx) for name, value in record.items()}
 
 
 def _eval_list(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -467,6 +515,7 @@ def _eval_function(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     (params_wrapper,) = _semantic(parameter_list)
     names: list[str] = []
     types: list[str | None] = []
+    optionals: list[bool] = []
     for csv in _children(params_wrapper):
         (parameter,) = _semantic(csv)
         parameter_children = _semantic(parameter)
@@ -476,7 +525,16 @@ def _eval_function(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
             if len(parameter_children) > 1
             else None
         )
-    return _Lambda(names, body, scope, types, return_type)
+        # `optional` is a Constant sibling, which `_semantic` filters out -
+        # which is exactly why it went unnoticed: the name and the declared
+        # type both read correctly and only the flag was lost.
+        optionals.append(
+            any(
+                child.get("kind") == "Constant" and child.get("value") == "optional"
+                for child in _children(parameter)
+            )
+        )
+    return _Lambda(names, body, scope, types, return_type, optionals)
 
 
 def _eval_each(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -489,25 +547,141 @@ def _eval_parenthesized(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     return _eval(inner, scope, ctx)
 
 
-def _table_type_value(type_node: dict[str, Any]) -> Any:
-    """``type table [Name = ..., ...]`` -> an _MType carrying the field names.
+def _field_specification_list(
+    list_node: dict[str, Any], scope: _Scope, ctx: _Ctx, what: str
+) -> tuple[tuple[str, ...], tuple[Any, ...] | None, tuple[bool, ...] | None, bool]:
+    """The fields of a ``[A = text, optional B = number, ...]`` block.
+
+    Returns (names, types, optional flags, is_open).
+
+    Read from DIRECT children only. The previous version searched every
+    descendant for a `FieldSpecification`, which silently flattened nested
+    field types into the outer list: `type table [A = table [C = text]]`
+    produced a TWO-column table, `A` and a phantom `C`. Nothing errored -
+    `Table.ColumnNames` on it simply returned a column the query never
+    declared, which is the worst way for a type system to be wrong.
+    """
+    names: list[str] = []
+    types: list[Any] = []
+    optionals: list[bool] = []
+    is_open = False
+    # Set when any field's declared type could not be modelled - see the
+    # UnsupportedError branch below. The whole tuple is then dropped rather
+    # than half-filled, because `field_types = None` is the state the
+    # Type.* introspection functions already read as "not captured" and
+    # refuse on; a tuple with a silent `any` in it would be a wrong answer.
+    unknown = False
+    for child in _children(list_node):
+        # An open record is spelled `[A = text, ...]`; the marker is a
+        # sibling of the field list, not a field.
+        if child.get("kind") == "Constant" and str(child.get("value")) == "...":
+            is_open = True
+            continue
+        if child.get("kind") != "ArrayWrapper":
+            continue
+        for csv in _children(child):
+            for spec in _children(csv):
+                if spec.get("kind") != "FieldSpecification":
+                    continue
+                name = None
+                declared: Any = _PRIMITIVE_TYPES["any"]
+                optional = False
+                for part in _children(spec):
+                    kind = part.get("kind")
+                    if kind == "Constant" and str(part.get("value")) == "optional":
+                        optional = True
+                    elif kind == "GeneralizedIdentifier":
+                        name = _identifier_text(part)
+                    elif kind == "FieldTypeSpecification":
+                        try:
+                            declared = _type_value(
+                                _type_operand(part), scope, ctx, what
+                            )
+                        except UnsupportedError:
+                            # A field type this evaluator cannot model does
+                            # not make the FIELD unknown - the name is right
+                            # there. Real Power BI writes exactly this:
+                            #
+                            #   let _t = ((type text) meta [Serialized.Text
+                            #             = true])
+                            #   in  type table [ID = _t, ...]
+                            #
+                            # `meta` is refused here on purpose (there is no
+                            # value wrapper for it), so the whole "Enter
+                            # Data" query would fail on its first step if one
+                            # unmodellable field type were fatal. Degrade to
+                            # what was true before field types were read at
+                            # all: names certain, types not captured. An
+                            # EvalError - a genuinely wrong query, such as a
+                            # misspelled type name - still propagates.
+                            unknown = True
+                            declared = _PRIMITIVE_TYPES["any"]
+                if name is None:
+                    continue
+                names.append(name)
+                # A field written without a type (`type [a]`) is `any` - the
+                # grammar allows it and M's own default for an undeclared
+                # field type is any, not "unknown".
+                types.append(declared)
+                optionals.append(optional)
+    if unknown:
+        return tuple(names), None, None, is_open
+    return tuple(names), tuple(types), tuple(optionals), is_open
+
+
+def _type_operand(node: dict[str, Any]) -> dict[str, Any]:
+    """The one meaningful child of a wrapper node, skipping punctuation."""
+    for child in _children(node):
+        if child.get("kind") != "Constant":
+            return child
+    raise UnsupportedError(f"malformed type expression: {node.get('kind')}")
+
+
+def _table_type_value(type_node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
+    """``type table [Name = ..., ...]`` or ``type table <rowType>``.
 
     This shape is not exotic: it is the second argument of the
     ``Table.FromRows(Json.Document(Binary.Decompress(...)), type table [...])``
     that Power BI writes for every "Enter Data" table, so refusing it stopped
     those queries on their first step.
+
+    The named form - ``type table rowType``, where the row shape is a record
+    type held in a variable - used to fall through to "no field
+    specifications found" and produce a table type with ZERO columns. Not an
+    error: a silently empty schema, which is how Type.ForRecord's own
+    documented example failed.
     """
-    names: list[str] = []
-    for spec in _descendants(type_node, "FieldSpecification"):
-        for child in _children(spec):
-            if child.get("kind") == "GeneralizedIdentifier":
-                names.append(_identifier_text(child))
-                break
-    return _MType(
-        kind="table",
-        display="type table",
-        field_names=tuple(names),
-    )
+    for child in _children(type_node):
+        kind = child.get("kind")
+        if kind == "FieldSpecificationList":
+            names, types, optionals, _ = _field_specification_list(
+                child, scope, ctx, "type table"
+            )
+            return _MType(
+                kind="table",
+                display="type table",
+                field_names=names,
+                field_types=types,
+                field_optional=optionals,
+            )
+        if kind == "Constant":
+            continue
+        # `type table <expression>`: the row type is named rather than spelled
+        # out, so evaluate it and take its fields.
+        row = _eval(child, scope, ctx)
+        if not isinstance(row, _MType) or row.field_names is None:
+            raise EvalError(
+                "type table <name>: expected a record type naming its fields, "
+                f"got {_type_name(row)}"
+            )
+        return _MType(
+            kind="table",
+            display="type table",
+            field_names=row.field_names,
+            field_types=row.field_types,
+            field_optional=row.field_optional,
+        )
+    raise UnsupportedError("type table: no field list and no row type")
 
 
 def _descendants(node: dict[str, Any], kind: str) -> list[dict[str, Any]]:
@@ -523,27 +697,134 @@ def _descendants(node: dict[str, Any], kind: str) -> list[dict[str, Any]]:
     return found
 
 
+def _function_type_value(
+    type_node: dict[str, Any], scope: _Scope, ctx: _Ctx, what: str
+) -> Any:
+    """``type function (a as number, optional b as text) as number``.
+
+    Refused outright before, which is why Function.From's and
+    Function.ScalarVector's own documented examples could not run: the
+    failure was one AST node above the function under test, so implementing
+    those functions correctly did not help.
+
+    `Type.ForFunction` builds the same value from M-level arguments, so this
+    reuses its display formatter rather than inventing a second spelling.
+    """
+    from .builtins._type import _function_type_display
+
+    parameters: list[tuple[str, Any]] = []
+    min_arity = 0
+    return_type: Any = _PRIMITIVE_TYPES["any"]
+    for child in _children(type_node):
+        kind = child.get("kind")
+        if kind == "ParameterList":
+            # ParameterList -> ArrayWrapper -> Csv -> Parameter. The
+            # ArrayWrapper level is easy to skip and the symptom is quiet:
+            # zero parameters and a plausible-looking function type.
+            for wrapper in _children(child):
+                if wrapper.get("kind") != "ArrayWrapper":
+                    continue
+                for csv in _children(wrapper):
+                    for parameter in _children(csv):
+                        if parameter.get("kind") != "Parameter":
+                            continue
+                        name = ""
+                        declared: Any = _PRIMITIVE_TYPES["any"]
+                        optional = False
+                        for part in _children(parameter):
+                            part_kind = part.get("kind")
+                            if (
+                                part_kind == "Constant"
+                                and part.get("value") == "optional"
+                            ):
+                                optional = True
+                            elif part_kind == "Identifier":
+                                name = _identifier_text(part)
+                            elif part_kind == "AsType":
+                                declared = _type_value(
+                                    _type_operand(part), scope, ctx, what
+                                )
+                        parameters.append((name, declared))
+                        if not optional:
+                            # "min" is Type.ForFunction's own name for the
+                            # count of REQUIRED parameters, so they agree.
+                            min_arity += 1
+        elif kind == "AsType":
+            # The trailing `as T`, a sibling of the parameter list.
+            return_type = _type_value(_type_operand(child), scope, ctx, what)
+    return _MType(
+        kind="function",
+        display=_function_type_display(parameters, return_type),
+        parameters=tuple(parameters),
+        min_arity=min_arity,
+        return_type=return_type,
+    )
+
+
+def _type_value(type_node: dict[str, Any], scope: _Scope, ctx: _Ctx, what: str) -> Any:
+    """One M type expression -> one type value.
+
+    Recursive, because type expressions nest: a table type's field can be a
+    record type whose field is `nullable text`. Reading only the outermost
+    layer is what let a nested field's names leak upward - see
+    `_field_specification_list`.
+    """
+    kind = type_node.get("kind")
+    if kind == "PrimitiveType":
+        name = str(type_node["value"])
+        type_value = _PRIMITIVE_TYPES.get(name)
+        if type_value is None:
+            raise UnsupportedError(f"type value: type {name}")
+        return type_value
+    if kind == "TableType":
+        return _table_type_value(type_node, scope, ctx)
+    if kind == "RecordType":
+        names, types, optionals, is_open = _field_specification_list(
+            _type_operand(type_node), scope, ctx, what
+        )
+        return _MType(
+            kind="record",
+            display="type record",
+            field_names=names,
+            field_types=types,
+            field_optional=optionals,
+            is_open=is_open,
+        )
+    if kind == "FunctionType":
+        return _function_type_value(type_node, scope, ctx, what)
+    if kind == "NullableType":
+        base = _type_value(_type_operand(type_node), scope, ctx, what)
+        if base.is_nullable:
+            return base
+        return _dataclasses.replace(
+            base,
+            display=f"type nullable {base.display.removeprefix('type ')}",
+            is_nullable=True,
+        )
+    # Anything else is an ordinary expression standing in a type position -
+    # which is not exotic, it is what Power BI itself writes. Every "Enter
+    # Data" and "Changed Type" step spells its columns `type table [Sales =
+    # Int64.Type, Name = text]`, mixing ascribable type VALUES (registered
+    # builtins, parsed as identifiers) with grammar keywords in one list.
+    # Reading only the keywords is what broke the real-workbook end-to-end
+    # test the moment field types started being read at all.
+    resolved = _eval(type_node, scope, ctx)
+    if isinstance(resolved, _MType):
+        return resolved
+    raise UnsupportedError(
+        f"{what}: {kind} is not a type shape pqtools models, and it does not "
+        f"evaluate to a type value (got {_type_name(resolved)}). Supported: "
+        "the primitive types, `type table [...]`, `type table <rowType>`, "
+        "`type [...]` records, `nullable` over any of those, and any "
+        "expression naming a type value such as Int64.Type"
+    )
+
+
 def _eval_type_primary(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     # `type text`, `type number`, ... - the AST wraps a leaf `PrimitiveType`
     # node (whose `value` is the exact lowercase keyword) in `TypePrimaryType`.
-    # Compound type shapes (`type table [...]`, `type [a = text]`, `type
-    # {number}`, `type nullable text`, `type function ...`) wrap something
-    # other than `PrimitiveType` here and are not modelled - see
-    # builtins/_type.py's module docstring for why.
     (type_node,) = _semantic(node)
-    if type_node.get("kind") == "TableType":
-        return _table_type_value(type_node)
-    if type_node.get("kind") != "PrimitiveType":
-        raise UnsupportedError(
-            f"type value: {type_node.get('kind')} (pqtools only supports the "
-            "primitive M types - type text/number/date/datetime/"
-            "datetimezone/time/duration/logical/any/none/binary)"
-        )
-    name = str(type_node["value"])
-    type_value = _PRIMITIVE_TYPES.get(name)
-    if type_value is None:
-        raise UnsupportedError(f"type value: type {name}")
-    return type_value
+    return _type_value(type_node, scope, ctx, "type value")
 
 
 def _eval_field_selector(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
@@ -561,14 +842,28 @@ def _eval_field_selector(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 
 def _invoke(callee: Any, args: list[Any], ctx: _Ctx) -> Any:
     if isinstance(callee, _Lambda):
-        if len(args) != len(callee.params):
-            raise EvalError(
-                f"function expects {len(callee.params)} argument(s), got {len(args)}"
+        required = sum(1 for flag in callee.optionals if not flag)
+        total = len(callee.params)
+        if not required <= len(args) <= total:
+            expected = (
+                f"{required}"
+                if required == total
+                else f"between {required} and {total}"
             )
+            raise EvalError(f"function expects {expected} argument(s), got {len(args)}")
+        # An omitted optional parameter is null inside the body, which is
+        # how M spells "not supplied" - there is no separate missing-value
+        # sentinel to distinguish it from an explicit null.
+        supplied = list(args) + [None] * (total - len(args))
         child = callee.scope.child()
-        for name, value, declared in zip(
-            callee.params, args, callee.param_types, strict=True
+        for name, value, declared, is_optional in zip(
+            callee.params, supplied, callee.param_types, callee.optionals, strict=True
         ):
+            # `optional y as number` declares a NULLABLE number: the whole
+            # point of the parameter is that it may be absent, so the
+            # ascription must not reject the absence it exists to allow.
+            if is_optional and value is None:
+                declared = None
             child.vars[name] = _check_ascription(value, declared, f"argument {name!r}")
         return _check_ascription(
             _eval(callee.body, child, ctx), callee.return_type, "return value"
@@ -1155,12 +1450,16 @@ def _is_connector(name: str) -> bool:
 
 def _eval_identifier_expression(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     children = _children(node)
-    # `@name` carries an extra leading Constant ("@"). The operator exists to
-    # name the enclosing binding when a record field would otherwise shadow
-    # it; this evaluator's scopes are already lexical, so the two spellings
-    # resolve identically and `@f` inside a recursive f simply finds f.
+    # `@name` carries an extra leading Constant ("@") and is M's INCLUSIVE
+    # identifier reference: it names the binding currently being defined,
+    # which is how a recursive function refers to itself. A plain `name` is
+    # the EXCLUSIVE form and skips that binding - see `_Scope`.
+    inclusive = any(
+        child.get("kind") == "Constant" and child.get("value") == "@"
+        for child in children
+    )
     name = _identifier_text(children[-1])
-    found, value = scope.lookup(name)
+    found, value = scope.lookup(name, inclusive)
     if found:
         return _force(value, ctx)
     builtin = BUILTINS.get(name)
@@ -1353,12 +1652,18 @@ def _eval_error_raising(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
         message = payload.get("Message")
         error = EvalError(str(message) if message is not None else "error")
         # Carried on the exception rather than in the message, so `catch`
-        # can hand back the author's own Reason/Detail unchanged.
-        error.m_error_record = {  # type: ignore[attr-defined]
-            "Reason": payload.get("Reason", "Expression.Error"),
-            "Message": payload.get("Message"),
-            "Detail": payload.get("Detail"),
-        }
+        # can hand back the author's own record unchanged.
+        #
+        # It used to be reprojected onto exactly Reason/Message/Detail, which
+        # silently DELETED every other field the author raised. Error.Record
+        # builds six - Message.Format, Message.Parameters and ErrorCode as
+        # well - and its own documented output shows all six surviving into
+        # `try`'s Error field, so the projection was throwing away half of a
+        # documented result. Reason still defaults, because M supplies one
+        # when the author does not.
+        record = dict(payload)
+        record.setdefault("Reason", "Expression.Error")
+        error.m_error_record = record  # type: ignore[attr-defined]
         raise error
     raise EvalError("error" if payload is None else str(payload))
 

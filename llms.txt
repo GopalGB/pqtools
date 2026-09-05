@@ -14,7 +14,7 @@ affiliated with or endorsed by Microsoft.
   `File.Contents`, `Text.FromBinary`) run natively, then the whole
   transformation chain: `Table.PromoteHeaders`, `Table.TransformColumnTypes`,
   `Table.SelectRows`, `Table.Group`, all six `JoinKind` values, pivot/unpivot,
-  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 557 M builtins.
+  `List.*`, `Text.*`, `Number.*`, and date/time/duration. 638 M builtins.
   Output as JSON or CSV.
 - The M operators follow the specification's own operand tables, not just the
   numeric rows: `null` propagates through arithmetic instead of raising,
@@ -37,7 +37,7 @@ affiliated with or endorsed by Microsoft.
   brand-new query. Any `--write` on a container writes a `<file>.bak` first.
 
 <!-- coverage:start -->
-pqtools implements **476 of the 634** functions in Microsoft's Power Query M reference (75%). Every one of the remaining 158 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+pqtools implements **547 of the 635** functions in Microsoft's Power Query M reference (86%). Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
 
 ## What it deliberately does NOT do

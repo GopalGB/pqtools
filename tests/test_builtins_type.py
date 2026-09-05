@@ -77,11 +77,20 @@ def test_nominal_number_subtype_is_not_equal_to_plain_number_type():
     assert evaluate("Int64.Type") != evaluate("type number")
 
 
-def test_compound_type_shapes_are_unsupported_not_guessed():
-    with pytest.raises(UnsupportedError, match="type value"):
+def test_a_type_shape_that_is_not_modelled_is_refused_not_guessed():
+    """`type [a = text]` moved out of this list; `type {number}` has not.
+
+    Record types are modelled now - the field machinery a table type needed
+    turned out to be the same machinery, so supporting them cost nothing
+    extra and Type.RecordFields stopped being unreachable. List types still
+    are not: this evaluator has no list-of-T concept to put one in, so it
+    keeps saying so rather than returning something that looks like an
+    answer. The point of the test is unchanged - what it guards is that an
+    unmodelled shape ERRORS - only the membership moved.
+    """
+    with pytest.raises(UnsupportedError, match="ListType"):
         evaluate("type {number}")
-    with pytest.raises(UnsupportedError, match="type value"):
-        evaluate("type [a = text]")
+    assert evaluate("Type.IsOpenRecord(type [a = text])") is False
 
 
 # --------------------------------------------------------------------------
@@ -429,3 +438,66 @@ def test_type_is_number_subtype_compatibility():
     assert evaluate("Type.Is(type text, type any)") is True
     assert evaluate("Type.Is(type text, type number)") is False
     assert evaluate("Type.Is(type number, type number)") is True
+
+
+# --------------------------------------------------------------------------
+# Table.TransformColumnTypes - the shapes its own page writes
+# --------------------------------------------------------------------------
+
+
+def test_transform_column_types_accepts_a_bare_single_transformation():
+    """`{"a", type text}` is ONE transformation, not a list of two.
+
+    "The format for a single transformation is { column name, type value }"
+    - the page's own words, and its own Example 1 writes it exactly that
+    way. pqtools rejected it with "expected a list, got text".
+
+    This is the same shape, and the same ambiguity, that
+    `_shared._sort_criteria` already documents for Table.Sort: a column name
+    is text, so an entry whose first element is text is one transformation
+    rather than a list of them. Two functions, one grammar quirk, and only
+    one of them had learned it.
+    """
+    source = """
+    let
+        Source = #table(type table [a = number, b = number], {{1, 2}, {3, 4}})
+    in
+        Table.TransformColumnTypes(Source, {"a", type text})
+    """
+    assert evaluate(source) == [{"a": "1", "b": 2}, {"a": "3", "b": 4}]
+
+
+def test_transform_column_types_reads_the_options_record():
+    """ "If a record is specified for culture, it can contain ... MissingField".
+
+    Only the bare-text culture form was recognised, so the documented record
+    form was reported as an unimplemented CULTURE even when it carried no
+    Culture field at all - an error naming the wrong cause.
+    """
+    table = "#table(type table [a = number], {{1}})"
+    ignore = "[MissingField = MissingField.Ignore]"
+    use_null = "[MissingField = MissingField.UseNull]"
+    assert evaluate(
+        f'Table.TransformColumnTypes({table}, {{{{"z", type text}}}}, {ignore})'
+    ) == [{"a": 1}]
+    assert evaluate(
+        f'Table.TransformColumnTypes({table}, {{{{"z", type text}}}}, {use_null})'
+    ) == [{"a": 1, "z": None}]
+
+
+def test_transform_column_types_still_errors_on_a_missing_column_by_default():
+    # "If a column doesn't exist, an error is raised" - the default must not
+    # drift just because an alternative now exists.
+    with pytest.raises(EvalError, match="column not found: z"):
+        evaluate(
+            "Table.TransformColumnTypes(#table(type table [a = number], {{1}}), "
+            '{{"z", type text}})'
+        )
+
+
+def test_transform_column_types_still_refuses_a_culture_it_cannot_apply():
+    with pytest.raises(UnsupportedError, match="culture-aware"):
+        evaluate(
+            "Table.TransformColumnTypes(#table(type table [a = number], {{1}}), "
+            '{{"a", type text}}, "de-DE")'
+        )

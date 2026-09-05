@@ -6,11 +6,13 @@ zero behaviour change) - see PRD-0.5.0-builtins.md.
 
 from __future__ import annotations
 
+import datetime
 import decimal
 import json as _json
 import math
 import random as _random
 import re
+import sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -76,7 +78,47 @@ def _consume_budget(ctx: _Ctx, count: int) -> None:
         ctx.budget.tick()
 
 
+def _ole_serial_from_naive_datetime(name: str, dt: datetime.datetime) -> float:
+    """The forward half of ``_datetime.py``'s OLE Automation Date machinery.
+
+    That module implements number -> date/datetime (``Date.From``,
+    ``DateTime.From``) with a documented, deliberate simplification: the
+    naive "epoch + N days" formula, exact for every real calendar date
+    outside a 60-day 1900 phantom-leap-day window, which it refuses by name
+    (``_reject_phantom_ole_window``) rather than guess at bug-compatible
+    behaviour for. This is that same formula run backwards, against the
+    SAME epoch constant and the SAME window check (imported, never
+    reimplemented) - so ``Number.From(Date.From(n)) == n`` for every ``n``
+    outside that window by construction, not by two independent pieces of
+    arithmetic agreeing by luck. ``dt`` must already be naive (any
+    datetimezone offset stripped by the caller - see the datetimezone
+    branch of ``_number_from`` for why that is correct rather than a
+    shortcut).
+    """
+    from ._datetime import _OLE_EPOCH, _reject_phantom_ole_window
+
+    epoch = datetime.datetime(_OLE_EPOCH.year, _OLE_EPOCH.month, _OLE_EPOCH.day)
+    delta = dt - epoch
+    whole_days = delta.days
+    _reject_phantom_ole_window(name, whole_days, whole_days)
+    fractional_seconds = delta.seconds + delta.microseconds / 1_000_000
+    return whole_days + fractional_seconds / 86400
+
+
 def _number_from(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.From(value as any, optional culture as nullable text) as
+    # nullable number. The temporal branches below are grounded in
+    # Number.From's own About text (verbatim, per conversion):
+    #   datetime/date:  "a double-precision floating-point number that
+    #                    contains an OLE Automation date equivalent"
+    #   datetimezone:   "... an OLE Automation date equivalent of the
+    #                    LOCAL date and time of value"
+    #   time:           "Expressed in fractional days"
+    #   duration:       "Expressed in whole and fractional days"
+    # The `culture` parameter the Syntax block also documents is a
+    # pre-existing, separate gap this task does not touch - every existing
+    # call site here already assumes 1 argument, and none of the four
+    # conversions above is culture-sensitive (an OLE serial has no locale).
     _arity("Number.From", args, 1)
     value = args[0]
     if isinstance(value, bool):
@@ -88,6 +130,46 @@ def _number_from(args: list[Any], ctx: _Ctx) -> Any:
             return _parse_numeric_literal(value.strip())
         except ValueError as error:
             raise EvalError(f"Number.From: not a number: {value!r}") from error
+    if isinstance(value, datetime.datetime):
+        # datetime/datetimezone - checked before `datetime.date` below
+        # because datetime.datetime IS a datetime.date subclass (the
+        # ordering trap _shared._type_name/_m_equal already document).
+        if value.tzinfo is not None:
+            # "the LOCAL date and time of value" (About, verbatim) means
+            # the wall-clock fields AS DISPLAYED in the value's own
+            # offset - not shifted to UTC, and not the host machine's zone
+            # (this is not the HOST-dependent case module docstring point
+            # 8 in _datetime.py calls out; the offset used is the one
+            # already carried on the value, no lookup involved).
+            # `.replace(tzinfo=None)` keeps every field except the offset
+            # marker itself, which is exactly that.
+            naive = value.replace(tzinfo=None)
+        else:
+            naive = value
+        return _ole_serial_from_naive_datetime("Number.From", naive)
+    if isinstance(value, datetime.date):
+        naive = datetime.datetime(value.year, value.month, value.day)
+        return _ole_serial_from_naive_datetime("Number.From", naive)
+    if isinstance(value, datetime.time):
+        # "Expressed in fractional days" (About, verbatim). A time has no
+        # date component, so there is no OLE epoch or phantom-window
+        # question here at all - just a seconds-in-a-day unit conversion,
+        # the forward direction of _datetime.py's own
+        # `_time_from_day_fraction`.
+        seconds = (
+            value.hour * 3600
+            + value.minute * 60
+            + value.second
+            + value.microsecond / 1_000_000
+        )
+        return seconds / 86400
+    if isinstance(value, datetime.timedelta):
+        # "Expressed in whole and fractional days" (About, verbatim) -
+        # reuses Duration.TotalDays's own arithmetic
+        # (`td.total_seconds() / 86400`) rather than a second copy of it.
+        from ._datetime import _duration_total_days
+
+        return _duration_total_days([value], ctx)
     raise EvalError(f"Number.From: unsupported value type: {_type_name(value)}")
 
 
@@ -932,6 +1014,320 @@ def _logical_to_text(args: list[Any], ctx: _Ctx) -> Any:
     return "true" if value else "false"
 
 
+# --------------------------------------------------------------------------
+# Byte.From / Currency.From / Decimal.From / Double.From / Int8.From /
+# Int16.From / Int32.From / Int64.From / Percentage.From / Single.From /
+# Value.FromText - the numeric X.From conversions. Verified against each
+# function's own learn.microsoft.com/en-us/powerquery-m/<name> page - there
+# is no separate byte-type/int8-type/int16-type/... reference page (those
+# slugs are all live 404s, checked directly), so the RANGE each function
+# enforces is the corresponding .NET primitive's well-known range, computed
+# below from a formula rather than typed as a literal digit string, which
+# is exactly the kind of transcription slip a range check would otherwise
+# hide silently.
+# --------------------------------------------------------------------------
+
+_BYTE_MIN, _BYTE_MAX = 0, 2**8 - 1
+_INT8_MIN, _INT8_MAX = -(2**7), 2**7 - 1
+_INT16_MIN, _INT16_MAX = -(2**15), 2**15 - 1
+_INT32_MIN, _INT32_MAX = -(2**31), 2**31 - 1
+_INT64_MIN, _INT64_MAX = -(2**63), 2**63 - 1
+
+# Currency's own page states this range verbatim, and it is exactly Int64's
+# range scaled by the type's fixed 4 decimal digits (9223372036854775807 /
+# 10000 = 922337203685477.5807) - copied from the fetched page as a literal
+# rather than computed, since a plain float division here would need
+# decimal.Decimal to land on the exact printed digits, for a value this
+# evaluator's float-based number model cannot hold any more precisely than
+# the literal already does anyway (see this task's report: doubles cannot
+# represent 4 decimal digits exactly at Currency's full 15-digit magnitude).
+_CURRENCY_MIN, _CURRENCY_MAX = -922337203685477.5808, 922337203685477.5807
+# The literal floats above are already the nearest double to each bound (a
+# double cannot resolve 4 decimal digits at this ~15-digit magnitude - the
+# gap between adjacent doubles here is roughly 0.1, well past ".5807"), so
+# an f-string of `_CURRENCY_MAX` itself would print something like
+# "922337203685477.6" in an error message - technically the same double,
+# but not the range the docs actually state. This text constant is for
+# error messages only; the float pair above is still what every comparison
+# uses.
+_CURRENCY_RANGE_TEXT = "-922337203685477.5808 to 922337203685477.5807"
+
+# IEEE-754 binary32 max, computed exactly: (2 - 2**-23) needs 24 significant
+# bits, well inside a double's 52-bit mantissa, and multiplying it by 2**127
+# is an exact exponent shift - no rounding anywhere in this formula, unlike
+# typing "3.4028235E+38" by hand from memory.
+_SINGLE_MAX = (2 - 2**-23) * 2**127
+_DOUBLE_MAX = sys.float_info.max  # the exact IEEE-754 binary64 max
+# .NET's System.Decimal is a 96-bit-mantissa fixed-point type; its
+# documented MaxValue (79228162514264337593543950335) is exactly 2**96 - 1.
+_DECIMAL_MAX = float(2**96 - 1)
+
+
+def _resolve_rounding_mode(name: str, mode: Any) -> int | None:
+    # Shared by every X.From below that takes a roundingMode argument
+    # (Byte/Currency/Int8/16/32/64 - never Single/Double/Decimal, whose
+    # Syntax blocks have no third parameter at all). `None` here means "use
+    # Number.Round's own None-path", which is already round-half-to-even -
+    # exactly RoundingMode.ToEven, the documented default for this whole
+    # family, so there is no separate default branch to maintain.
+    if mode is None:
+        return None
+    resolved = _require_int(mode)
+    if resolved not in (
+        _ROUND_UP,
+        _ROUND_DOWN,
+        _ROUND_AWAY,
+        _ROUND_TOWARD,
+        _ROUND_EVEN,
+    ):
+        raise EvalError(
+            f"{name}: {resolved} is not a RoundingMode "
+            "(RoundingMode.Up/Down/AwayFromZero/TowardZero/ToEven)"
+        )
+    return resolved
+
+
+def _convert_via_number_from(name: str, value: Any, ctx: _Ctx) -> int | float:
+    """Every function below falls back to this for a non-number argument.
+
+    Byte/Currency/Int8/16/32/64/Single/Double/Decimal's own pages all say
+    "converted to a number using Number.FromText"; Percentage.From's page
+    says "using Number.From" instead. Number.FromText, in this codebase, IS
+    Number.From with a text-only type check bolted on (see _from_text
+    above) - the two delegates are the same function for every value that
+    reaches this line, so one shared implementation honestly serves both
+    worded descriptions rather than maintaining two delegates that happen
+    to agree on every input this evaluator can construct.
+
+    Renaming the error prefix mirrors _from_text's own rename above, for
+    the same reason: a Byte.From caller should see "Byte.From: ...", not
+    "Number.From: ...".
+    """
+    try:
+        result: int | float = _number_from([value], ctx)
+        return result
+    except EvalError as error:
+        message = str(error)
+        prefix = "Number.From: "
+        if message.startswith(prefix):
+            message = f"{name}: {message[len(prefix) :]}"
+        raise EvalError(message) from error
+
+
+def _make_integer_from(
+    name: str, minimum: int, maximum: int
+) -> Callable[[list[Any], _Ctx], Any]:
+    """Byte.From/Int8.From/Int16.From/Int32.From/Int64.From: identical
+    Syntax blocks (value / optional culture / optional roundingMode) and
+    identical About prose modulo the type name and its range. Rounds a
+    fractional value to a whole number via Number.Round's own tie-break
+    logic (RoundingMode.ToEven by default - see _resolve_rounding_mode),
+    then range-checks the whole-number result.
+
+    Neither page's About text spells out what happens OUT of range - the
+    task brief settles it: Byte.From(300) and Int8.From(200) must error,
+    not wrap, so this raises rather than silently truncating to the type's
+    bit width the way an unchecked cast would.
+    """
+
+    def run(args: list[Any], ctx: _Ctx) -> Any:
+        _arity(name, args, 1, 3)
+        culture = args[1] if len(args) >= 2 else None
+        _check_invariant_culture(name, culture, "culture-specific numeric parsing")
+        mode = _resolve_rounding_mode(name, args[2] if len(args) == 3 else None)
+        value = args[0]
+        if value is None:
+            return None
+        number = _convert_via_number_from(name, value, ctx)
+        if isinstance(number, float) and (math.isnan(number) or math.isinf(number)):
+            # Neither NaN nor +/-Infinity has a whole-number value, and
+            # Number.Round's own tie-break path raises an unguarded Python
+            # OverflowError on infinity (`math.floor(inf)`, verified) rather
+            # than a typed error - refusing here, before that call, is what
+            # keeps this a typed EvalError instead of a leaked OverflowError.
+            raise EvalError(
+                f"{name}: {_format_number(number)} has no whole-number value"
+            )
+        rounded = int(_number_round([number, 0, mode], ctx))
+        if not minimum <= rounded <= maximum:
+            raise EvalError(
+                f"{name}: {rounded} is outside the range {minimum} to {maximum}"
+            )
+        return rounded
+
+    run.__name__ = f"_{name.replace('.', '_').lower()}"
+    return run
+
+
+def _make_ranged_from(
+    name: str, minimum: float, maximum: float, allow_special: bool
+) -> Callable[[list[Any], _Ctx], Any]:
+    """Single.From/Double.From/Decimal.From: value / optional culture, no
+    roundingMode parameter at all - their About text never mentions
+    rounding, only a range check ("value is returned, otherwise an error is
+    returned"). `allow_special` distinguishes the two IEEE-754 binary types
+    (Single, Double), which have real NaN/Infinity values, from Decimal,
+    .NET's exact fixed-point type, which has no representation for either.
+    """
+
+    def run(args: list[Any], ctx: _Ctx) -> Any:
+        _arity(name, args, 1, 2)
+        culture = args[1] if len(args) == 2 else None
+        _check_invariant_culture(name, culture, "culture-specific numeric parsing")
+        value = args[0]
+        if value is None:
+            return None
+        number = _convert_via_number_from(name, value, ctx)
+        if isinstance(number, float) and (math.isnan(number) or math.isinf(number)):
+            if allow_special:
+                return number
+            raise EvalError(f"{name}: {_format_number(number)} is not representable")
+        if not minimum <= number <= maximum:
+            raise EvalError(
+                f"{name}: {number} is outside the range {minimum} to {maximum}"
+            )
+        return number
+
+    run.__name__ = f"_{name.replace('.', '_').lower()}"
+    return run
+
+
+_byte_from = _make_integer_from("Byte.From", _BYTE_MIN, _BYTE_MAX)
+_int8_from = _make_integer_from("Int8.From", _INT8_MIN, _INT8_MAX)
+_int16_from = _make_integer_from("Int16.From", _INT16_MIN, _INT16_MAX)
+_int32_from = _make_integer_from("Int32.From", _INT32_MIN, _INT32_MAX)
+_int64_from = _make_integer_from("Int64.From", _INT64_MIN, _INT64_MAX)
+_double_from = _make_ranged_from(
+    "Double.From", -_DOUBLE_MAX, _DOUBLE_MAX, allow_special=True
+)
+_single_from = _make_ranged_from(
+    "Single.From", -_SINGLE_MAX, _SINGLE_MAX, allow_special=True
+)
+_decimal_from = _make_ranged_from(
+    "Decimal.From", -_DECIMAL_MAX, _DECIMAL_MAX, allow_special=False
+)
+
+
+def _currency_from(args: list[Any], ctx: _Ctx) -> Any:
+    # Currency.From: the one member of the rounding family that rounds to 4
+    # decimal digits instead of a whole number - everything else about its
+    # Syntax block matches Byte/Int8/16/32/64 exactly, but sharing
+    # _make_integer_from would need a `digits` parameter threaded through a
+    # helper whose name says "integer", so this stays its own function.
+    _arity("Currency.From", args, 1, 3)
+    culture = args[1] if len(args) >= 2 else None
+    _check_invariant_culture(
+        "Currency.From", culture, "culture-specific numeric parsing"
+    )
+    mode = _resolve_rounding_mode("Currency.From", args[2] if len(args) == 3 else None)
+    value = args[0]
+    if value is None:
+        return None
+    number = _convert_via_number_from("Currency.From", value, ctx)
+    if isinstance(number, float) and (math.isnan(number) or math.isinf(number)):
+        # Currency has no NaN/Infinity representation (it is .NET's fixed-
+        # point scaled-Int64 type, not an IEEE-754 float) - same reasoning,
+        # and the same unguarded OverflowError, as Decimal.From above.
+        raise EvalError(f"Currency.From: {_format_number(number)} is not representable")
+    rounded = _number_round([number, 4, mode], ctx)
+    if not _CURRENCY_MIN <= rounded <= _CURRENCY_MAX:
+        raise EvalError(
+            f"Currency.From: {rounded} is outside the range {_CURRENCY_RANGE_TEXT}"
+        )
+    return rounded
+
+
+def _percent_text_to_number(name: str, raw: str, numeric_text: str) -> float:
+    """Shared by Percentage.From and Value.FromText's own "%"-suffix branch.
+
+    Plain float division lands on the wrong side of the last bit here:
+    `12.3 / 100 == 0.12300000000000001` (verified), not the nearest double
+    to 0.123 that the page's own worked example prints. Going through
+    `decimal.Decimal(str(x))` for the division - the exact pattern
+    `_decimal_truncate_divide` above already uses, for the same reason - and
+    back to float lands on the SAME correctly-rounded double `float("0.123")`
+    would, matching the doc's printed digits instead of merely being close.
+    """
+    try:
+        parsed = _parse_numeric_literal(numeric_text)
+    except ValueError as error:
+        raise EvalError(f"{name}: not a number: {raw!r}") from error
+    return float(decimal.Decimal(str(parsed)) / decimal.Decimal(100))
+
+
+def _percentage_from(args: list[Any], ctx: _Ctx) -> Any:
+    # Percentage.From(value as any, optional culture as nullable text) - no
+    # roundingMode parameter (unlike its integer-family neighbours above).
+    # Verified against the page's own worked example: "12.3%" -> 0.123.
+    _arity("Percentage.From", args, 1, 2)
+    culture = args[1] if len(args) == 2 else None
+    _check_invariant_culture(
+        "Percentage.From", culture, "culture-specific numeric parsing"
+    )
+    value = args[0]
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.endswith("%"):
+            return _percent_text_to_number(
+                "Percentage.From", value, stripped[:-1].strip()
+            )
+    # "Otherwise, the value will be converted to a number using Number.From"
+    # - the page's own wording, and genuinely different from every sibling
+    # above (which all name Number.FromText instead): a bare number is NOT
+    # divided by 100 here, only text with a trailing "%" is.
+    return _convert_via_number_from("Percentage.From", value, ctx)
+
+
+def _value_from_text(args: list[Any], ctx: _Ctx) -> Any:
+    # Value.FromText(text as any, optional culture as nullable text) as any.
+    # Verified against the page's own worked examples 1 and 2 (a plain
+    # number, and a percentage). Examples 3 and 4 (a fr-FR currency amount,
+    # a de-DE date/time) both use a non-invariant culture and are refused
+    # by the culture check below before this function would need to guess
+    # at locale-specific decimal separators or month names - pqtools only
+    # implements invariant/en-US, the same rule every other culture
+    # parameter in this module already enforces.
+    _arity("Value.FromText", args, 1, 2)
+    culture = args[1] if len(args) == 2 else None
+    _check_invariant_culture(
+        "Value.FromText", culture, "culture-specific text interpretation"
+    )
+    text = args[0]
+    if text is None:
+        return None
+    if not isinstance(text, str):
+        raise EvalError(f"Value.FromText: expected text, got {_type_name(text)}")
+    if text == "":
+        # "An empty text value is interpreted as a null value" - the page's
+        # own words, checked against the text as given: whitespace-only
+        # text is not documented as empty and falls through to the parse
+        # attempts below instead.
+        return None
+    stripped = text.strip()
+    if stripped.endswith("%"):
+        return _percent_text_to_number("Value.FromText", text, stripped[:-1].strip())
+    try:
+        return _parse_numeric_literal(stripped)
+    except ValueError:
+        pass
+    lowered = stripped.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    # The page's own About text lists the return type as "number, logical,
+    # null, datetime, duration, or text" - datetime/duration detection is
+    # real, documented Value.FromText behaviour that this function does not
+    # attempt: that parsing lives in _datetime.py, a file this task does
+    # not own (see this task's report). Falling through to the "text"
+    # branch of that same documented type union is a disclosed gap, not a
+    # silent wrong answer - a genuine date string under an invariant
+    # culture stays text here instead of becoming a datetime.
+    return text
+
+
 # Number.PI / Number.E are not registered: neither name appeared in the
 # fetched Microsoft Learn Number-functions table this task's diff was built
 # from (only Number.Log's default-base behaviour references Number.E, in a
@@ -998,4 +1394,15 @@ BUILTINS: dict[str, Any] = {
     "Logical.ToText": _logical_to_text,
     "Precision.Double": _PRECISION_DOUBLE,
     "Precision.Decimal": _PRECISION_DECIMAL,
+    "Byte.From": _byte_from,
+    "Currency.From": _currency_from,
+    "Decimal.From": _decimal_from,
+    "Double.From": _double_from,
+    "Int8.From": _int8_from,
+    "Int16.From": _int16_from,
+    "Int32.From": _int32_from,
+    "Int64.From": _int64_from,
+    "Percentage.From": _percentage_from,
+    "Single.From": _single_from,
+    "Value.FromText": _value_from_text,
 }

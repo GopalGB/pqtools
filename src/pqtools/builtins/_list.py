@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import functools
 import math
 import random as _random
 from collections.abc import Callable
@@ -21,10 +22,12 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _field_name_list,
     _m_equal,
     _require_int,
     _require_list,
     _require_number,
+    _require_record,
     _require_str,
 )
 
@@ -38,42 +41,175 @@ def _list_count(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _list_sum(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Sum", args, 1)
-    total: int | float = 0
-    for item in _require_list(args[0]):
-        total = total + _require_number(item)
-    return total
+    # "Returns the sum of the NON-NULL values in the list. Returns null if
+    # there are no non-null values" - verbatim from the reference, and both
+    # halves were wrong here: any null raised, and an empty list returned 0,
+    # a number where Power Query gives null. List.Product - the same family,
+    # written later - already had both. Two members of one family written in
+    # two batches diverge unless the family is checked as a family.
+    _arity("List.Sum", args, 1, 2)
+    numbers = [
+        _require_number(item) for item in _require_list(args[0]) if item is not None
+    ]
+    precision = _precision_argument("List.Sum", args, 1)
+    if not numbers:
+        return None
+    if precision == _PRECISION_DECIMAL:
+        total = sum(
+            (decimal.Decimal(str(number)) for number in numbers),
+            decimal.Decimal(0),
+        )
+        if all(isinstance(number, int) for number in numbers):
+            return int(total)
+        return float(total)
+    result: int | float = 0
+    for number in numbers:
+        result = result + number
+    return result
+
+
+def _list_extreme(name: str, args: list[Any], ctx: _Ctx, *, largest: bool) -> Any:
+    """List.Max / List.Min - one body, because they share one signature.
+
+        List.Max(list, optional default, optional comparisonCriteria,
+                 optional includeNulls)
+
+    Only the first two arguments were accepted, so the reference's own
+    List.Max Example 4 - which keys German date text through
+    ``Date.FromText(_, [Culture = "de-DE"])`` and returns the ORIGINAL text -
+    could not run at all.
+    """
+    _arity(name, args, 1, 4)
+    items = _require_list(args[0])
+    default = args[1] if len(args) >= 2 else None
+
+    # "includeNulls: Indicates whether null values in the list should be
+    # included in determining the maximum item. The default value is true."
+    # Nulls therefore participate by default, and M orders null below every
+    # other value (the same rule _type.py's Value.Compare already encodes),
+    # so List.Min({1, null, 3}) is null while List.Max is 3. No Microsoft
+    # example pins that; it is the direct consequence of the documented
+    # default plus the documented ordering, and test_list_criteria.py says so.
+    include_nulls = True
+    if len(args) == 4 and args[3] is not None:
+        if not isinstance(args[3], bool):
+            raise EvalError(f"{name}: includeNulls must be a logical value")
+        include_nulls = args[3]
+    if not include_nulls:
+        items = [item for item in items if item is not None]
+    if not items:
+        return default
+
+    key, _ = _comparison_criteria_key(
+        args[2] if len(args) >= 3 else None, ctx, name, allow_order=False
+    )
+    pick = max if largest else min
+    try:
+        return pick(items, key=_null_lowest(key))
+    except TypeError as error:
+        raise EvalError(f"{name}: values are not comparable") from error
 
 
 def _list_max(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Max", args, 1, 2)
-    items = _require_list(args[0])
-    if not items:
-        return args[1] if len(args) == 2 else None
-    try:
-        return max(items)
-    except TypeError as error:
-        raise EvalError("List.Max: values are not comparable") from error
+    return _list_extreme("List.Max", args, ctx, largest=True)
 
 
 def _list_min(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Min", args, 1, 2)
-    items = _require_list(args[0])
-    if not items:
-        return args[1] if len(args) == 2 else None
-    try:
-        return min(items)
-    except TypeError as error:
-        raise EvalError("List.Min: values are not comparable") from error
+    return _list_extreme("List.Min", args, ctx, largest=False)
+
+
+# "Only works with number, date, time, datetime, datetimezone and duration
+# values" - List.Average's own About text, and "the result is given in the
+# same datatype as the values in the list". The number-only version could not
+# run the page's own Example 2, which averages three dates and gets a date.
+_AVERAGE_DOMAIN = (
+    "List.Average only works with number, date, time, datetime, "
+    "datetimezone and duration values"
+)
 
 
 def _list_average(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Average", args, 1)
+    _arity("List.Average", args, 1, 2)
     items = _require_list(args[0])
+    precision = _precision_argument("List.Average", args, 1)
     if not items:
         return None
-    numbers = [_require_number(item) for item in items]
-    return sum(numbers) / len(numbers)
+
+    if all(_is_plain_number(item) for item in items):
+        numbers = [_require_number(item) for item in items]
+        if precision == _PRECISION_DECIMAL:
+            total = sum(
+                (decimal.Decimal(str(number)) for number in numbers),
+                decimal.Decimal(0),
+            )
+            return float(total / len(numbers))
+        return sum(numbers) / len(numbers)
+
+    kinds = {_average_kind(item) for item in items}
+    if None in kinds or len(kinds) != 1:
+        raise EvalError(f"{_AVERAGE_DOMAIN} (and all of one type)")
+    kind = kinds.pop()
+
+    if kind == "duration":
+        mean = sum(item.total_seconds() for item in items) / len(items)
+        return datetime.timedelta(seconds=mean)
+    if kind == "time":
+        mean = sum(_time_seconds(item) for item in items) / len(items)
+        return (datetime.datetime.min + datetime.timedelta(seconds=mean)).time()
+    if kind == "date":
+        # date is the one coarse-grained case: its unit is a whole day, so a
+        # mean that lands mid-day has no date to be "the same datatype" as.
+        # Microsoft documents neither a rounding rule nor a datetime result
+        # for it, so the ambiguous case is refused rather than guessed. The
+        # page's own example averages to an exact day and runs.
+        total = sum(item.toordinal() for item in items)
+        if total % len(items):
+            raise UnsupportedError(
+                "List.Average of dates whose mean falls between two days: the "
+                "reference says the result keeps the input datatype but does "
+                "not define how a fractional day is rounded"
+            )
+        return datetime.date.fromordinal(total // len(items))
+
+    # datetime and datetimezone: microsecond resolution, so the mean is
+    # exact. A datetimezone list must share one offset - averaging values
+    # from two different offsets has no documented answer.
+    offsets = {item.utcoffset() for item in items}
+    if len(offsets) != 1:
+        raise UnsupportedError(
+            "List.Average of datetimezone values with different UTC offsets "
+            "is not defined by the reference"
+        )
+    anchor = items[0]
+    mean = sum((item - anchor).total_seconds() for item in items) / len(items)
+    return anchor + datetime.timedelta(seconds=mean)
+
+
+def _is_plain_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float))
+
+
+def _average_kind(value: Any) -> str | None:
+    """Which of List.Average's documented temporal families a value is in."""
+    if isinstance(value, datetime.timedelta):
+        return "duration"
+    if isinstance(value, datetime.time):
+        return "time"
+    if isinstance(value, datetime.datetime):
+        # datetime before date: datetime subclasses date in Python.
+        return "datetimezone" if value.tzinfo is not None else "datetime"
+    if isinstance(value, datetime.date):
+        return "date"
+    return None
+
+
+def _time_seconds(value: datetime.time) -> float:
+    return (
+        value.hour * 3600
+        + value.minute * 60
+        + value.second
+        + value.microsecond / 1_000_000
+    )
 
 
 def _list_transform(args: list[Any], ctx: _Ctx) -> Any:
@@ -117,23 +253,44 @@ def _list_reverse(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _list_sort(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Sort", args, 1)
+    # comparisonCriteria was absent, so `List.Sort({2, 3, 1},
+    # Order.Descending)` - the page's own Example 2 - did not run.
+    _arity("List.Sort", args, 1, 2)
+    key, reverse = _comparison_criteria_key(
+        args[1] if len(args) == 2 else None, ctx, "List.Sort"
+    )
     try:
-        return sorted(_require_list(args[0]))
+        return sorted(_require_list(args[0]), key=_null_lowest(key), reverse=reverse)
     except TypeError as error:
         raise EvalError("List.Sort: values are not comparable") from error
 
 
 def _list_contains(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Contains", args, 2)
-    return any(_m_equal(item, args[1]) for item in _require_list(args[0]))
+    _arity("List.Contains", args, 2, 3)
+    items = _require_list(args[0])
+    if len(args) == 3 and args[2] is not None:
+        # Example 3 passes Comparer.OrdinalIgnoreCase, the same shape
+        # List.ContainsAny/List.ContainsAll already accept here.
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "List.Contains", allow_custom_comparer=True
+        )
+        return any(equal(item, args[1]) for item in items)
+    return any(_m_equal(item, args[1]) for item in items)
 
 
 def _list_distinct(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Distinct", args, 1)
+    # equationCriteria was missing, so three of the page's four examples -
+    # a key selector, a bare comparer, and the {selector, comparer} pair -
+    # all failed on arity.
+    _arity("List.Distinct", args, 1, 2)
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 2 and args[1] is not None:
+        equal = _equation_criteria_predicate(
+            args[1], ctx, "List.Distinct", allow_custom_comparer=True
+        )
     result: list[Any] = []
     for item in _require_list(args[0]):
-        if not any(_m_equal(item, seen) for seen in result):
+        if not any(equal(item, seen) for seen in result):
             result.append(item)
     return result
 
@@ -443,6 +600,183 @@ def _equation_criteria_predicate(
     )
 
 
+# --------------------------------------------------------------------------
+# comparisonCriteria over list VALUES
+# --------------------------------------------------------------------------
+# _shared._sort_criteria parses the TABLE form, where every key is a column
+# NAME. The list functions order values instead, so their criteria are
+# functions and Order values. List.Sort's page enumerates exactly four shapes:
+#
+#     Order.Descending                 an Order enum value
+#     each Text.Length(_)              a 1-argument key selector
+#     {each 1 / _, Order.Descending}   a {key selector, Order} pair
+#     (x, y) => Value.Compare(x, y)    a 2-argument comparer returning -1/0/1
+
+
+def _order_value(value: Any) -> bool | None:
+    """True for Order.Descending, False for Order.Ascending, else None.
+
+    `bool` is a subclass of int in Python; an M logical is not an Order -
+    the same guard `_shared._sort_criteria` documents for the table form.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return None if value not in (0, 1) else value == 1
+
+
+def _comparison_criteria_key(
+    criteria: Any,
+    ctx: _Ctx,
+    fn_name: str,
+    *,
+    allow_order: bool = True,
+) -> tuple[Callable[[Any], Any], bool]:
+    """Resolve comparisonCriteria to a Python ``(key, reverse)`` sort pair.
+
+    ``allow_order`` is False for List.Max/List.Min, whose own pages define
+    the parameter narrowly as "a function that's used to transform the
+    values before they're compared" and show no Order form. Accepting an
+    Order there would mean inventing what it does to a maximum.
+    """
+    if criteria is None:
+        return (lambda item: item), False
+
+    order = _order_value(criteria)
+    if order is not None:
+        if not allow_order:
+            raise UnsupportedError(_no_order_form(fn_name))
+        return (lambda item: item), order
+
+    if isinstance(criteria, list):
+        if not allow_order:
+            raise UnsupportedError(_no_order_form(fn_name))
+        if len(criteria) != 2:
+            raise UnsupportedError(
+                f"{fn_name}: comparisonCriteria list must have exactly two "
+                "items (a key selector and an Order value)"
+            )
+        selector, direction = criteria
+        descending = _order_value(direction)
+        if descending is None:
+            raise UnsupportedError(
+                f"{fn_name}: direction must be Order.Ascending or Order.Descending"
+            )
+        return (lambda item: ctx.invoke(selector, [item], ctx)), descending
+
+    arity = _equation_arity(criteria)
+    if arity == 1:
+        return (lambda item: ctx.invoke(criteria, [item], ctx)), False
+    if arity == 2:
+
+        def compare(left: Any, right: Any) -> int:
+            return _require_int(ctx.invoke(criteria, [left, right], ctx))
+
+        return functools.cmp_to_key(compare), False
+    raise UnsupportedError(
+        f"{fn_name}: comparisonCriteria function of unknown arity (expected a "
+        "1-argument key selector or a 2-argument comparer returning -1, 0 or "
+        "1; wrap a bare builtin reference in `each` if it is a key selector)"
+    )
+
+
+def _no_order_form(fn_name: str) -> str:
+    return (
+        f"{fn_name}: comparisonCriteria here transforms values before they are "
+        "compared, and the reference defines no Order form for it - pass a key "
+        "selector or a 2-argument comparer"
+    )
+
+
+def _null_lowest(key: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """Wrap a sort key so null orders below every other value.
+
+    That is M's own ordering - `_type.py`'s `Value.Compare` returns -1 for a
+    null left operand against anything. Without it, one blank cell in a
+    column turns an ordinary sort into "values are not comparable", because
+    Python refuses to compare None with anything else.
+
+    The one-element tuple for null never has its second slot read: Python
+    stops at 0 < 1, so the key's own type is never compared against it.
+    """
+
+    def wrapped(item: Any) -> Any:
+        value = key(item)
+        return (0,) if value is None else (1, value)
+
+    return wrapped
+
+
+def _precision_argument(fn_name: str, args: list[Any], index: int) -> int | None:
+    """Validate an optional `precision as nullable number` argument.
+
+    Precision.Double = 0, Precision.Decimal = 1 - the same enum
+    `_number.py`'s Number.IntegerDivide/Number.Mod expose, and the same
+    validation List.Product already carried alone.
+    """
+    if len(args) <= index or args[index] is None:
+        return None
+    precision = _require_int(args[index])
+    if precision not in (0, _PRECISION_DECIMAL):
+        raise EvalError(
+            f"{fn_name}: precision must be Precision.Double or Precision.Decimal"
+        )
+    return precision
+
+
+def _row_equation_criteria_predicate(
+    criteria: Any, ctx: _Ctx, fn_name: str
+) -> Callable[[Any, Any], bool]:
+    """Equation criteria in its TABLE dialect: ``(rowA, rowB) -> bool``.
+
+    Microsoft's table-functions page defines the concept in three shapes: "a
+    key selector that determines the column in the table", "a comparer
+    function", or "a list of the columns in the table to apply the equality
+    criteria". pqtools had implemented each half in a different function -
+    Table.Distinct understood ONLY the column list, Table.RemoveMatchingRows
+    understood ONLY the function forms - so each one rejected the other's
+    documented examples. One resolver now, and it lives beside the list
+    dialect so the two cannot quietly drift apart again.
+    """
+    if isinstance(criteria, str) or (
+        isinstance(criteria, list)
+        and criteria
+        and all(isinstance(item, str) for item in criteria)
+    ):
+        # A bare column name is the singular of "a list of the columns";
+        # Table.RemoveMatchingRows' own Example 1 passes "a", not {"a"}.
+        names = _field_name_list(criteria)
+
+        def by_columns(left: Any, right: Any) -> bool:
+            return all(_m_equal(left.get(name), right.get(name)) for name in names)
+
+        return by_columns
+
+    if _equation_arity(criteria) == 2:
+        # A comparer takes two VALUES, not two rows, so on a table it applies
+        # column by column. That is not an inference: Table.RemoveMatchingRows
+        # Example 2 matches the row {103, "Widget", 5} against the record
+        # [OrderID = 103, Product = "widget", Quantity = 5] under
+        # Comparer.OrdinalIgnoreCase, which only holds per field.
+        def by_comparer(left: Any, right: Any) -> bool:
+            # Compared over the fields the RIGHT operand names, not over an
+            # identical key set: Table.RemoveMatchingRows matches a full row
+            # against a record that may carry only the key columns, and its
+            # default (no-criteria) path already works that way.
+            return all(
+                name in left
+                and _equation_match_result(
+                    ctx.invoke(criteria, [left[name], right[name]], ctx), fn_name
+                )
+                for name in right
+            )
+
+        return by_comparer
+
+    return _equation_criteria_predicate(
+        criteria, ctx, fn_name, allow_custom_comparer=True
+    )
+
+
 def _list_contains_any(args: list[Any], ctx: _Ctx) -> Any:
     _arity("List.ContainsAny", args, 2, 3)
     items = _require_list(args[0])
@@ -597,17 +931,45 @@ def _list_standard_deviation(args: list[Any], ctx: _Ctx) -> Any:
     return math.sqrt(variance)
 
 
-def _percentile_excel_inc(sorted_numbers: list[float], p: float) -> float:
+# PercentileMode.Type: ExcelInc = 1, ExcelExc = 2, SqlDisc = 3, SqlCont = 4.
+# "The default behavior matches PercentileMode.ExcelInc." SqlCont is SQL
+# Server's PERCENTILE_CONT, which is the same linear interpolation on rank
+# p*(n-1) that Excel's PERCENTILE.INC uses, so the two share a branch.
+_PERCENTILE_EXCEL_INC = 1
+_PERCENTILE_EXCEL_EXC = 2
+_PERCENTILE_SQL_DISC = 3
+_PERCENTILE_SQL_CONT = 4
+
+
+def _percentile(sorted_numbers: list[float], p: float, mode: int) -> float:
     n = len(sorted_numbers)
     if n == 0:
         raise EvalError("List.Percentile: list must not be empty")
-    if n == 1:
-        return sorted_numbers[0]
-    rank = p * (n - 1)
+    if not 0.0 <= p <= 1.0:
+        raise EvalError(f"List.Percentile: percentile {p} must be between 0.0 and 1.0")
+
+    if mode == _PERCENTILE_SQL_DISC:
+        # PERCENTILE_DISC never interpolates: it returns an actual member of
+        # the list - the first whose cumulative distribution reaches p.
+        return sorted_numbers[max(math.ceil(p * n) - 1, 0)]
+
+    if mode == _PERCENTILE_EXCEL_EXC:
+        # PERCENTILE.EXC ranks over n + 1 positions and is undefined outside
+        # them; Excel itself returns #NUM! there rather than clamping.
+        rank = p * (n + 1) - 1
+        if rank < 0 or rank > n - 1:
+            raise EvalError(
+                f"List.Percentile: PercentileMode.ExcelExc is undefined for "
+                f"percentile {p} over {n} value(s) (it requires "
+                "1/(n+1) <= p <= n/(n+1))"
+            )
+    else:
+        rank = p * (n - 1)
+
     lower = math.floor(rank)
     upper = math.ceil(rank)
     if lower == upper:
-        return sorted_numbers[int(rank)]
+        return sorted_numbers[lower]
     fraction = rank - lower
     return sorted_numbers[lower] + fraction * (
         sorted_numbers[upper] - sorted_numbers[lower]
@@ -615,17 +977,30 @@ def _percentile_excel_inc(sorted_numbers: list[float], p: float) -> float:
 
 
 def _list_percentile(args: list[Any], ctx: _Ctx) -> Any:
-    # Default interpolation is PercentileMode.ExcelInc (verified against
-    # the docs' own worked example). PercentileMode overrides are not
-    # implemented - a non-null options record raises UnsupportedError.
     _arity("List.Percentile", args, 2, 3)
+    mode = _PERCENTILE_EXCEL_INC
     if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("List.Percentile: options argument (PercentileMode)")
+        options = dict(_require_record(args[2]))
+        raw = options.pop("PercentileMode", None)
+        if options:
+            raise UnsupportedError(f"List.Percentile: option(s) {sorted(options)}")
+        if raw is not None:
+            mode = _require_int(raw)
+            if mode not in (
+                _PERCENTILE_EXCEL_INC,
+                _PERCENTILE_EXCEL_EXC,
+                _PERCENTILE_SQL_DISC,
+                _PERCENTILE_SQL_CONT,
+            ):
+                raise EvalError(
+                    "List.Percentile: PercentileMode must be one of "
+                    "PercentileMode.ExcelInc, .ExcelExc, .SqlDisc or .SqlCont"
+                )
     numbers = sorted(_require_number(x) for x in _require_list(args[0]))
     percentiles = args[1]
     if isinstance(percentiles, list):
-        return [_percentile_excel_inc(numbers, _require_number(p)) for p in percentiles]
-    return _percentile_excel_inc(numbers, _require_number(percentiles))
+        return [_percentile(numbers, _require_number(p), mode) for p in percentiles]
+    return _percentile(numbers, _require_number(percentiles), mode)
 
 
 def _list_all_true(args: list[Any], ctx: _Ctx) -> Any:

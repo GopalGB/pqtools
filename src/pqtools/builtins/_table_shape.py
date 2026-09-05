@@ -30,14 +30,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from ._list import _equation_criteria_predicate
+from ._list import (
+    _equation_match_result,
+    _row_equation_criteria_predicate,
+)
 from ._shared import (
+    _MISSING_FIELD_ERROR,
+    _MISSING_FIELD_IGNORE,
     EvalError,
     UnsupportedError,
     _arity,
+    _column_selection,
     _field_name_list,
     _format_number,
     _m_equal,
+    _missing_field_mode,
     _require_int,
     _require_list,
     _require_number,
@@ -714,21 +721,30 @@ def _table_range(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_reorder_columns(args: list[Any], ctx: _Ctx) -> Any:
+    # missingField was refused outright, which made the defensive form real
+    # queries use - reorder these columns IF the source has them - unusable.
     _arity("Table.ReorderColumns", args, 2, 3)
-    if len(args) == 3 and args[2] is not None:
-        raise UnsupportedError("Table.ReorderColumns: missingField option")
     table = _require_table(args[0])
     order = _field_name_list(args[1])
+    mode = _missing_field_mode(args[2] if len(args) == 3 else None)
     header = _column_order(table)
     seen: set[str] = set()
+    wanted: list[str] = []
+    added: list[str] = []
     for name in order:
         if name in seen:
             raise EvalError(f"Table.ReorderColumns: duplicate column: {name}")
         seen.add(name)
         if table and name not in header:
-            raise EvalError(f"Table.ReorderColumns: no such column: {name}")
-    final_order = list(order) + [c for c in header if c not in seen]
-    return [{name: row[name] for name in final_order} for row in table]
+            if mode == _MISSING_FIELD_ERROR:
+                raise EvalError(f"Table.ReorderColumns: no such column: {name}")
+            if mode == _MISSING_FIELD_IGNORE:
+                continue
+            added.append(name)
+        wanted.append(name)
+    final_order = wanted + [c for c in header if c not in seen]
+    blanks = dict.fromkeys(added)
+    return [{name: {**row, **blanks}[name] for name in final_order} for row in table]
 
 
 def _table_duplicate_column(args: list[Any], ctx: _Ctx) -> Any:
@@ -746,10 +762,12 @@ def _table_duplicate_column(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_combine(args: list[Any], ctx: _Ctx) -> Any:
+    # "The resulting table will have a row type structure defined by columns
+    # or by a union of the input types if columns is not specified" - so the
+    # optional argument replaces the union, it does not filter it.
     _arity("Table.Combine", args, 1, 2)
-    if len(args) == 2 and args[1] is not None:
-        raise UnsupportedError("Table.Combine: columns option")
     tables = _require_list(args[0])
+    chosen = _column_selection(args[1] if len(args) == 2 else None, "Table.Combine")
     header: list[str] = []
     seen: set[str] = set()
     parsed_tables: list[list[dict[str, Any]]] = []
@@ -761,6 +779,8 @@ def _table_combine(args: list[Any], ctx: _Ctx) -> Any:
                 if name not in seen:
                     seen.add(name)
                     header.append(name)
+    if chosen is not None:
+        header = chosen
     result: list[dict[str, Any]] = []
     for rows in parsed_tables:
         for row in rows:
@@ -797,27 +817,80 @@ def _table_has_columns(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_transform_column_names(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.TransformColumnNames", args, 2)
+    """Table.TransformColumnNames(table, nameGenerator, optional options).
+
+    The options record was missing entirely. Both of its documented keys
+    matter to the result, not just to its presentation: MaxLength trims the
+    generated name, and Comparer decides which generated names COLLIDE - so
+    with Comparer.OrdinalIgnoreCase, names that differ only in case have to
+    be made distinct. Example 2 turns {ColumnNum, cOlumnnum, coLumnNUM} into
+    {Column, cOlum1, coLum2}, which pins the trim, the collision rule, and
+    the disambiguating suffix all at once.
+    """
+    _arity("Table.TransformColumnNames", args, 2, 3)
     table = _require_table(args[0])
     transform = args[1]
+    max_length, comparer = _column_name_options(args, ctx)
     if not table:
         return []
     original = list(table[0].keys())
     new_names: list[str] = []
-    seen: set[str] = set()
+    taken: list[str] = []
+
+    def clashes(candidate: str) -> bool:
+        if comparer is None:
+            return candidate in taken
+        return any(
+            _equation_match_result(
+                ctx.invoke(comparer, [candidate, other], ctx),
+                "Table.TransformColumnNames",
+            )
+            for other in taken
+        )
+
     for name in original:
         new_name = ctx.invoke(transform, [name], ctx)
         if not isinstance(new_name, str):
             raise EvalError("Table.TransformColumnNames: transform must return text")
-        if new_name in seen:
-            raise EvalError(
-                "Table.TransformColumnNames: duplicate resulting "
-                f"column name: {new_name}"
-            )
-        seen.add(new_name)
+        if max_length is not None:
+            new_name = new_name[:max_length]
+        if clashes(new_name):
+            # Append a counter, keeping the total inside MaxLength - the only
+            # reading that produces the page's own "cOlum1"/"coLum2".
+            base = new_name
+            suffix = 1
+            while True:
+                marker = str(suffix)
+                head = base
+                if max_length is not None:
+                    head = base[: max(max_length - len(marker), 0)]
+                candidate = head + marker
+                if not clashes(candidate):
+                    new_name = candidate
+                    break
+                suffix += 1
+        taken.append(new_name)
         new_names.append(new_name)
     mapping = dict(zip(original, new_names, strict=True))
     return [{mapping[k]: v for k, v in row.items()} for row in table]
+
+
+def _column_name_options(args: list[Any], ctx: _Ctx) -> tuple[int | None, Any]:
+    """The `[MaxLength = .., Comparer = ..]` record, or (None, None)."""
+    if len(args) < 3 or args[2] is None:
+        return None, None
+    options = dict(_require_record(args[2]))
+    max_length = options.pop("MaxLength", None)
+    comparer = options.pop("Comparer", None)
+    if options:
+        raise UnsupportedError(
+            f"Table.TransformColumnNames: option(s) {sorted(options)}"
+        )
+    if max_length is not None:
+        max_length = _require_int(max_length)
+        if max_length < 1:
+            raise EvalError("Table.TransformColumnNames: MaxLength must be at least 1")
+    return max_length, comparer
 
 
 def _table_remove_rows_with_errors(args: list[Any], ctx: _Ctx) -> Any:
@@ -1282,20 +1355,20 @@ def _table_remove_matching_rows(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Table.RemoveMatchingRows", args, 2, 3)
     table = _require_table(args[0])
     targets = [_require_record(r) for r in _require_list(args[1])]
-    equal: Callable[[Any, Any], bool] = _m_equal
+
+    def by_fields(row: Any, target: Any) -> bool:
+        return all(_m_equal(row.get(name), value) for name, value in target.items())
+
+    # The third argument was accepted and then dropped on the floor, so the
+    # docs' own example - removing a "widget" row from a table holding
+    # "Widget" under Comparer.OrdinalIgnoreCase - kept the row it was called
+    # to remove. A wrong table, and no error anywhere to say so.
+    matches: Callable[[Any, Any], bool] = by_fields
     if len(args) == 3 and args[2] is not None:
-        # The third argument was accepted and then dropped on the floor, so
-        # the docs' own example - removing a "widget" row from a table
-        # holding "Widget" with Comparer.OrdinalIgnoreCase - kept the row it
-        # was called to remove. A wrong table, no error anywhere.
-        equal = _equation_criteria_predicate(
-            args[2], ctx, "Table.RemoveMatchingRows", allow_custom_comparer=True
+        matches = _row_equation_criteria_predicate(
+            args[2], ctx, "Table.RemoveMatchingRows"
         )
-    return [
-        row
-        for row in table
-        if not any(all(equal(row.get(k), v) for k, v in t.items()) for t in targets)
-    ]
+    return [row for row in table if not any(matches(row, target) for target in targets)]
 
 
 def _table_insert_rows(args: list[Any], ctx: _Ctx) -> Any:

@@ -18,12 +18,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ._list import _row_equation_criteria_predicate
 from ._shared import (
+    _MISSING_FIELD_ERROR,
+    _MISSING_FIELD_IGNORE,
     EvalError,
     _arity,
+    _column_selection,
     _field_name_list,
     _m_equal,
+    _missing_field_mode,
     _require_int,
+    _require_list,
+    _require_record,
     _require_str,
     _require_table,
     _sort_criteria,
@@ -35,8 +42,38 @@ if TYPE_CHECKING:
 
 
 def _table_from_records(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.FromRecords", args, 1)
-    return list(_require_table(args[0]))
+    """Table.FromRecords(records, optional columns, optional missingField).
+
+    Only the first argument was accepted, so three of the page's four
+    examples could not run - and neither could any other page's example that
+    BUILDS its input with the two-argument form, which is why one missing
+    optional argument accounted for six failures in the harvested corpus.
+    """
+    _arity("Table.FromRecords", args, 1, 3)
+    records = [dict(_require_record(item)) for item in _require_list(args[0])]
+    names = _column_selection(args[1] if len(args) >= 2 else None, "Table.FromRecords")
+    if names is None:
+        return records
+    # "Using MissingField.Ignore in this parameter produces an error" -
+    # verbatim, and structural: every row of a table shares one column set,
+    # so a single row cannot quietly drop one.
+    mode = _missing_field_mode(args[2] if len(args) == 3 else None)
+    if mode == _MISSING_FIELD_IGNORE:
+        raise EvalError(
+            "Table.FromRecords: MissingField.Ignore is not valid here - a row "
+            "cannot omit a column the table has. Use MissingField.UseNull."
+        )
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        if mode == _MISSING_FIELD_ERROR:
+            for name in names:
+                if name not in record:
+                    raise EvalError(
+                        f"Table.FromRecords: a record is missing field {name!r} "
+                        "(pass MissingField.UseNull to fill it with null)"
+                    )
+        rows.append({name: record.get(name) for name in names})
+    return rows
 
 
 def _table_to_records(args: list[Any], ctx: _Ctx) -> Any:
@@ -72,15 +109,21 @@ def _table_select_rows(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_select_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.SelectColumns", args, 2)
+    # missingField was missing, so Example 2 - which selects a column the
+    # table does not have and asks for nulls - raised instead of running.
+    _arity("Table.SelectColumns", args, 2, 3)
     names = _field_name_list(args[1])
-    result = []
-    for row in _require_table(args[0]):
-        for name in names:
-            if name not in row:
-                raise EvalError(f"Table.SelectColumns: no such column: {name}")
-        result.append({name: row[name] for name in names})
-    return result
+    table = _require_table(args[0])
+    mode = _missing_field_mode(args[2] if len(args) == 3 else None)
+    known = set(table[0]) if table else set()
+    if table:
+        if mode == _MISSING_FIELD_ERROR:
+            for name in names:
+                if name not in known:
+                    raise EvalError(f"Table.SelectColumns: no such column: {name}")
+        elif mode == _MISSING_FIELD_IGNORE:
+            names = [name for name in names if name in known]
+    return [{name: row.get(name) for name in names} for row in table]
 
 
 def _table_remove_columns(args: list[Any], ctx: _Ctx) -> Any:
@@ -116,16 +159,33 @@ def _column_pairs(value: Any, what: str) -> list[tuple[str, Any]]:
 
 
 def _table_rename_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.RenameColumns", args, 2)
+    # missingField makes `Table.RenameColumns(t, {...}, MissingField.Ignore)`
+    # work - the defensive form real queries use when an upstream source may
+    # or may not carry a column.
+    _arity("Table.RenameColumns", args, 2, 3)
     table = _require_table(args[0])
     pairs = _column_pairs(args[1], "Table.RenameColumns")
+    mode = _missing_field_mode(args[2] if len(args) == 3 else None)
+    added: list[str] = []
     mapping: dict[str, str] = {}
     for old, new in pairs:
         if not isinstance(new, str):
             raise EvalError("Table.RenameColumns: new column name must be text")
         if table and old not in table[0]:
-            raise EvalError(f"Table.RenameColumns: no such column: {old}")
+            if mode == _MISSING_FIELD_ERROR:
+                raise EvalError(f"Table.RenameColumns: no such column: {old}")
+            if mode == _MISSING_FIELD_IGNORE:
+                continue
+            # MissingField.UseNull. The page names it as an accepted value but
+            # shows no worked example of it on a RENAME, so this reads the
+            # enum's own definition - "any missing fields are included as null
+            # values" - literally: the absent column arrives, under its new
+            # name, empty. test_table_optional_arguments.py says so out loud.
+            added.append(new)
+            continue
         mapping[old] = new
+    if added:
+        table = [{**row, **dict.fromkeys(added)} for row in table]
     return [
         {mapping.get(key, key): value for key, value in row.items()} for row in table
     ]
@@ -168,19 +228,103 @@ def _table_add_column(args: list[Any], ctx: _Ctx) -> Any:
     return result
 
 
+def _column_operations(value: Any, what: str) -> list[tuple[str, Any, Any]]:
+    """`{column, transform}` or `{column, transform, newType}`, singly or listed.
+
+    "The format of this parameter is either { column name, transformation }
+    or { column name, transformation, new column type }" - verbatim. Only
+    the two-element form was accepted, so every doc example that declares
+    the resulting type (Date.From's and Date.FromText's among them) failed
+    with "expected a {column, value} pair".
+
+    The bare-entry-versus-list-of-entries ambiguity resolves the same way
+    `_shared._sort_criteria` documents for Table.Sort: a column name is
+    text, so an entry whose first element is text is one operation, and a
+    list whose first element is itself a list is a list of operations.
+    """
+    if not isinstance(value, list):
+        raise EvalError(f"{what}: expected a {{column, transformation}} entry")
+
+    def as_entry(item: Any) -> tuple[str, Any, Any] | None:
+        if (
+            not isinstance(item, list)
+            or not 2 <= len(item) <= 3
+            or not isinstance(item[0], str)
+        ):
+            return None
+        return (item[0], item[1], item[2] if len(item) == 3 else None)
+
+    single = as_entry(value)
+    if single is not None:
+        return [single]
+    entries: list[tuple[str, Any, Any]] = []
+    for item in value:
+        entry = as_entry(item)
+        if entry is None:
+            raise EvalError(
+                f"{what}: each entry must be {{column, transformation}} or "
+                "{column, transformation, newType}"
+            )
+        entries.append(entry)
+    return entries
+
+
 def _table_transform_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.TransformColumns", args, 2)
+    """Table.TransformColumns(table, ops, optional default, optional missing).
+
+    Half the signature was absent: the three-element operation form, the
+    defaultTransformation applied to every unlisted column, and missingField.
+    """
+    _arity("Table.TransformColumns", args, 2, 4)
     table = _require_table(args[0])
-    pairs = _column_pairs(args[1], "Table.TransformColumns")
+    operations = _column_operations(args[1], "Table.TransformColumns")
+    default = args[2] if len(args) >= 3 else None
+    mode = _missing_field_mode(args[3] if len(args) == 4 else None)
+
+    known = set(table[0]) if table else set()
+    planned: list[tuple[str, Any, Any]] = []
+    for name, transform, declared in operations:
+        if table and name not in known:
+            if mode == _MISSING_FIELD_ERROR:
+                raise EvalError(f"Table.TransformColumns: no such column: {name}")
+            if mode == _MISSING_FIELD_IGNORE:
+                continue
+        planned.append((name, transform, declared))
+
+    converters = {
+        name: _declared_converter("Table.TransformColumns", declared)
+        for name, _, declared in planned
+        if declared is not None
+    }
+    listed = {name for name, _, _ in planned}
+
     result = []
     for row in table:
         new_row = dict(row)
-        for name, transform in pairs:
-            if name not in new_row:
-                raise EvalError(f"Table.TransformColumns: no such column: {name}")
-            new_row[name] = ctx.invoke(transform, [new_row[name]], ctx)
+        for name, transform, _ in planned:
+            # MissingField.UseNull: a column the table never had is transformed
+            # from null, exactly as the enum describes.
+            value = ctx.invoke(transform, [new_row.get(name)], ctx)
+            convert = converters.get(name)
+            new_row[name] = convert(value) if convert is not None else value
+        if default is not None:
+            for name in list(new_row):
+                if name not in listed:
+                    new_row[name] = ctx.invoke(default, [new_row[name]], ctx)
         result.append(new_row)
     return result
+
+
+def _declared_converter(what: str, declared: Any) -> Any:
+    """The `new column type` slot, applied the way Table.AddColumn applies its own."""
+    from ._type import _converter_for, _MType
+
+    if not isinstance(declared, _MType):
+        raise EvalError(
+            f"{what}: expected a type value for the new column type, got "
+            f"{_type_name(declared)}"
+        )
+    return _converter_for(declared)
 
 
 # Order.Ascending / Order.Descending are M enum constants (0 and 1). Power Query's
@@ -208,9 +352,28 @@ def _table_sort(args: list[Any], ctx: _Ctx) -> Any:
     return rows
 
 
+def _row_condition(what: str, ctx: _Ctx, condition: Any, row: Any) -> bool:
+    keep = ctx.invoke(condition, [row], ctx)
+    if not isinstance(keep, bool):
+        raise EvalError(f"{what}: condition must return a logical value")
+    return keep
+
+
 def _table_first_n(args: list[Any], ctx: _Ctx) -> Any:
+    # The parameter is `countOrCondition`, not `count`: "if countOrCondition
+    # is a condition, the rows that meet the condition will be returned until
+    # a row does not meet the condition". The condition half was missing, so
+    # the page's Example 2 raised "expected a number, got _Lambda". Note it
+    # STOPS at the first row that fails - it is not Table.SelectRows.
     _arity("Table.FirstN", args, 2)
     table = _require_table(args[0])
+    if _is_invocable(args[1]):
+        kept = []
+        for row in table:
+            if not _row_condition("Table.FirstN", ctx, args[1], row):
+                break
+            kept.append(row)
+        return kept
     count = _require_int(args[1])
     if count < 0:
         raise EvalError("Table.FirstN: count must not be negative")
@@ -218,8 +381,17 @@ def _table_first_n(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_last_n(args: list[Any], ctx: _Ctx) -> Any:
+    # Mirror image: scan backwards from the end while the condition holds,
+    # then return what was kept "in ascending position" (the page's words).
     _arity("Table.LastN", args, 2)
     table = _require_table(args[0])
+    if _is_invocable(args[1]):
+        kept = 0
+        for row in reversed(table):
+            if not _row_condition("Table.LastN", ctx, args[1], row):
+                break
+            kept += 1
+        return table[len(table) - kept :] if kept else []
     count = _require_int(args[1])
     if count < 0:
         raise EvalError("Table.LastN: count must not be negative")
@@ -395,21 +567,19 @@ def _table_replace_rows(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_distinct(args: list[Any], ctx: _Ctx) -> Any:
+    # equationCriteria for tables is one concept with three shapes (a key
+    # selector, a comparer, or a list of columns). This function understood
+    # only the column list while Table.RemoveMatchingRows understood only the
+    # functions, so each rejected the other's documented examples. Both now
+    # go through one resolver - see _row_equation_criteria_predicate.
     _arity("Table.Distinct", args, 1, 2)
     table = _require_table(args[0])
-    if len(args) == 2:
-        names = _field_name_list(args[1])
-        seen: list[tuple[Any, ...]] = []
-        result = []
-        for row in table:
-            key = tuple(row.get(name) for name in names)
-            if key not in seen:
-                seen.append(key)
-                result.append(row)
-        return result
-    result = []
+    equal: Any = _m_equal
+    if len(args) == 2 and args[1] is not None:
+        equal = _row_equation_criteria_predicate(args[1], ctx, "Table.Distinct")
+    result: list[Any] = []
     for row in table:
-        if not any(_m_equal(row, other) for other in result):
+        if not any(equal(row, other) for other in result):
             result.append(row)
     return result
 

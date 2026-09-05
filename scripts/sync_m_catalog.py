@@ -44,6 +44,22 @@ EXACT: dict[str, str] = {
     "Xml.Tables": "shape",
     "Html.Table": "shape",
     "Pdf.Tables": "shape",
+    # Session/host-scoped: the Mashup Engine assigns these at evaluation
+    # time (a diagnostics-session identifier, a request-correlation token,
+    # the current module's own dependency-version record, the caller's
+    # named-variable environment, whether a registered function is
+    # classified as a data source) - none of it exists in a standalone
+    # expression evaluator with no host session, no module system, and no
+    # function-classification registry to ask.
+    "Diagnostics.ActivityId": "engine",
+    "Diagnostics.CorrelationId": "engine",
+    "Function.IsDataSource": "engine",
+    "Module.Versions": "engine",
+    "Variable.Value": "engine",
+    "Variable.ValueOrDefault": "engine",
+    # "This function is intended for internal use only" - Microsoft's own
+    # About text, word for word what the "internal" reason names.
+    "Embedded.Value": "internal",
 }
 
 PREFIX: list[tuple[str, str]] = [

@@ -157,12 +157,22 @@ def test_the_legacy_text_form_still_works() -> None:
     assert evaluate('Date.FromText("2010-12-31")') == dt.date(2010, 12, 31)
 
 
-def test_a_format_string_is_refused_by_name() -> None:
-    # Parsing by format string is the reverse of formatting by one and is not
-    # implemented. Ignoring the field would silently parse by best effort and
-    # return a value the caller never asked for.
-    with pytest.raises(UnsupportedError, match="Format string for parsing"):
-        evaluate('Date.FromText("2010-12-31", [Format="yyyy-MM-dd"])')
+def test_a_format_string_is_honoured_not_ignored() -> None:
+    """This test used to pin the refusal. The refusal was the defect.
+
+    `Date.ToText(d, "yyyy-MM-dd")` had worked all along, so a query could
+    write a date out with a pattern and then not read it back with the same
+    one - and three of Microsoft's four `DateTime.FromText` examples are
+    Format-string calls. Ignoring the field would still be wrong (a
+    best-effort parse returns a value the caller never asked for), so the
+    field is now obeyed; `tests/test_datetime_format_parsing.py` covers the
+    engine, and what remains refused is named there.
+    """
+    assert evaluate('Date.FromText("2010-12-31", [Format="yyyy-MM-dd"])') == dt.date(
+        2010, 12, 31
+    )
+    with pytest.raises(UnsupportedError, match="format specifier"):
+        evaluate('Date.FromText("2010-12-31", [Format="QQQ"])')
 
 
 def test_an_unknown_option_is_named() -> None:
