@@ -455,6 +455,83 @@ mirroring the PyPI keywords: `power-query`, `power-query-m`, `m-language`,
 `power-bi`, `pbix`, `fabric`, `linter`, `formatter`, `python`, `etl`.
 Description: the `pyproject.toml` `description` field, verbatim.
 
+## Round 5 - the review of the final tree
+
+The exact `claude-opus-5` wrapper on `c7ffc5f..ee04185`. **Verdict:
+FIX-FIRST. 3 HIGH, 2 MEDIUM, 2 LOW.** Every finding reproduced against the
+tree before any change; all seven taken, one with its impact corrected.
+
+The first attempt was BLOCKED with "Prompt is too long": 46,288 deletions in
+a 2.9 MB diff. That was the wrapper's bundle stub applied to an UNCHANGED
+file - HEAD's index got the 1-line stub while BASE kept the real 2.6 MB
+bundle, so the diff showed the bundle being deleted. My round-3 repair of the
+wrapper's stale stub path is what exposed it: while the path was stale nothing
+was stubbed, and an unchanged bundle produced no diff, which was the right
+result by accident. The wrapper now stubs a file only if `git diff --quiet
+BASE HEAD -- path` says it changed, writes that decision into the review
+header, and has a `DRY_RUN=1` that stops after printing the staged stat.
+Dry run: 31 files, 3,907 insertions, 150 deletions.
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | `logs/combined.log` and `logs/error.log` - runtime logs of an unrelated MCP server - were tracked in the package repo, and `logs/` was not ignored | FIXED - **mine**: swept in by `832f7e8`; untracked, `logs/` ignored; 0 secret-shaped lines; sdist verified not to carry them |
+| HIGH | `os.chmod(tmp_path, 0o500)` does not deny creation on Windows; the CI matrix has `windows-latest` | FIXED - `skipif(os.name == "nt")`, the reason stated |
+| HIGH | two symlink tests had no platform guard, against the repo's own precedent in `test_containers.py` | FIXED - the same guard, the same reason string |
+| MEDIUM | the arity probe ran every helper-registered builtin at collection time under an allow-everything `IOPolicy`, safe only because each connector happened to reject the placeholder before touching a driver | FIXED - `_arity` now precedes the policy check in all five DB connectors (the order `Web.Contents` always had), and the probe runs under deny-all `IOPolicy()` |
+| MEDIUM | `scripts/sync_builtin_list.py` imported a pytest module to read `DOCUMENTED_MATCHES` | FIXED - the number lives in `tests/fixtures/doc-example-matches.json`; the test asserts equality against it, the script reads it with `json` |
+| LOW | `seen` recorded the requested URL, not the landed one, so a next link naming the landed URL was fetched once more before the cycle check caught it | FIXED - `seen.add(landed)`; regression test with a 302 on page one; impact below |
+| LOW | `test_support_matrix.py`'s docstring still described the ratchet floor | FIXED |
+
+### What the deny-all probe now enforces
+
+Moving `_arity` ahead of the policy check did more than make the probe safe.
+Under a deny-all policy, a helper-registered connector that checks policy
+first answers every count with `M_IO_BLOCKED`, which `_accepts` reads as
+"got past the arity check"; `_probe_arity` then returns `None` rather than
+guess a range, and `test_no_documented_builtin_escapes_both_arity_checks`
+names the builtin. So for every builtin the runtime probe covers, arity
+before policy is now enforced, not commented.
+
+The scope of that sentence matters, and my first control got it wrong. I
+reverted `Sql.Database` to policy-first and the gate stayed green - because
+`Sql.Database` has a LITERAL `_arity("Sql.Database", ...)`, so the static
+scan covers it and the runtime probe never executes it. Of the five
+connectors reordered, only `_generic_database` (PostgreSQL.Database,
+MySQL.Database) is in the probe's population; reverting that one turned the
+escape test red. For the four literal-arity connectors the reorder is
+consistency with `Web.Contents`, and is not enforced by any test.
+
+### The LOW whose impact was overstated
+
+The review said a next link pointing at "page one's built URL (with
+`RelativePath`/`Query` applied)" escapes the cycle check and "only the
+200-page ceiling stops it". `OData.Feed` refuses every option except
+`Timeout`, so a built URL that differs from the requested one cannot occur
+there. The reachable case is a 302 on page one: the landed URL is fetched a
+second time, identically, and the cycle is caught on the next iteration - one
+redundant page, never two hundred. Fixed anyway, because the cycle check
+exists so that the ceiling is never what stops a loop; the regression test
+asserts exactly two hits, `/odata` then `/landed`.
+
+### Two of my own checks that could not have failed
+
+Recorded because the pattern is the point of this whole closeout. My patch
+to `test_doc_examples.py` inserted a reference to `_FIXTURES` and then
+asserted `"_FIXTURES" in source` - which was true because I had just written
+it. The module failed at collection with `NameError`. And the round-3
+`echo`-based check of the release gate's default arguments (round 4, above)
+was the same shape. Both were caught by running the thing, neither by reading
+it.
+
+### Positive controls run in this round
+
+| Fix | Control | Result |
+|---|---|---|
+| arity before policy | revert `Sql.Database` to policy-first | stayed GREEN - wrong target, literal arity is statically scanned |
+| arity before policy | revert `_generic_database` to policy-first | `test_no_documented_builtin_escapes_both_arity_checks` red; 659 green on restore |
+| `seen.add(landed)` | delete the line | the new redirect-cycle test red (1 failed, 27 passed); green on restore |
+| `logs/` untracked and ignored | build an sdist, list it | 0 `logs/` entries among the 107 files in the sdist |
+
 ## Scope limits - what was NOT verified
 
 Local completion is reported separately from live verification on purpose.
