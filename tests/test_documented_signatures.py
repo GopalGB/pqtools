@@ -62,6 +62,35 @@ _COMPARABLE = sorted(
 )
 
 
+# The M hash-literals are language SYNTAX, not library functions: they have no
+# entry in the function reference and so no Syntax block to harvest. They are
+# not unverified - the worked-example corpus exercises them 367 times.
+_HASH_LITERALS = frozenset(
+    {"#binary", "#date", "#datetime", "#datetimezone", "#duration", "#table", "#time"}
+)
+
+
+def test_every_callable_builtin_has_a_harvested_signature() -> None:
+    """The gate's own blind spot: a builtin whose page is not cached is
+    silently skipped by the parametrised checks above, so the suite would go
+    green having asked nothing about it.
+
+    Enum and type VALUES are exempt by construction - they are plain values
+    (`Order.Ascending` is 0), not callables, and have no signature to state.
+    """
+    unverified = sorted(
+        name
+        for name, value in BUILTINS.items()
+        if callable(value) and name not in SIGNATURES and name not in _HASH_LITERALS
+    )
+    assert unverified == [], (
+        f"{len(unverified)} callable builtin(s) have no harvested signature, so "
+        f"nothing checks their arity or nullability: {unverified}. Refresh the "
+        "doc cache and re-run scripts/harvest_signatures.py, or - if the name "
+        "genuinely has no reference page - say so explicitly here."
+    )
+
+
 def test_the_fixture_covers_most_of_the_registry() -> None:
     # A harvester that silently stopped parsing would turn this whole module
     # into a no-op that still passes - the failure mode a gate must not have.
