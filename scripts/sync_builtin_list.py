@@ -30,9 +30,17 @@ WIDTH = 76
 # tests/test_doc_examples.py asserts the live count EQUALS this fixture, so
 # reading the fixture here is reading the measurement - without importing a
 # pytest module into a documentation generator.
-DOCUMENTED_MATCHES: int = json.loads(
-    (ROOT / "tests" / "fixtures" / "doc-example-matches.json").read_text("utf-8")
-)["reproducing_exactly"]
+_MATCHES = ROOT / "tests" / "fixtures" / "doc-example-matches.json"
+try:
+    DOCUMENTED_MATCHES: int = int(
+        json.loads(_MATCHES.read_text("utf-8"))["reproducing_exactly"]
+    )
+except (OSError, ValueError, KeyError, TypeError) as error:
+    raise SystemExit(
+        f"{_MATCHES}: missing or malformed ({error!r}). It is maintained by "
+        "hand and asserted for equality by tests/test_doc_examples.py; the "
+        "coverage sentence cannot be generated without it."
+    ) from error
 
 # Grouped the way a reader looks things up - by M namespace, in the order the
 # families appear in a real query, with the hash-literals last because they

@@ -396,6 +396,9 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
 
     rows: list[Any] = []
     seen: set[str] = set()
+    # `seen` detects cycles and, since it records the landed URL of a
+    # redirected page too, it is not a page count. This is.
+    pages = 0
     total_bytes = 0
     current = url
     origin = _origin(url)
@@ -411,6 +414,7 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
                 "page; the feed's paging links form a cycle"
             )
         seen.add(current)
+        pages += 1
         ctx.budget.tick()
         raw, landed = _http_fetch_resolved(
             current, dict(page_options), ctx, "OData.Feed"
@@ -430,7 +434,7 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
         if total_bytes > _MAX_RESPONSE_BYTES:
             raise EvalError(
                 f"OData.Feed: {url} has returned more than "
-                f"{_MAX_RESPONSE_BYTES} bytes across {len(seen)} page(s); "
+                f"{_MAX_RESPONSE_BYTES} bytes across {pages} page(s); "
                 "reading the rest would be unbounded, so this refuses rather "
                 "than filling memory"
             )
@@ -440,7 +444,7 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
             page = document["value"]
         elif isinstance(document, list):
             page = document
-        elif rows or len(seen) > 1:
+        elif rows or pages > 1:
             raise EvalError(
                 f"OData.Feed: {current} was reached as a next page but is not "
                 "a collection response, so the feed cannot be read completely"

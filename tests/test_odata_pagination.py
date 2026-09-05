@@ -188,6 +188,22 @@ def test_a_next_link_back_to_the_landed_url_is_a_cycle_on_the_first_hop(
     assert feed.hits == ["/odata", "/landed"]
 
 
+def test_a_single_entity_reached_through_a_redirect_on_page_one_is_returned(
+    feed: Any,
+) -> None:
+    """Regression from recording the landed URL in `seen`.
+
+    `seen` was also read as a page counter, so a 302 on page one made a
+    single-entity response - no `value`, nothing to page - look like "a next
+    page that is not a collection" and raise, naming a hop that never
+    happened. The entity is the whole answer and must come back as before.
+    """
+    feed.redirects["/start"] = "/Products(1)"
+    feed.pages["/Products(1)"] = json.dumps({"Id": 99}).encode()
+    assert evaluate(_feed_call(feed.base, "/start"), io=NET) == {"Id": 99}
+    assert feed.hits == ["/start", "/Products(1)"]
+
+
 def test_a_two_page_loop_is_detected_as_a_cycle(feed: Any) -> None:
     feed.pages["/odata"] = _page([{"Id": 1}], f"{feed.base}/odata?p=2")
     feed.pages["/odata?p=2"] = _page([{"Id": 2}], f"{feed.base}/odata")

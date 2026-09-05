@@ -83,9 +83,12 @@ _HASH_LITERALS = frozenset(
 # made every arity look accepted - which meant the probe's safety rested on
 # each connector happening to reject the placeholder before touching a driver.
 # The connectors now check arity first (the order Web.Contents always used),
-# so a deny-all policy is both safe and a second check: if a connector ever
-# goes back to policy-first, its arity reads as "accepts everything" here and
-# the comparison below fails for that name.
+# so a deny-all policy is both safe and a second check: if a helper-registered
+# connector ever goes back to policy-first, every count reads as accepted,
+# `_probe_arity` returns None for it, and
+# `test_no_documented_builtin_escapes_both_arity_checks` names it. The four
+# connectors with a LITERAL arity are outside this probe; they are pinned by
+# tests/test_connector_arity_before_policy.py instead.
 class _Budget:
     """Enough of an evaluation budget that touching it is not a probe failure."""
 
