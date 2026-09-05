@@ -329,6 +329,90 @@ because unenforced prose drifts, and it shipped with three hand-written
 numbers nothing checked, plus a test that pinned a percentage as a literal
 string. Both are now derived.
 
+## Round 4 - the review of the round-3 fixes
+
+`review.sh c7ffc5f..HEAD` again. **Verdict: FIX-FIRST. 1 HIGH, 2 MEDIUM,
+4 LOW.** Six taken, one rejected on evidence.
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | `release_gate.sh` quoted default made the gate's own default path fail | FIXED |
+| MEDIUM | the same-origin paging test asserted nothing about headers | FIXED |
+| MEDIUM | the `141` worked-example count was hand-written into four files | FIXED |
+| LOW | `_container_backup`'s `read_bytes` outside the typed-error handling | **NOT A DEFECT - see below** |
+| LOW | `_origin` compared netloc verbatim, so `:443` read as cross-origin | FIXED |
+| LOW | two paths in the credentials test were CWD-relative | FIXED |
+| LOW | `_doc_example_floor()` checked the ratchet floor, not the measured count | FIXED |
+
+### The HIGH was mine, and my first check could not have caught it
+
+`${PQ_GATE_PYTEST_ARGS-"-n auto"}` expands as ONE word, so the unset path -
+the path everyone who does not set the variable takes - ran
+`pytest -q "-n auto"` and died with
+`invalid parse_numprocesses value: ' auto'`. I had introduced this while
+making the gate's parallelism overridable, and I had "verified the default is
+preserved" using `echo`, which joins its arguments with spaces and prints
+`-n auto` either way. **The check was structurally incapable of showing the
+bug it was run to exclude.** Re-verified properly with `set --` (argc == 2)
+and against real pytest (`12 tests collected`).
+
+### The LOW that was not a defect
+
+The review said `pq format <pbip-dir> --write` "raises a bare
+`IsADirectoryError` traceback". I applied the suggested wrap, then executed
+the path before trusting my own comment - and it was false in both
+directions. `main()` catches `OSError` and maps it to a typed
+`M_IO_ERROR` with a clean message and exit 2. Run against three trees, with a
+directory container holding one `.pq` file:
+
+| Tree | Result |
+|---|---|
+| baseline `c7ffc5f` | `error M_IO_ERROR: [Errno 21] Is a directory: <path>` |
+| `832f7e8` (after my backup rewrite) | `error M_IO_ERROR: [Errno 21] Is a directory: <path>` |
+
+No traceback, no regression, and identical to baseline. My "fix" would have
+changed a stable error code from `M_IO_ERROR` to `MQUERY_ERROR` for no
+defect, and I had written a code comment asserting the reviewer's claim as
+though I had reproduced it. **Reverted.** The underlying limitation is real
+but different, and is recorded under residuals: `write_sections` rebuilds a
+single zip DataMashup part, so directory containers are read-only - `--write`
+on one has never been supported and now says so no less clearly than before.
+
+### The `141` was the same defect as the audit's finding 6, one level up
+
+`SUPPORT-MATRIX.md` was created because unenforced prose drifts. The count of
+worked examples that reproduce their documented output was then typed by hand
+into four places - the matrix, `scripts/sync_builtin_list.py`, and through
+that generator into `README.md` and `llms.txt` - and the only test that
+looked at it compared the matrix against the *ratchet floor* in
+`test_doc_examples.py`, not against the measurement. Two consequences, both
+silent: `README.md` and `llms.txt` had no gate at all, and once real matches
+rose above the floor the matrix would understate them with every test green.
+
+Now there is one number, `tests/test_doc_examples.py::DOCUMENTED_MATCHES`,
+and it is asserted for **equality** against the live count rather than as a
+floor. A floor cannot tell a regression from an improvement; the previous
+floor of 110 sat 31 below reality, so a third of the matches could have died
+unnoticed. `SUPPORT-MATRIX.md`, `README.md` and `llms.txt` all derive from it.
+Positive-controlled by moving the constant to 142: four gates went red
+(`test_doc_examples`, `test_support_matrix`, and `test_catalog` for both
+documents) and green again on restore.
+
+### Positive controls run in this round
+
+| Fix | Control | Result |
+|---|---|---|
+| `release_gate.sh` quoting | `set --` argc, then real pytest | argc 2; `12 tests collected` |
+| same-origin header assertion | drop the header from the second request | red, then green |
+| `DOCUMENTED_MATCHES` | set to 142 | 4 gates red, green on restore |
+| `_origin` default port | delete the normalisation | the 3 default-port cases red, the 4 genuine-difference cases stayed green |
+| CWD-relative test paths | run pytest from outside the repo root | `FileNotFoundError` before, passes after |
+
+The `_origin` control is the one worth keeping: a normalisation that made
+*everything* compare equal would also have turned the 3 red cases green, so
+the test carries 4 cases that must stay green - including `https://host:80`,
+which is a real port change and not a default.
+
 ## Scope limits - what was NOT verified
 
 Local completion is reported separately from live verification on purpose.
