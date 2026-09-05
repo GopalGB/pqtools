@@ -164,7 +164,11 @@ def enum_values(family: str) -> dict[str, int]:
 
 def harvest_enums() -> dict[str, int]:
     families = sorted(
-        {name.split(".")[0] for name in BUILTINS if "." in name and not callable(BUILTINS[name])}
+        {
+            name.split(".")[0]
+            for name in BUILTINS
+            if "." in name and not callable(BUILTINS[name])
+        }
     )
     found: dict[str, int] = {}
     for family in families:
