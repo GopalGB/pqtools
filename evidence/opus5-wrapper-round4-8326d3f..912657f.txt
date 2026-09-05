@@ -1,0 +1,21 @@
+# Exact claude-opus-5 wrapper review - range 8326d3f..912657f (bundle + lockfile shown as stub blobs)
+# staged:  36 files changed, 2492 insertions(+)
+# invoked 2026-09-03T02:33:20Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+- HIGH — src/mquery_toolkit/core.py:291 — `rename` checks the target only against `plan["bindings"]`, never against free identifiers already referenced in the scope, so it silently captures them: `rename("let A = 1 in A + Total", "A", "Total")` returns `let Total = 1 in Total + Total`, rebinding a previously-free `Total`. It re-parses afterward, which still succeeds, so nothing catches it. Fix: also refuse when `new` occurs as any Identifier literal in the parsed source (the `analysis` unresolved-reference data is already available).
+
+- MEDIUM — src/mquery_toolkit/core.py:407 — `check()` parses at the top, then calls `dependencies(source)`, which parses again (core.py:253), spawning a second Node subprocess for the same text. Doubles lint latency and cost, up to 2 x the 30s ceiling on the primary command. Fix: extract `_dependencies_from(parsed)` and pass the dict already in hand.
+
+- MEDIUM — src/mquery_toolkit/fabric.py:49 — no size guard on `body` and `read_all()` materialises the whole table, so a large or heavily-expanding Arrow stream OOMs the client. Every other input path in the package is capped at `MAX_BYTES`; this one is not. Fix: reject `len(body) > MAX_BYTES` before validating and iterate `read_next_batch()` against a byte budget instead of `read_all()`.
+
+- LOW — src/mquery_toolkit/core.py:245 — `_preserve_layout` strips a trailing newline but never restores one: if the original ends with `\n` and the transform output does not, the final newline is lost, contradicting the README and SECURITY.md claim that final-newline state round-trips unchanged. Fix: append `_newline(original)` when the original ends with a newline and `updated` does not.
+
+- LOW — src/mquery_toolkit/core.py:159 — in the stdin writer thread, `stdin.close()` is in `finally`, outside the `except BrokenPipeError`, so a flush failure when the child exits early escapes a daemon thread and prints a stray traceback to stderr. Fix: `with contextlib.suppress(OSError): stdin.close()`.
+
+- LOW — src/mquery_toolkit/core.py:459 — `dry_diff` is dead code: absent from `__all__`, unused by the CLI and tests, and `update_file(..., write=False)` already covers it. Fix: delete it, or export and test it.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

@@ -1,0 +1,29 @@
+# Exact claude-opus-5 wrapper review - FINAL range 8326d3f..1ad34a9 (bridge bundle + package-lock excluded via temporary worktree index)
+# staged:  31 files changed, 2121 insertions(+)
+# invoked 2026-09-02T17:36:22Z via patched review.sh (ANTHROPIC_API_KEY unset inside the wrapper, bills the Max plan)
+
+Evidence run. Results, and what remains unverified.
+
+**Verified in this session, output above:**
+
+| Claim | Check | Result |
+|---|---|---|
+| CI runs `npm ci`, never bundles | `git cat-file -p d586b41 \| grep npm\|bundle` | lines 30-31 only: `npm ci --ignore-scripts`, `npm test`. No bundle step. |
+| `release.yml` publishes untested, never bundles | grep `run:\|pytest\|bundle` | only `pip install build twine`, `python -m build`, `twine check dist/*`. No pytest. |
+| `_bridge.cjs` is a build artifact nothing produces | `package.json` scripts | `bundle` → `--outfile=src/mquery_toolkit/_bridge.cjs`, called by no workflow. |
+| pyproject declares that missing file | grep `_bridge.cjs` | `pyproject.toml:56` package-data. |
+| semgrep bearer rule is dead | YAML parse + `re.search` | parsed regex `bearer\\s+` (literal backslash); `Bearer sk_live_abcdef1234567890` → **match=False**. Single-backslash form → match=True. |
+| M002 misses a dynamic URL after a literal one | ran `core.py:378`'s exact expression | 2 occurrences present, `re.search` sees only the first, **M002 fires? False**; `finditer` → True. |
+
+**Not verified — stating plainly:**
+
+- **Absence of `package-lock.json` / `_bridge.cjs` from the index**: verified earlier this session (`git ls-files --stage` → 31 files; `git ls-files | grep -Ei 'lock|bridge|cjs'` → only `js/bridge.js`, `js/bridge.test.js`). That output is in the transcript but is **no longer reproducible** — the staged content was torn down mid-session (index now 0 files, worktree empty, HEAD still `base`). I recovered the blobs by SHA to finish the checks above; file *absence* can't be re-derived from blobs.
+- **"All 9 CI jobs fail" / "wheel ships broken"**: never ran CI or `python -m build`. These are inferences from verified facts (`npm ci` requires a lockfile; `package-data` names a file no step generates), not observed runs.
+- **Windows symlink hole (`O_NOFOLLOW`), the lock-unlink race, pqtest timeout/encoding**: read from source only. Platform here is darwin; I did not reproduce any of them.
+- **Fabric `Succeeded` fall-through**: decisive by inspection of the printed `fabric.py:130-150` — `"Succeeded"` matches neither the `Running/NotStarted` nor `Failed` branch, so control reaches the Arrow check at line 141. Not executed.
+- **Test suite**: never ran. No checked-out tree, no installed deps, and plan mode is read-only.
+
+The verdict is unchanged — **FIX-FIRST** — and the two CRITICALs now rest on directly confirmed workflow/packaging contents rather than on the file listing alone.
+BLOCKED: Claude review returned no valid SHIP/FIX-FIRST verdict.
+
+# wrapper exit: 3 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED)

@@ -1,0 +1,33 @@
+# Exact claude-opus-5 wrapper review - range 8326d3f..7b71d33 (bundle + lockfile shown as stub blobs)
+# staged:  36 files changed, 2627 insertions(+)
+# invoked 2026-09-03T03:08:59Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+⚪ ox-alpha
+
+The worktree is empty (all paths staged as `AD`), so this is a diff-only review; findings are derived from the diff text.
+
+**MEDIUM**
+
+- `src/mquery_toolkit/core.py:585` — `os.replace(temporary, path)` is never followed by an fsync of the parent directory. The file data is fsync'd but the rename is not, so a crash right after a `--write` can leave the old content on disk despite README/SECURITY.md advertising a durable atomic replace. Fix: after `os.replace`, open `path.parent` with `os.O_RDONLY` (plus `O_DIRECTORY` where available) and `os.fsync` that fd, wrapped in `contextlib.suppress(OSError)` for Windows.
+- `src/mquery_toolkit/fabric.py:185` — `retry_raw`/`int(str(retry_raw))` is parsed before the status dispatch, so any non-202/429 response carrying an HTTP-date `Retry-After` (e.g. a 503 with `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT`) raises `"Fabric Retry-After must be whole seconds"` instead of `"Fabric returned HTTP 503"`, hiding the real failure. Fix: move the `retry_raw`/`int` block below the `if status != 202: raise` check, or compute it lazily inside the 429 and 202 branches.
+- `src/mquery_toolkit/core.py:315,319,336` — `rename()` spawns Node three times per call (`_rename_plan` → `parse` for the collision check → final validation `parse`), each loading the 2.6 MB `_bridge.cjs`. `check()` was deliberately reduced to one bridge call and has a regression test for it (`tests/test_core.py::test_check_parses_the_source_once`); `rename` has no equivalent. Fix: have the bridge `rename` response also return `tokens` so line 319 is unnecessary, and add a matching call-count test.
+- `js/bridge.test.js:6` — the only JS test asserts pinned package versions. `renameSpans`'s `RENAME_SCOPE`/`RENAME_TARGET` guards, `analysisView`'s `FunctionExpression`/`EachExpression`/nested-`LetExpression` scope handling, and the `PARSE_ERROR` line/column mapping have no direct tests, and JS is excluded from the `--cov-fail-under=80` gate. A scope-tracking regression in `bridge.js` would surface only as a silently missing `M005`. Fix: add `node --test` cases that feed known ASTs through `renameSpans`/`analysisView` and assert spans and unresolved-reference sets.
+- `.github/workflows/release.yml:45` — the comment claims "A tag must not publish code that has not passed the same checks CI runs," but the release job omits `pip_audit` and the `semgrep` scan that `ci.yml` runs. A tag can publish code that CI would have rejected. Fix: add both steps to the release build job, or narrow the comment to the checks actually replicated.
+
+**LOW**
+
+- `src/mquery_toolkit/core.py:422` — `M002`/`M003` offsets are computed with `re.finditer` over the BOM-included `source`, while `M001`/`M004`/`M005` positions come from the parser, which sees the BOM-stripped text (`_bridge` strips it at line 207). For BOM files (README notes every Power Query SDK connector file has one), a line-1 `Web.Contents(Url)` or credential literal reports a column one greater than the parser-consistent value. Fix: strip the leading BOM into a local before the two `finditer` loops.
+- `src/mquery_toolkit/core.py:185` — on the abandoned-reader-thread timeout path, `process.stdout = process.stderr = process.stdin = None` makes `Popen.__exit__` skip closing them, so the pipe fds and the blocked thread leak permanently. In a long-lived host process (an editor plugin calling `format_source` repeatedly against a hung Node) this exhausts file descriptors. Fix: capture the raw fds before nulling and record/close them on a bounded cleanup path, or at minimum document the leak in the existing comment so it is a known, accepted cost rather than an invisible one.
+- `src/mquery_toolkit/fabric.py:29` — `_same_origin` compares `netloc` verbatim, which is case-sensitive. A legitimate `Location: https://API.Fabric.microsoft.com/v1/operations/op-1` against a lowercase start URL is rejected as cross-origin. Fails closed, but breaks a valid response. Fix: compare `(scheme.lower(), (hostname or ""), port)` rather than raw `netloc`.
+- `src/mquery_toolkit/fabric.py:162` — `result_requested` is set at line 173 and never reset, but line 211 can send `request_url` back to the operations endpoint if the result endpoint answers 202. A subsequent legitimate `Succeeded` JSON from the operations endpoint then raises `"Fabric result endpoint returned JSON instead of Arrow"`. Fix: set `result_requested = False` alongside the `request_url` reassignment at line 211, or track it as "the URL I last requested was the result URL."
+- `src/mquery_toolkit/fabric.py:152` — the `Running`/`NotStarted` poll sleeps a hardcoded `1` second and ignores the `Retry-After` already parsed for the 202 path, so a server asking for 30s backoff gets polled 30 times. Fix: reuse the parsed `retry` value, clamped by the remaining deadline as the 429 branch does.
+- `src/mquery_toolkit/cli.py:23` — `_source` gates only on `path.stat().st_size`, so FIFOs and character devices are accepted for the read-only commands; `mquery check <fifo>` blocks indefinitely in `path.open("rb")`, while `update_file`'s `_snapshot` correctly refuses non-regular files. Fix: reuse `_snapshot(path).data` in `_source` instead of the separate stat/open path.
+- `src/mquery_toolkit/cli.py:108` — errors are printed to stdout, not stderr, so `mquery parse q.pq | jq` on a failure emits the error object into the consumer's input stream. Fix: pass `file=sys.stderr` for the error branch of `_print`.
+- `SECURITY.md:1` — "Report security issues privately" names no channel (no email, no GitHub private advisory link) for a package published to PyPI. Fix: add the reporting address or enable and link GitHub private vulnerability reporting.
+- `src/mquery_toolkit/core.py:533` — `not path.name.endswith(".query.pq")` is dead: any `*.query.pq` already has `Path.suffix == ".pq"`, which is in `_FILE_SUFFIXES`. Fix: drop the second clause.
+
+Nothing found rises to CRITICAL or HIGH: the token never crosses origins in `fabric.py`, `renameSpans` refuses nested scopes rather than mis-renaming, the `_snapshot`-before-`os.replace` check is the documented correctness guard, and the semgrep bearer rule correctly ignores `f"Bearer {token}"`.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

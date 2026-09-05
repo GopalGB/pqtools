@@ -1,0 +1,102 @@
+$ .venv/bin/python -m pytest -q
+............................................................             [100%]
+60 passed in 11.48s
+   -> rc=0 (12s)
+$ .venv/bin/python -m pytest -q --cov=mquery_toolkit --cov-fail-under=80
+............................................................             [100%]
+================================ tests coverage ================================
+_______________ coverage: platform darwin, python 3.11.4-final-0 _______________
+
+Name                             Stmts   Miss  Cover
+----------------------------------------------------
+src/mquery_toolkit/__init__.py       2      0   100%
+src/mquery_toolkit/cli.py           65      5    92%
+src/mquery_toolkit/core.py         379     50    87%
+src/mquery_toolkit/fabric.py       150     18    88%
+src/mquery_toolkit/pqtest.py        51     21    59%
+----------------------------------------------------
+TOTAL                              647     94    85%
+Required test coverage of 80% reached. Total coverage: 85.47%
+60 passed in 11.40s
+   -> rc=0 (11s)
+$ .venv/bin/python -m mypy src
+Success: no issues found in 5 source files
+   -> rc=0 (1s)
+$ .venv/bin/python -m ruff check .
+All checks passed!
+   -> rc=0 (0s)
+$ .venv/bin/python -m ruff format --check .
+14 files already formatted
+   -> rc=0 (0s)
+$ npm test
+
+> test
+> node --test
+
+TAP version 13
+# Subtest: pinned package versions are installed
+ok 1 - pinned package versions are installed
+  ---
+  duration_ms: 1.512875
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 49.988458
+   -> rc=0 (0s)
+$ bash -c npm run bundle --silent && git diff --exit-code --quiet -- src/mquery_toolkit/_bridge.cjs && echo "bundle: no drift"
+
+  src/mquery_toolkit/_bridge.cjs  2.5mb ⚠️
+
+⚡ Done in 52ms
+bundle: no drift
+   -> rc=0 (0s)
+$ /opt/homebrew/bin/semgrep scan --metrics=off --disable-version-check --error --config semgrep-rules.yaml src tests js
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 9 files tracked by git with 2 Code rules:
+  Scanning 5 files with 2 python rules.
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+✅ Scan completed successfully.
+ • Findings: 0 (0 blocking)
+ • Rules run: 2
+ • Targets scanned: 5
+ • Parsed lines: ~100.0%
+ • Scan skipped: 
+   ◦ Files larger than  files 1.0 MB: 1
+   ◦ Files matching .semgrepignore patterns: 12
+ • Scan was limited to files tracked by git
+ • For a detailed list of skipped files and lines, run semgrep with the --verbose flag
+Ran 2 rules on 5 files: 0 findings.
+   -> rc=0 (3s)
+$ bash -c rm -f dist/* && .venv/bin/python -m build >/dev/null 2>&1 && .venv/bin/python -m twine check dist/*
+Checking dist/mquery_toolkit-0.1.0-py3-none-any.whl: [32mPASSED[0m
+Checking dist/mquery_toolkit-0.1.0.tar.gz: [32mPASSED[0m
+   -> rc=0 (2s)
+$ .venv/bin/python -m pip_audit
+No known vulnerabilities found
+Name           Skip Reason
+-------------- -----------------------------------------------------------------------------
+mquery-toolkit Dependency not found on PyPI and could not be audited: mquery-toolkit (0.1.0)
+   -> rc=0 (1s)
+$ bash -c cd tests/fixtures/DataConnectors && shasum -a 256 -c SHA256SUMS
+HelloWorld.pq: OK
+HelloWorld.query.pq: OK
+DataWorldSwagger.query.pq: OK
+github.query.pq: OK
+   -> rc=0 (0s)
+$ /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 -c import yaml; [yaml.safe_load(open(f)) for f in ['.github/workflows/ci.yml','.github/workflows/release.yml']]
+   -> rc=0 (0s)

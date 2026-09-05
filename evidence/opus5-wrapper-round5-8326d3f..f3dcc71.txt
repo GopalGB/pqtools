@@ -1,0 +1,26 @@
+# Exact claude-opus-5 wrapper review - range 8326d3f..f3dcc71 (bundle + lockfile shown as stub blobs)
+# staged:  36 files changed, 2558 insertions(+)
+# invoked 2026-09-03T02:46:05Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Verified against the staged blobs (`git show :<path>`), not just the diff text.
+
+**HIGH**
+
+- `tests/test_rules.py:13` - the literal `"Bearer abcdefghijklmnop1234567890"` matches the repo's own `no-hardcoded-bearer` pattern-regex (confirmed by running the regex against the staged file), and `.github/workflows/ci.yml:46` runs `semgrep scan --error ... src tests js`. CI fails on the first run. Fix: append `# nosemgrep: no-hardcoded-bearer` to that line, or build the string by concatenation.
+- `.github/workflows/release.yml:16` - the `build` job runs only `build` + `twine check`; no pytest, mypy, ruff, or the `_bridge.cjs` reproducibility check gate the `publish` job. A `v*` tag on a red or never-tested commit publishes to PyPI, and PyPI versions are immutable. Fix: gate `publish` on the CI checks (reusable-workflow call, or repeat the check block in `build`).
+
+**MEDIUM**
+
+- `src/mquery_toolkit/core.py:112` - `shutil.which("node")` prepends the current directory on Windows (CPython 3.11 `shutil.which`, `if sys.platform == "win32"` branch, verified locally), and Windows is in the CI matrix. Running `mquery` inside a cloned repo containing a planted `node.exe` executes it. Fix: on `os.name == "nt"`, call `shutil.which("node", path=os.environ.get("PATH", ""))` and reject a result resolving inside `os.getcwd()`.
+- `src/mquery_toolkit/core.py:518,542` (and `cli.py:_source`) - decoding with plain `"utf-8"` keeps a leading U+FEFF in the string handed to the parser/formatter; if the formatter drops it, `--write` silently strips the BOM, contradicting the README's "encoding round-trips unchanged". Every `tests/fixtures/DataConnectors/*` file has a BOM, but `tests/test_corpus.py:12,24` pre-strips it with `utf-8-sig`, so no test ever drives `update_file` over a BOM file. Fix: detect and re-attach the BOM in `_preserve_layout`, plus an `update_file(..., write=True)` test on `HelloWorld.query.pq`.
+- `js/bridge.js:63,97` - `references()` re-walks the whole subtree once per binding and again for the result, making `analysisView` O(bindings x nodes). The 10 MiB input cap permits thousands of `let` bindings, so a large real query can exhaust the 30 s Node timeout and turn `parse`/`check` into a hard `NodeError`. Fix: one traversal that buckets references per enclosing binding.
+
+**LOW**
+
+- `src/mquery_toolkit/core.py:_run_process_bounded` - `Popen` is not used as a context manager and `process.stdout`/`stderr` are never closed, so pipe fds survive until GC in a long-lived library process. Fix: wrap in `with subprocess.Popen(...) as process:`.
+- `src/mquery_toolkit/core.py:check()` - `by_name` is built by dict comprehension, so with a duplicate `let` name only the last binding's references feed the M004 reachability walk; bindings reachable only through the shadowed first copy get a spurious "unreachable" warning alongside the real M001. Fix: merge references for duplicate names before the walk.
+- `src/mquery_toolkit/cli.py:main` - `_source(args.file)` reads up to 10 MiB and is discarded for `format`/`rename`/`replace-source`, and it runs before `update_file`'s extension check, so `mquery format notes.txt` pays a full read before refusing. Fix: skip `_source` for the edit commands and validate the suffix first.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

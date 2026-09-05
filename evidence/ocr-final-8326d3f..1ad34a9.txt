@@ -1,0 +1,5 @@
+# OpenCodeReview (ocr open-code-review v1.11.2 (5cf97d0d1) darwin/arm64) - FINAL range 8326d3f..1ad34a9, provider max-gateway model fb-groq (gpt-oss-120b via Groq), excludes: bridge bundle, package-lock, fixtures
+# invoked 2026-09-02T17:36:29Z
+
+
+# ocr exit: 124

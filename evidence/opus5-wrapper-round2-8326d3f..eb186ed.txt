@@ -1,0 +1,16 @@
+# Exact claude-opus-5 wrapper review - range 8326d3f..eb186ed (bundle + lockfile shown as stub blobs)
+# staged:  34 files changed, 2273 insertions(+)
+# invoked 2026-09-02T17:54:27Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Review complete — no files changed (plan mode; `ExitPlanMode` isn't available in this session, so I'm stopping here rather than requesting approval).
+
+Remediation plan written to `/Users/gopalmacbook/.claude/plans/you-are-a-senior-happy-glade.md`.
+
+**Why-trace**
+- Verified against staged blobs (`git show :<path>`), not the diff text — the worktree at `/private/tmp/mq-gate-wt-95347` contains only `.git`, every file is `AD` (added in index, absent on disk).
+- Confirmed by direct inspection: `.gitattributes` and `py.typed` absent from the index; `O_NOFOLLOW` guard at `core.py:406`; unlock-before-close ordering at `core.py:531-532`; unbounded `thread.join()` at `core.py:174`; `reversed(edits)` at `core.py:294`; bare `"node"` at `core.py:118`; `NODE_TIMEOUT_SECONDS` reused at `pqtest.py:34,50`; `rstrip("/") + "/result"` at `fabric.py:156`; mutable action ref at `release.yml:45`; no semgrep/pip-audit step in `ci.yml`.
+- Not verified by execution: the two Windows CI failures (no Windows runner here) and the mypy `transform` redefinition — I could not install or run mypy/pytest because the worktree has no checked-out sources. Both are flagged as "verify" in the plan with the exact command to settle them.
+- Confidence: HIGH on items 1-4 and the MEDIUM code findings (all read directly from the staged blobs); MEDIUM on the mypy item, which is the one finding that could be a false positive.
+BLOCKED: Claude review returned no valid SHIP/FIX-FIRST verdict.
+
+# wrapper exit: 3 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

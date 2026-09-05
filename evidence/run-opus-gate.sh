@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Exact claude-opus-5 wrapper gate for mquery-toolkit, reproducible.
+# Reviews BASE..HEAD with the 2.6 MB vendored bundle and the npm lockfile replaced by
+# 1-line stub blobs (so the diff fits the model and the reviewer still sees the files exist).
+# Usage: bash run-opus-gate.sh <base-sha> <head-sha> <out-file>
+set -uo pipefail
+BASE="$1"; HEAD="$2"; OUT="$3"
+REPO="/Users/gopalmacbook/Desktop/Max HQ/pqtools"
+WT="/tmp/mq-gate-wt-$$"
+cd "$REPO" || exit 1
+git worktree add -q "$WT" "$BASE" || exit 1
+cd "$WT" || exit 1
+git read-tree "$HEAD"
+STUB_BRIDGE=$(printf '// vendored esbuild bundle of @microsoft/powerquery-parser 2.0.0 + powerquery-formatter 1.0.0 (2.6 MB, committed; excluded from review diff, reproducible via `npm run bundle`)\n' | git hash-object -w --stdin)
+STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3, pins parser 2.0.0 / formatter 1.0.0 / esbuild 0.28.2); excluded from review diff" }\n' | git hash-object -w --stdin)
+git update-index --cacheinfo "100644,$STUB_BRIDGE,src/mquery_toolkit/_bridge.cjs"
+git update-index --cacheinfo "100644,$STUB_LOCK,package-lock.json"
+STAT=$(git diff --cached --stat | tail -1)
+{
+  echo "# Exact claude-opus-5 wrapper review - range $BASE..$HEAD (bundle + lockfile shown as stub blobs)"
+  echo "# staged: $STAT"
+  echo "# invoked $(date -u +%FT%TZ) via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)"
+  echo
+  timeout 900 bash "$HOME/.codex/skills/claude-review/bin/review.sh" --staged
+  RC=$?
+  echo
+  echo "# wrapper exit: $RC (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)"
+} > "$OUT" 2>&1
+cd "$REPO" && git worktree remove --force "$WT"
+tail -3 "$OUT"

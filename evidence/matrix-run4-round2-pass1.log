@@ -1,0 +1,95 @@
+start 2026-09-02T17:51:52Z
+$ .venv/bin/python -m pytest -q
+.............................................                            [100%]
+45 passed in 8.58s
+   -> rc=0 (9s)
+$ .venv/bin/python -m pytest -q --cov=mquery_toolkit --cov-fail-under=80
+.............................................                            [100%]
+================================ tests coverage ================================
+_______________ coverage: platform darwin, python 3.11.4-final-0 _______________
+
+Name                             Stmts   Miss  Cover
+----------------------------------------------------
+src/mquery_toolkit/__init__.py       2      0   100%
+src/mquery_toolkit/cli.py           66      5    92%
+src/mquery_toolkit/core.py         324     49    85%
+src/mquery_toolkit/fabric.py       139     17    88%
+src/mquery_toolkit/pqtest.py        50     21    58%
+----------------------------------------------------
+TOTAL                              581     92    84%
+Required test coverage of 80% reached. Total coverage: 84.17%
+45 passed in 7.39s
+   -> rc=0 (8s)
+$ .venv/bin/python -m mypy src
+Success: no issues found in 5 source files
+   -> rc=0 (0s)
+$ .venv/bin/python -m ruff check .
+All checks passed!
+   -> rc=0 (0s)
+$ .venv/bin/python -m ruff format --check .
+14 files already formatted
+   -> rc=0 (0s)
+$ npm test
+
+> test
+> node --test
+
+TAP version 13
+# Subtest: pinned package versions are installed
+ok 1 - pinned package versions are installed
+  ---
+  duration_ms: 1.4835
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 65.780083
+   -> rc=0 (0s)
+$ bash -c npm run bundle --silent && git diff --exit-code --quiet -- src/mquery_toolkit/_bridge.cjs && echo "bundle: no drift"
+
+  src/mquery_toolkit/_bridge.cjs  2.5mb ⚠️
+
+⚡ Done in 91ms
+bundle: no drift
+   -> rc=0 (1s)
+$ /opt/homebrew/bin/semgrep scan --metrics=off --disable-version-check --error --config semgrep-rules.yaml --no-git-ignore src tests js
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 19 files with 2 Code rules:
+  Scanning 5 files with 2 python rules.
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+✅ Scan completed successfully.
+ • Findings: 0 (0 blocking)
+ • Rules run: 2
+ • Targets scanned: 5
+ • Parsed lines: ~100.0%
+ • Scan skipped: 
+   ◦ Files larger than  files 1.0 MB: 1
+   ◦ Files matching .semgrepignore patterns: 7
+ • For a detailed list of skipped files and lines, run semgrep with the --verbose flag
+Ran 2 rules on 5 files: 0 findings.
+   -> rc=0 (3s)
+$ bash -c rm -f dist/* && .venv/bin/python -m build >/dev/null 2>&1 && .venv/bin/python -m twine check dist/*
+Checking dist/mquery_toolkit-0.1.0-py3-none-any.whl: [32mPASSED[0m
+Checking dist/mquery_toolkit-0.1.0.tar.gz: [32mPASSED[0m
+   -> rc=0 (2s)
+$ bash -c cd tests/fixtures/DataConnectors && shasum -a 256 -c SHA256SUMS
+HelloWorld.pq: OK
+HelloWorld.query.pq: OK
+DataWorldSwagger.query.pq: OK
+github.query.pq: OK
+   -> rc=0 (1s)
+end 2026-09-02T17:52:16Z

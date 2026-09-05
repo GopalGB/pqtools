@@ -1,0 +1,47 @@
+# Exact claude-opus-5 wrapper review - range 8326d3f..259b2cd (bundle + lockfile shown as stub blobs)
+# staged:  36 files changed, 2446 insertions(+)
+# invoked 2026-09-03T01:59:32Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Both behavioral findings now reproduce against the real code. Final review, with two more retractions.
+
+**Baseline (all green, so nothing below is a pre-existing failure):**
+```
+49 passed in 14.14s
+ruff check: All checks passed!
+ruff format --check: 10 files already formatted
+mypy: Success: no issues found in 5 source files
+```
+
+**Retracted — I checked and was wrong:**
+- `_bridge.cjs` / `package-lock.json` are really staged (2,601,383 and 16,740 bytes); the stubs were review-diff elisions.
+- `js/bridge.js:118-119` is correct. I ran the real parser: `foundToken` carries **both** keys — `columnNumber = 8` and `token.positionStart = {"lineCodeUnit":8,"lineNumber":1}`. The two reads agree, and the emitted `line=2, column=9` is right. No column bug.
+- `_run_process_bounded` does not stall on an output-limit hit (`kill()` closes the pipes, so the sibling reader returns `b''`), and Fabric 429 does not spin (the top-of-loop deadline check and `_request`'s `remaining <= 0` both terminate it).
+
+**Confirmed findings:**
+
+- **MEDIUM `src/mquery_toolkit/core.py:307`** — `len(replacement.encode())` raises `UnicodeEncodeError`, which `cli.py`'s `except (OSError, UnicodeDecodeError, MQueryError)` does not catch. Undecodable argv bytes surrogate-escape into `sys.argv`, so `--source` reaches it. Driven through the real CLI entry point:
+  ```
+  UNCAUGHT -> UnicodeEncodeError (CLI handler did not catch it)
+  ```
+  Fix: wrap in `try/except UnicodeEncodeError` → `raise MQueryError("source must be valid UTF-8")`, mirroring `_bridge` at `core.py:201`.
+
+- **MEDIUM `src/mquery_toolkit/core.py:536-537`** — temp name `.{name}.{pid}.tmp` is predictable and PIDs recycle across reboots, so a stale temp makes `open("xb")` raise `FileExistsError`, escaping the `SafeWriteError` contract that `__init__.py` exports; the `finally` then deletes a file this call never created:
+  ```
+  ESCAPES contract -> FileExistsError - not a SafeWriteError/MQueryError
+  stale temp still on disk? False (deleted a file this call did not create)
+  ```
+  Fix: `tempfile.mkstemp(dir=path.parent)` for an unpredictable name.
+
+- **MEDIUM `tests/test_core.py:185,189`** — `os.link` and `symlink_to` run unguarded while the CI matrix includes `windows-latest`, where symlink creation needs Developer Mode. There is no `tests/conftest.py` (confirmed absent), so no guard exists anywhere. Fix: `@pytest.mark.skipif(os.name == "nt", reason="POSIX link semantics")`.
+
+- **MEDIUM `.github/workflows/ci.yml:40`** — `pip install semgrep` is unpinned while every other dependency is pinned (action SHAs, node deps, PQTest version). Fix: pin `semgrep==<version>` into the `dev` extra.
+
+- **LOW `src/mquery_toolkit/core.py:547-548`** — `temporary.unlink()` is the only cleanup call in the `finally` not wrapped in `contextlib.suppress(OSError)` (contrast lines 551, 557); a TOCTOU `FileNotFoundError` would mask the in-flight exception. Fix: `with contextlib.suppress(OSError): temporary.unlink(missing_ok=True)`.
+
+- **LOW `src/mquery_toolkit/pqtest.py:78,93`** — `validate_pqtest` stats the path, then `run_pqtest` re-invokes it; the `.exe` can be swapped in between. Fix: resolve once, pass the resolved path to `_run`.
+
+Not verified: the Windows-matrix failure is inferred from the absent guard — I ran only on darwin and did not exercise a Windows runner.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

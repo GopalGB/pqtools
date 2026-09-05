@@ -1,0 +1,110 @@
+# OpenCodeReview (open-code-review v1.11.2 (5cf97d0d1) darwin/arm64) - range 8326d3f..259b2cd, provider max-gateway model backend-smart
+# excludes: vendored bundle, npm lockfile, corpus fixtures | invoked 2026-09-03T01:59:35Z
+
+[ocr] 36 file(s) changed, reviewing 20 in /Users/gopalmacbook/Desktop/Max HQ/pqtools
+[ocr] Skipping CONTRIBUTING.md — filtered by path/extension rules
+[ocr] Skipping README.md — filtered by path/extension rules
+[ocr] Skipping RELEASE.md — filtered by path/extension rules
+[ocr] Skipping SECURITY.md — filtered by path/extension rules
+[ocr] Skipping js/bridge.test.js — filtered by path/extension rules
+[ocr] Skipping package-lock.json — filtered by path/extension rules
+[ocr] Skipping src/mquery_toolkit/THIRD_PARTY_NOTICES.txt — filtered by path/extension rules
+[ocr] Skipping src/mquery_toolkit/_bridge.cjs — filtered by path/extension rules
+[ocr] Skipping src/mquery_toolkit/py.typed — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/DataConnectors/DataWorldSwagger.query.pq — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/DataConnectors/HelloWorld.pq — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/DataConnectors/HelloWorld.query.pq — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/DataConnectors/LICENSE — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/DataConnectors/SHA256SUMS — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/DataConnectors/github.query.pq — filtered by path/extension rules
+[ocr] Skipping tests/fixtures/m-spec-let.pq — filtered by path/extension rules
+[ocr] Filtered 16 file(s) by include/exclude rules
+[ocr] Skipping plan phase for group ".gitattributes,.gitignore,LICENSE,NOTICE" (4 file(s), max 21 lines, total 49 lines)
+[ocr] Plan phase failed for group "js/bridge.js": plan request: context deadline exceeded (continuing without plan)
+[ocr] Plan phase failed for group "package.json,pyproject.toml,semgrep-rules.yaml": plan request: context deadline exceeded (continuing without plan)
+[ocr] Plan phase failed for group ".github/workflows/ci.yml,.github/workflows/release.yml": plan request: context deadline exceeded (continuing without plan)
+[ocr] Plan phase failed for group "src/mquery_toolkit/__init__.py,src/mquery_toolkit/cli.py,src/mquery_toolkit/core.py,src/mquery_toolkit/fabric.py,src/mquery_toolkit/pqtest.py": plan request: context deadline exceeded (continuing without plan)
+[ocr] Plan phase failed for group "tests/test_adapters.py,tests/test_cli.py,tests/test_core.py,tests/test_corpus.py,tests/test_rules.py": plan request: context deadline exceeded (continuing without plan)
+[ocr] Subtask error for group "Repository metadata": LLM completion error: context deadline exceeded
+[ocr] Round 1/2 added no new findings for group "package.json,pyproject.toml,semgrep-rules.yaml"; stopping early
+[ocr] Round 1/2 added no new findings for group "js/bridge.js"; stopping early
+[ocr] Round 1/2 added no new findings for group "tests/test_adapters.py,tests/test_cli.py,tests/test_core.py,tests/test_corpus.py,tests/test_rules.py"; stopping early
+[ocr]   ▶ code_comment
+[ocr]   ✔ code_comment (7ms)
+[ocr]   ▶ code_comment
+[ocr]   ✔ code_comment (0s)
+[ocr] Round 1/2 added no new findings for group "src/mquery_toolkit/__init__.py,src/mquery_toolkit/cli.py,src/mquery_toolkit/core.py,src/mquery_toolkit/fabric.py,src/mquery_toolkit/pqtest.py"; stopping early
+[ocr]   ▶ code_comment
+[ocr]   ✔ code_comment (0s)
+[ocr] Subtask error for group "CI/CD workflow definitions": LLM completion error: context deadline exceeded
+[ocr] Summary: 20 file(s) reviewed, 3 comment(s), ~76351 token(s) used (input: ~60302, output: ~16049), 13m37s elapsed
+[ocr] Session: 5b8ace0d-1df7-4192-b74d-76cac3bf6aca
+Review partially complete: 3 finding(s); 6 of 20 selected item(s) failed.
+
+─── .github/workflows/ci.yml:9-18 ───
+[security · medium] Job 'test' has excessive permissions. By default, the GITHUB_TOKEN has broad
+permissions. Restrict to only what is needed: contents: read for checking out code and running steps
+that don't require additional permissions.
+
+  test:
+      strategy:
+        fail-fast: false
+        matrix:
+          os: [ubuntu-latest, macos-latest, windows-latest]
+          python-version: ["3.11", "3.12", "3.13"]
+      runs-on: ${{ matrix.os }}
++     permissions:
++       contents: read
+      defaults:
+        run:
+          shell: bash
+
+
+─── .github/workflows/ci.yml:9-18 ───
+[other · medium] Job 'test' lacks a timeout setting, which could cause the job to run indefinitely
+and consume runner resources. Add a reasonable timeout (e.g., 30 minutes).
+
+  test:
+      strategy:
+        fail-fast: false
+        matrix:
+          os: [ubuntu-latest, macos-latest, windows-latest]
+          python-version: ["3.11", "3.12", "3.13"]
+      runs-on: ${{ matrix.os }}
++     timeout-minutes: 30
+      defaults:
+        run:
+-         shell: bash
++         shell: bash}
+
+
+─── .github/workflows/ci.yml:20-20 ───
+[other · low] The `actions/checkout` step uses a pinned commit SHA, which is good practice. However,
+consider adding `fetch-depth: 0` to fetch the entire git history. This is useful if future steps
+require access to git history (e.g., changelog generation or tag-based version checks).
+
+        - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
++         with:
++           fetch-depth: 0
+
+
+LLM retry report summary: 12 of 15 requests affected -- 7 requests failed, 5 requests recovered after retry
+
+Review planning (5 requests):
+- .github/workflows/ci.yml,.github/workflows/release.yml: timed out -> failed
+- js/bridge.js: timed out -> failed
+- package.json,pyproject.toml,semgrep-rules.yaml: timed out -> failed
+- src/mquery_toolkit/__init__.py,src/mquery_toolkit/cli.py,src/mquery_toolkit/core.py,src/mquery_toolkit/fabric.py,src/mquery_toolkit/pqtest.py: timed out -> failed
+- tests/test_adapters.py,tests/test_cli.py,tests/test_core.py,tests/test_corpus.py,tests/test_rules.py: timed out -> failed
+
+Core review (7 requests):
+- .gitattributes,.gitignore,LICENSE,NOTICE: timed out -> failed
+- .github/workflows/ci.yml,.github/workflows/release.yml: timed out -> failed
+- .github/workflows/ci.yml,.github/workflows/release.yml: network error -> network error -> network error -> network error -> succeeded
+- js/bridge.js: network error -> network error -> network error -> network error -> succeeded
+- package.json,pyproject.toml,semgrep-rules.yaml: network error -> network error -> network error -> network error -> succeeded
+- ... and 2 more
+
+Per-attempt detail: --format json (retry_report).
+
+# ocr exit: 0 (124/137 = timed out)
