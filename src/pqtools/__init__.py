@@ -1,6 +1,6 @@
 """Typed offline tooling for Power Query M source."""
 
-from .builtins._shared import _DeferredRows as DeferredTable
+from .builtins._shared import DeferredTable
 from .containers import (
     ContainerError,
     QuerySection,

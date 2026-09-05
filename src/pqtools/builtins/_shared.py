@@ -169,7 +169,7 @@ def _require_int(value: Any) -> int:
     return number
 
 
-class _DeferredRows:
+class DeferredTable:
     """Rows that are fetched only if something actually asks for them.
 
     Built for SQL navigation. `Sql.Database(server, db)` returns one row per
@@ -231,6 +231,11 @@ class _DeferredRows:
     __eq__ = _refuse
     __bool__ = _refuse
     __hash__ = None  # type: ignore[assignment]
+
+
+#: The name this class had while it was private. Internal call sites use it;
+#: `pqtools.DeferredTable` is the public spelling, and they are one object.
+_DeferredRows = DeferredTable
 
 
 def _force_rows(value: Any) -> Any:
