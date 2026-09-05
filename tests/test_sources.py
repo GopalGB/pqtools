@@ -347,3 +347,203 @@ def test_a_hostname_pointing_at_an_internal_address_is_also_blocked() -> None:
             'let S = Web.Contents("http://localhost:9/") in S',
             io=IOPolicy(allow_net=True),
         )
+
+
+# --------------------------------------------------------------------------
+# Redirects - the second hop is a fetch the caller never wrote
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def redirector(server: str) -> Any:
+    """A server on `localhost` that 302s to the `127.0.0.1` server above.
+
+    Two names for the same machine, which is what makes the pair testable
+    offline: `localhost` can be allowlisted while `127.0.0.1` is not.
+    """
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", f"{server}/csv")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    httpd = http.server.HTTPServer(("localhost", 0), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://localhost:{httpd.server_port}"
+    httpd.shutdown()
+
+
+ONE_HOST = IOPolicy(allow_net=True, allow_private=True, hosts=frozenset({"localhost"}))
+
+
+def test_a_host_the_policy_refuses_directly_is_the_control(server: str) -> None:
+    """The control for the test below, and the reason it means anything.
+
+    Without it, a redirect test could pass because the second server was
+    unreachable rather than because the gate stopped it.
+    """
+    with pytest.raises(IOBlockedError, match="not in the allowed set"):
+        evaluate(f'let S = Web.Contents("{server}/csv") in S', io=ONE_HOST)
+
+
+def test_a_redirect_cannot_reach_a_host_the_policy_refuses(
+    redirector: str, server: str
+) -> None:
+    """urlopen follows redirects; only the caller's own URL had been checked.
+
+    So an allowlisted - or merely public - host could answer 302 and send
+    the fetch to 127.0.0.1, an RFC1918 service, or 169.254.169.254, the
+    cloud metadata endpoint the private-address block exists for. Measured
+    before the fix: the control above refused the destination, and the
+    identical bytes came back through one hop.
+
+    Every hop now goes through `policy.check_net`, which is one function
+    doing the scheme, allowlist and private-address checks together, so
+    proving it runs on the hop proves all three.
+    """
+    with pytest.raises(IOBlockedError, match="redirected to"):
+        evaluate(f'let S = Web.Contents("{redirector}/start") in S', io=ONE_HOST)
+
+
+def test_a_redirect_to_a_permitted_host_still_follows(redirector: str) -> None:
+    # The gate must not become a wall: a legitimate redirect still works.
+    result = evaluate(
+        f'let S = Text.FromBinary(Web.Contents("{redirector}/start")) in S',
+        io=IOPolicy(allow_net=True, allow_private=True),
+    )
+    assert result.startswith("a,b")
+
+
+# --------------------------------------------------------------------------
+# The Timeout option is a duration
+# --------------------------------------------------------------------------
+
+
+def test_timeout_accepts_the_documented_duration(server: str) -> None:
+    """ "Specifying this value as a duration will change the timeout" - the page.
+
+    `float()` on a `timedelta` raises TypeError, so the documented spelling
+    left the CLI printing a Python traceback instead of making the request.
+    """
+    result = evaluate(
+        f'let S = Text.FromBinary(Web.Contents("{server}/csv", '
+        "[Timeout = #duration(0, 0, 0, 30)])) in S",
+        io=NET,
+    )
+    assert result.startswith("a,b")
+
+
+def test_a_timeout_that_is_not_a_duration_is_named_not_crashed(server: str) -> None:
+    from pqtools import EvalError
+
+    with pytest.raises(EvalError, match="Timeout must be a duration"):
+        evaluate(f'let S = Web.Contents("{server}/csv", [Timeout = "30"]) in S', io=NET)
+
+
+# --------------------------------------------------------------------------
+# A 200 does not promise well-formed JSON
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def malformed() -> Any:
+    """A server that answers 200 with bodies OData cannot parse."""
+    bodies = {"/truncated": b'{"value": [{"a": 1}', "/bytes": b"\xff\xfe\x00nope"}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            body = bodies.get(self.path, b"{}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{httpd.server_port}"
+    httpd.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/truncated", "did not return valid JSON"),
+        ("/bytes", "not valid UTF-8"),
+    ],
+)
+def test_a_malformed_odata_response_is_an_eval_error(
+    malformed: str, path: str, expected: str
+) -> None:
+    """Raw JSONDecodeError/UnicodeDecodeError escaped the typed-error contract.
+
+    They reached the CLI as a Python traceback, which is the one shape
+    MQueryError exists to prevent - and neither named the endpoint that
+    lied about its content type.
+    """
+    from pqtools import EvalError
+
+    with pytest.raises(EvalError, match=expected) as caught:
+        evaluate(f'let S = OData.Feed("{malformed}{path}") in S', io=NET)
+    assert malformed in str(caught.value)
+
+
+# --------------------------------------------------------------------------
+# Oracle.Database has its own signature
+# --------------------------------------------------------------------------
+
+
+DB = IOPolicy(allow_db=True)
+
+
+def test_oracle_takes_server_and_options_not_server_and_database() -> None:
+    """Microsoft's Syntax block, verbatim:
+
+        Oracle.Database(server as text, optional options as nullable record)
+        PostgreSQL.Database(server as text, database as text, optional ...)
+
+    Oracle was sharing PostgreSQL's implementation, so the documented call
+    read the options record as a database name and died on "expected text,
+    got record" - while the three-argument form pqtools had invented was
+    the only one that reached a driver. An invented ARITY is the same
+    defect as an invented function name, and the catalog gate cannot see
+    it, because the name is real.
+
+    Reaching the missing-driver message is the assertion: it means argument
+    parsing got all the way to the connection attempt.
+    """
+    from pqtools import EvalError, UnsupportedError
+
+    with pytest.raises(EvalError, match="needs the oracledb driver"):
+        evaluate(
+            'let S = Oracle.Database("host", [Query="select 1 from dual"]) in S',
+            io=DB,
+        )
+    with pytest.raises(UnsupportedError, match="with 3 argument"):
+        evaluate(
+            'let S = Oracle.Database("host", "db", [Query="select 1"]) in S', io=DB
+        )
+
+
+def test_oracle_still_refuses_navigation_and_unknown_options() -> None:
+    from pqtools import UnsupportedError
+
+    with pytest.raises(UnsupportedError, match="navigation without a Query"):
+        evaluate('let S = Oracle.Database("host") in S', io=DB)
+    with pytest.raises(UnsupportedError, match=r"option\(s\) \['Nonsense'\]"):
+        evaluate('let S = Oracle.Database("host", [Nonsense=1]) in S', io=DB)
+
+
+def test_oracle_is_still_gated_like_every_other_connector() -> None:
+    with pytest.raises(IOBlockedError):
+        evaluate('let S = Oracle.Database("host", [Query="select 1"]) in S')

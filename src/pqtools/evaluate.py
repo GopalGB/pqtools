@@ -456,30 +456,37 @@ def _eval_list(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
 
 
 def _ascribed_type_name(node: dict[str, Any]) -> str | None:
-    """The primitive type named by an `as <type>` clause.
+    """The primitive type named by an `as <type>` clause, nullability kept.
 
-    The parser models this as a PrimitiveType node holding the type name, and
-    marks `as nullable T` with a "nullable" Constant beside it. A nullable
-    ascription returns None - "declared but not checked" - because the only
-    thing it changes is that null is allowed, and this checker's whole job on
-    a nullable is therefore to stay out of the way.
+    The parser models `as nullable number` as
+    ``AsNullablePrimitiveType -> NullablePrimitiveType{Constant 'nullable',
+    PrimitiveType 'number'}``, and this used to return None the moment it
+    saw that Constant - "declared but not checked", on the reasoning that
+    nullable "only adds null" and the checker should stay out of the way.
 
-    None is also the answer for a type this evaluator does not model (a table
-    type, a function type). Refusing the function outright would be worse: a
-    parameter list is not the place to lose a query over a type the checker
-    cannot yet read.
+    That reasoning dropped the half of the declaration that does work.
+    `nullable number` is number OR null, not "anything": M rejects
+    `f("oops")` there, and so did every other ascription here, so
+    `(x as nullable number) => x` was the one spelling that quietly
+    accepted text. The name is now returned with a `nullable ` prefix and
+    `_check_ascription` reads both halves.
+
+    None still means "no check", and it is still the answer for a type this
+    evaluator does not model. A parameter list is not the place to lose a
+    query over a type the checker cannot yet read.
     """
-    for candidate in _descendants(node, "Constant"):
-        if str(candidate.get("value", "")) == "nullable":
-            return None
+    nullable = any(
+        str(candidate.get("value", "")) == "nullable"
+        for candidate in _descendants(node, "Constant")
+    )
     for candidate in _descendants(node, "PrimitiveType"):
         name = str(candidate.get("value", ""))
         if name in _PRIMITIVE_TYPES:
-            return name
+            return f"nullable {name}" if nullable else name
     if node.get("kind") == "PrimitiveType":
         name = str(node.get("value", ""))
         if name in _PRIMITIVE_TYPES:
-            return name
+            return f"nullable {name}" if nullable else name
     return None
 
 
@@ -489,17 +496,43 @@ def _check_ascription(value: Any, declared: str | None, what: str) -> Any:
     M raises when an argument does not match its declared type, and a query
     can legitimately rely on that error. Accepting anything here would turn a
     type error the author expected to catch into a wrong value further down.
+
+    Three of the eighteen primitive type names need their own answer, and
+    all three used to get the wrong one:
+
+    - `nullable T` accepted ANYTHING, because it arrived here as None. It
+      is T-or-null.
+    - `none` accepted anything, because it was grouped with `any`. The two
+      are opposites: `any` holds every value and `none` holds no value at
+      all, so `(x as none) => x` can never be called successfully.
+    - `null` REJECTED null, because the null branch fired before the
+      declared name was read - `(x as null) => x` called with null said
+      "expected null, got null".
     """
-    if declared is None or declared in {"any", "none"}:
+    if declared is None:
         return value
+    nullable = declared.startswith("nullable ")
+    base = declared[len("nullable ") :] if nullable else declared
+
     if value is None:
+        if nullable or base in {"any", "null"}:
+            return value
         raise EvalError(f"{what}: expected {declared}, got null")
+    # Every path below has a non-null value in hand.
+    if base in {"any", "anynonnull"}:
+        return value
+    if base == "none":
+        raise EvalError(f"{what}: expected {declared}, and no value has type none")
+    if base == "null":
+        raise EvalError(
+            f"{what}: expected {declared}, got {_classify(value) or 'a value'}"
+        )
     actual = _classify(value)
     if actual is None:
         # Lists, records, tables and functions share one runtime shape here,
         # so there is nothing to check against. Silence beats a wrong verdict.
         return value
-    if actual != declared:
+    if actual != base:
         raise EvalError(f"{what}: expected {declared}, got {actual}")
     return value
 
@@ -840,6 +873,19 @@ def _eval_field_selector(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
     )
 
 
+def _handler_takes_the_error(function: Any) -> bool:
+    """Whether a `try ... catch` handler wants the error record passed in.
+
+    Read off the closure's parameter list, never off a failed call. A
+    builtin (or any other plain callable) is given the record, because it
+    does its own arity check and reports it under its own name.
+    """
+    if not isinstance(function, _Lambda):
+        return True
+    required = sum(1 for optional in function.optionals if not optional)
+    return required <= 1 <= len(function.params)
+
+
 def _invoke(callee: Any, args: list[Any], ctx: _Ctx) -> Any:
     if isinstance(callee, _Lambda):
         required = sum(1 for flag in callee.optionals if not flag)
@@ -1040,15 +1086,21 @@ def _eval_try(node: dict[str, Any], scope: _Scope, ctx: _Ctx) -> Any:
             return _eval(otherwise_expr, scope, ctx)
         # Catch: the handler is a function of the error record. M allows the
         # zero-argument form too, for a handler that ignores the detail.
+        #
+        # Which form it is comes from the function's own signature. It used
+        # to come from re-running the handler and searching the failure text
+        # for "argument", which is a guess that fails in the worst possible
+        # direction: a perfectly good one-argument handler whose own body
+        # raises `argument 'x': expected number, got text` was then called
+        # AGAIN with no arguments, and the caller was told "function expects
+        # 1 argument(s), got 0" - the real error replaced by one about the
+        # machinery that hid it. Verified before the fix, and pinned in
+        # tests/test_language_features.py.
         (function_node,) = _semantic(handler)
         function = _eval(function_node, scope, ctx)
         record = _error_record(error)
-        try:
-            return ctx.invoke(function, [record], ctx)
-        except EvalError as handler_error:
-            if "argument" not in str(handler_error):
-                raise
-            return ctx.invoke(function, [], ctx)
+        arguments = [record] if _handler_takes_the_error(function) else []
+        return ctx.invoke(function, arguments, ctx)
 
 
 # --------------------------------------------------------------------------

@@ -336,3 +336,91 @@ def test_too_many_arguments_still_names_the_range() -> None:
         evaluate("((x, optional y) => x)(1, 2, 3)")
     with pytest.raises(EvalError, match=r"expects 1 argument"):
         evaluate("((x) => x)()")
+
+
+# --------------------------------------------------------------------------
+# The three primitive type names whose ascription was wrong
+# --------------------------------------------------------------------------
+#
+# `any`, `number`, `text` and friends were right. These three were not, and
+# each was wrong in a different direction - which is why testing one of them
+# would not have found the others.
+
+
+def test_nullable_adds_null_it_does_not_remove_the_check() -> None:
+    """`nullable number` is number-or-null, not "anything".
+
+    The declaration used to be discarded the moment the parser's `nullable`
+    Constant was seen, on the reasoning that nullable "only adds null" and
+    the checker should stay out of the way. So `(x as nullable number)` was
+    the ONE spelling in the language that quietly accepted text - the
+    strictest-looking parameter list in a query was the least enforced.
+    """
+    assert evaluate("let f = (x as nullable number) => x in f(1)") == 1
+    assert evaluate("let f = (x as nullable number) => x in f(null)") is None
+    with pytest.raises(EvalError, match="expected nullable number, got text"):
+        evaluate('let f = (x as nullable number) => x in f("oops")')
+
+
+def test_a_nullable_return_type_is_enforced_the_same_way() -> None:
+    assert evaluate("let f = (x) as nullable number => null in f(1)") is None
+    with pytest.raises(EvalError, match="return value: expected nullable number"):
+        evaluate('let f = (x) as nullable number => "oops" in f(1)')
+
+
+def test_type_none_holds_no_values_at_all() -> None:
+    """It was grouped with `any`, which is its exact opposite.
+
+    `any` holds every value; `none` holds none, so `(x as none) => x` can
+    never be called successfully - including with null.
+    """
+    with pytest.raises(EvalError, match="no value has type none"):
+        evaluate("let f = (x as none) => x in f(1)")
+    with pytest.raises(EvalError, match="expected none, got null"):
+        evaluate("let f = (x as none) => x in f(null)")
+
+
+def test_type_null_accepts_null_which_is_the_only_thing_it_accepts() -> None:
+    """It used to REJECT null: "expected null, got null".
+
+    The null branch ran before the declared name was read, so the one value
+    the type contains was the one value it turned away.
+    """
+    assert evaluate("let f = (x as null) => x in f(null)") is None
+    with pytest.raises(EvalError, match="expected null, got number"):
+        evaluate("let f = (x as null) => x in f(1)")
+
+
+def test_anynonnull_is_any_minus_null() -> None:
+    assert evaluate("let f = (x as anynonnull) => x in f(1)") == 1
+    with pytest.raises(EvalError, match="expected anynonnull, got null"):
+        evaluate("let f = (x as anynonnull) => x in f(null)")
+
+
+# --------------------------------------------------------------------------
+# try ... catch - which handler form, decided by the signature
+# --------------------------------------------------------------------------
+
+
+def test_catch_accepts_both_handler_arities() -> None:
+    assert evaluate('try error "boom" catch () => "handled"') == "handled"
+    assert evaluate('try error "boom" catch (e) => e[Message]') == "boom"
+    assert evaluate("try 1 + 1 catch (e) => 0") == 2
+
+
+def test_an_error_inside_the_handler_is_not_replaced_by_an_arity_error() -> None:
+    """The handler form used to be guessed by re-running it.
+
+    The one-argument call was tried, and if the failure text contained the
+    word "argument" the handler was called AGAIN with none. So a perfectly
+    good one-argument handler whose own body raised
+    `argument 'x': expected number, got text` reported
+    `function expects 1 argument(s), got 0` instead - the real error
+    replaced by one about the machinery that hid it. The arity now comes
+    off the closure's parameter list, which is where it was all along.
+    """
+    with pytest.raises(EvalError, match="argument 'x': expected number, got text"):
+        evaluate(
+            "let inner = (x as number) => x in "
+            'try error "boom" catch (e) => inner("not a number")'
+        )

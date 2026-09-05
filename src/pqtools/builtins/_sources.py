@@ -43,7 +43,7 @@ import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..io import IOBlockedError
+from ..io import IOBlockedError, IOPolicy
 from ._shared import (
     EvalError,
     UnsupportedError,
@@ -117,6 +117,68 @@ def _build_url(base: str, options: dict[str, Any], what: str) -> str:
     return url
 
 
+class _PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Put every redirect hop back through the policy before following it.
+
+    ``urlopen`` follows redirects itself, and only the URL the caller wrote
+    had been checked. So a host that passed ``--allow-host``, or any public
+    host at all, could answer 302 and send the fetch to ``127.0.0.1``, an
+    RFC1918 service, or ``169.254.169.254`` - the cloud metadata endpoint
+    :meth:`IOPolicy._reject_internal` exists to keep a stranger's workbook
+    away from. The first leg being clean says nothing about the second.
+
+    Proven before it was fixed: with ``hosts={"localhost"}`` a direct fetch
+    of the redirect target was refused and the identical bytes came back
+    through one hop. ``tests/test_sources_policy.py`` keeps that pair - the
+    refusal is the control, without which the test could pass for the wrong
+    reason.
+
+    ``IOBlockedError`` derives from ``MQueryError``, not ``URLError``, so it
+    travels out of ``urlopen`` intact instead of being reported as a
+    transport failure.
+    """
+
+    def __init__(self, policy: IOPolicy, what: str) -> None:
+        self._policy = policy
+        self._what = what
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        self._policy.check_net(newurl, what=f"{self._what} (redirected to)")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _request_timeout(raw: Any, default: float, what: str) -> float:
+    """The documented ``Timeout`` option, which is a DURATION.
+
+    "Specifying this value as a duration will change the timeout for an HTTP
+    request" - web-contents, verbatim. `float()` on a `timedelta` raises
+    `TypeError`, so the documented spelling
+    ``[Timeout = #duration(0, 0, 0, 30)]`` left the CLI printing a Python
+    traceback instead of making the request.
+    """
+    if raw is None:
+        return default
+    if isinstance(raw, _dt.timedelta):
+        seconds = raw.total_seconds()
+    elif isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        # A number is accepted because it is unambiguous and cheap to allow;
+        # anything else is named rather than coerced.
+        raise EvalError(f"{what}: Timeout must be a duration, got {_type_name(raw)}")
+    else:
+        seconds = float(raw)
+    if seconds <= 0:
+        raise EvalError(f"{what}: Timeout must be positive, got {seconds}")
+    return seconds
+
+
 def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> bytes:
     policy = _policy(ctx)
     url = _build_url(url, options, what)
@@ -133,7 +195,7 @@ def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> byte
     if content is not None:
         body = content if isinstance(content, bytes) else str(content).encode("utf-8")
 
-    timeout = float(options.pop("Timeout", policy.timeout) or policy.timeout)
+    timeout = _request_timeout(options.pop("Timeout", None), policy.timeout, what)
     # IsRetry/ManualStatusHandling change error behaviour, not the bytes; a
     # silent ignore would make a 404-tolerant query look successful.
     for unsupported in ("ManualStatusHandling", "ManualCredentials", "IsRetry"):
@@ -143,8 +205,12 @@ def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> byte
         raise UnsupportedError(f"{what}: option(s) {sorted(options)}")
 
     request = urllib.request.Request(url, data=body, headers=headers)
+    # A private opener, not the module-level default: the handler carries
+    # this evaluation's own policy, and installing it globally would leak
+    # one call's permissions into the next.
+    opener = urllib.request.build_opener(_PolicyRedirectHandler(policy, what))
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with opener.open(request, timeout=timeout) as response:  # noqa: S310
             data: bytes = response.read(_MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as error:
         raise EvalError(f"{what}: HTTP {error.code} from {url}") from error
@@ -188,13 +254,30 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
     options["Headers"] = headers
 
     raw = _http_fetch(url, options, ctx, "OData.Feed")
-    text = raw.decode("utf-8-sig", errors="strict").lstrip()
+    # A 200 does not promise well-formed JSON. Letting UnicodeDecodeError or
+    # JSONDecodeError out raises a bare Python exception through the
+    # evaluator, which the CLI prints as a traceback - the one shape
+    # `MQueryError` exists to prevent. Both become an EvalError naming the
+    # endpoint, so the reader learns which URL lied about its content type.
+    try:
+        text = raw.decode("utf-8-sig", errors="strict").lstrip()
+    except UnicodeDecodeError as error:
+        raise EvalError(
+            f"OData.Feed: {url} returned bytes that are not valid UTF-8 "
+            f"({error.reason} at byte {error.start})"
+        ) from error
     if text.startswith("<"):
         raise UnsupportedError(
             "OData.Feed: this endpoint returned Atom/XML; only the JSON "
             "representation is read. Request JSON with an Accept header."
         )
-    document = json.loads(text)
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise EvalError(
+            f"OData.Feed: {url} did not return valid JSON ({error.msg} at "
+            f"line {error.lineno} column {error.colno})"
+        ) from error
     if isinstance(document, dict) and "value" in document:
         rows = document["value"]
     elif isinstance(document, list):
@@ -442,10 +525,64 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
         connection.close()
 
 
+def _oracle_database(args: list[Any], ctx: _Ctx) -> Any:
+    """``Oracle.Database(server as text, optional options as nullable record)``.
+
+    Oracle does NOT share PostgreSQL's and MySQL's shape, and treating it as
+    if it did was an invented arity - the same defect class as an invented
+    function name, and one this package's own catalog gate cannot see
+    because the NAME is real. Microsoft's Syntax block, verbatim:
+
+        Oracle.Database(server as text, optional options as nullable record)
+        PostgreSQL.Database(server as text, database as text, optional ...)
+        MySQL.Database(server as text, database as text, optional ...)
+
+    There is no `database` argument. So the documented call
+    ``Oracle.Database("host", [Query = "select ..."])`` read the options
+    record as the database name and died on "expected text, got record",
+    while the three-argument form pqtools had made up was the only one that
+    reached a driver.
+
+    `server` is passed to `oracledb` as the DSN unchanged. Oracle addresses
+    a *service*, not a database, and its EZConnect spelling
+    (``host:port/service``) already carries the port the docs say may be
+    appended - splitting it here to rebuild it would only be a chance to get
+    it wrong.
+    """
+    _policy(ctx).check_db(what="Oracle.Database")
+    _arity("Oracle.Database", args, 1, 2)
+    server = _require_str(args[0])
+    options = _optional_record(args[1] if len(args) == 2 else None, "Oracle.Database")
+
+    query = options.pop("Query", None)
+    user, password = _credentials(options, "PQTOOLS_ORACLE")
+    if options:
+        raise UnsupportedError(f"Oracle.Database: option(s) {sorted(options)}")
+    if query is None:
+        raise UnsupportedError(
+            "Oracle.Database: navigation without a Query option is not "
+            'implemented; pass [Query="select ..."]'
+        )
+
+    driver = _require_driver("oracledb", "oracle", "Oracle.Database")
+    connection = driver.connect(user=user, password=password, dsn=server)
+    try:
+        return _run_query(connection, _require_str(query))
+    finally:
+        connection.close()
+
+
 def _generic_database(
     name: str, module: str, extra: str, env: str, default_port: int
 ) -> Any:
-    """One implementation for the three DB-API connectors that differ only in driver."""
+    """One implementation for the two DB-API connectors that differ only in driver.
+
+    PostgreSQL and MySQL genuinely do share a shape - `(server, database,
+    optional options)` and a `host`/`port`/`user`/`password`/`database`
+    connect call. Oracle does not, and shoehorning it in here is what
+    produced a connector whose documented call could not be made; it has
+    its own function above.
+    """
 
     def connector(args: list[Any], ctx: _Ctx) -> Any:
         _policy(ctx).check_db(what=name)
@@ -602,9 +739,7 @@ BUILTINS: dict[str, Any] = {
     "MySQL.Database": _generic_database(
         "MySQL.Database", "pymysql", "mysql", "PQTOOLS_MYSQL", 3306
     ),
-    "Oracle.Database": _generic_database(
-        "Oracle.Database", "oracledb", "oracle", "PQTOOLS_ORACLE", 1521
-    ),
+    "Oracle.Database": _oracle_database,
     "Odbc.Query": _odbc_query,
     "Odbc.DataSource": _odbc_datasource,
     "Uri.Parts": _uri_parts,
