@@ -118,3 +118,124 @@ def test_from_text_closes_the_csv_round_trip() -> None:
         List.Sum(Table.Column(Typed, "amount"))
     """
     assert evaluate(source) == 42
+
+
+# --------------------------------------------------------------------------
+# The second parameter, per each function's own Syntax block
+#
+# It is not uniform across the family, and pqtools had assumed it was: every
+# X.FromText read argument two as a bare culture string. That got three
+# things wrong at once - the documented options record was rejected with
+# "expected text, got record", and Duration/Logical accepted a second
+# argument they do not have.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        'Date.FromText("2010-12-31", [Culture="en-US"])',
+        'Date.FromText("2010-12-31", [Format=null, Culture="en-US"])',
+        'DateTime.FromText("2010-12-31T01:30:00", [Culture="en-US"])',
+        'Time.FromText("01:30:00", [Culture="en-US"])',
+    ],
+)
+def test_the_documented_options_record_is_accepted(expression: str) -> None:
+    """ "options: An optional record ... Format ... Culture".
+
+    This died with "expected text, got record" - an error naming the wrong
+    problem, on the shape the reference documents first.
+    """
+    assert evaluate(expression) is not None
+
+
+def test_the_legacy_text_form_still_works() -> None:
+    """ "To support legacy workflows, options can also be a text value. This
+    has the same behavior as if options = [Format = null, Culture = options]."
+    """
+    assert evaluate('Date.FromText("2010-12-31", "en-US")') == dt.date(2010, 12, 31)
+    assert evaluate('Date.FromText("2010-12-31")') == dt.date(2010, 12, 31)
+
+
+def test_a_format_string_is_refused_by_name() -> None:
+    # Parsing by format string is the reverse of formatting by one and is not
+    # implemented. Ignoring the field would silently parse by best effort and
+    # return a value the caller never asked for.
+    with pytest.raises(UnsupportedError, match="Format string for parsing"):
+        evaluate('Date.FromText("2010-12-31", [Format="yyyy-MM-dd"])')
+
+
+def test_an_unknown_option_is_named() -> None:
+    with pytest.raises(UnsupportedError, match=r"Nonsense"):
+        evaluate('Date.FromText("2010-12-31", [Nonsense=1])')
+
+
+@pytest.mark.parametrize(
+    "expression",
+    ['Duration.FromText("1:00", "en-US")', 'Logical.FromText("true", "en-US")'],
+)
+def test_the_one_argument_signatures_reject_a_second(expression: str) -> None:
+    """`Duration.FromText(text as nullable text) as nullable duration`.
+
+    Same for Logical.FromText. Accepting an argument the function does not
+    have is the same defect as an invented function name: the call runs here
+    and fails in Power Query, which no test of the function's own behaviour
+    would ever catch.
+    """
+    with pytest.raises(UnsupportedError, match="with 2 argument"):
+        evaluate(expression)
+
+
+def test_number_from_text_takes_a_culture_not_a_record() -> None:
+    """`Number.FromText(text, optional culture as nullable text)`.
+
+    Its date siblings take a record; this one does not, and saying so beats
+    accepting a record here that Power Query would reject.
+    """
+    assert evaluate('Number.FromText("15", "en-US")') == 15
+    with pytest.raises(EvalError, match="culture text value, not an options record"):
+        evaluate('Number.FromText("15", [Culture="en-US"])')
+
+
+# --------------------------------------------------------------------------
+# Duration.FromText's own documented grammar
+#
+#     (-)hh:mm(:ss(.ff))
+#     (-)ddd(.hh:mm(:ss(.ff)))
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # The page's worked example.
+        ("2.05:55:20", dt.timedelta(days=2, hours=5, minutes=55, seconds=20)),
+        # hh:mm - seconds are optional, and this was rejected outright.
+        ("1:00", dt.timedelta(hours=1)),
+        ("01:30", dt.timedelta(hours=1, minutes=30)),
+        ("-1:30", -dt.timedelta(hours=1, minutes=30)),
+        # ddd alone, and ddd.hh:mm without seconds - both also rejected.
+        ("5", dt.timedelta(days=5)),
+        ("-5", -dt.timedelta(days=5)),
+        ("1.02:03", dt.timedelta(days=1, hours=2, minutes=3)),
+        # The forms that already worked, kept as the control.
+        ("1:30:45", dt.timedelta(hours=1, minutes=30, seconds=45)),
+        ("1:30:45.25", dt.timedelta(hours=1, minutes=30, seconds=45.25)),
+        ("00:00:00", dt.timedelta(0)),
+    ],
+)
+def test_every_documented_duration_format_parses(
+    text: str, expected: dt.timedelta
+) -> None:
+    assert evaluate(f'Duration.FromText("{text}")') == expected
+
+
+@pytest.mark.parametrize("text", ["25:00", "1:60", "0:00:60"])
+def test_the_documented_ranges_are_enforced(text: str) -> None:
+    """ "hh: Number of hours, between 0 and 23", mm and ss between 0 and 59.
+
+    Rolling 25:00 over into a day would accept text the real function
+    rejects - a query green here and broken there.
+    """
+    with pytest.raises(EvalError, match="out of range"):
+        evaluate(f'Duration.FromText("{text}")')

@@ -20,6 +20,7 @@ from ._shared import (
     _arity,
     _check_invariant_culture,
     _format_number,
+    _from_text,
     _parse_numeric_literal,
     _require_int,
     _require_number,
@@ -88,43 +89,6 @@ def _number_from(args: list[Any], ctx: _Ctx) -> Any:
         except ValueError as error:
             raise EvalError(f"Number.From: not a number: {value!r}") from error
     raise EvalError(f"Number.From: unsupported value type: {_type_name(value)}")
-
-
-def _from_text(name: str, delegate: Any) -> Any:
-    """Build ``X.FromText`` from the module's own ``X.From``.
-
-    Delegating rather than re-parsing is the point: a second parser for the
-    same family is a second set of edge cases, and the day they disagree the
-    symptom is a value that converts one way through a column type and
-    another way through an explicit call. M draws the text-only line too, so
-    ``Number.FromText(1)`` is an error there as well - accepting it would let
-    a column that never held text report a successful text conversion.
-    """
-
-    def run(args: list[Any], ctx: _Ctx) -> Any:
-        _arity(name, args, 1, 2)
-        _check_invariant_culture(
-            name, args[1] if len(args) == 2 else None, "culture-specific parsing"
-        )
-        value = args[0]
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise EvalError(f"{name}: expected text, got {_type_name(value)}")
-        try:
-            return delegate([value], ctx)
-        except EvalError as error:
-            # The delegate reports itself, so a failed Number.FromText would
-            # otherwise say "Number.From: not a number" and send the reader
-            # looking for a call that is not in their query.
-            message = str(error)
-            prefix = f"{name.split('Text')[0]}: "
-            if message.startswith(prefix):
-                message = f"{name}: {message[len(prefix) :]}"
-            raise EvalError(message) from error
-
-    run.__name__ = f"_{name.replace('.', '_').lower()}"
-    return run
 
 
 def _number_round(args: list[Any], ctx: _Ctx) -> Any:
@@ -947,8 +911,11 @@ def _logical_to_text(args: list[Any], ctx: _Ctx) -> Any:
 # nowhere else - no central file to edit, and no merge conflict when several
 # families are implemented in parallel.
 BUILTINS: dict[str, Any] = {
-    "Number.FromText": _from_text("Number.FromText", _number_from),
-    "Logical.FromText": _from_text("Logical.FromText", _logical_from),
+    # Number.FromText(text, optional culture as nullable text) - a
+    # culture string, not the [Format=..] record its date siblings take.
+    "Number.FromText": _from_text("Number.FromText", _number_from, options="culture"),
+    # Logical.FromText(text as nullable text) - one argument.
+    "Logical.FromText": _from_text("Logical.FromText", _logical_from, options="none"),
     "Number.From": _number_from,
     "Number.Round": _number_round,
     "Number.Abs": _number_abs,

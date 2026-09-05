@@ -129,6 +129,8 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _from_text,
+    _from_text_options,
     _require_int,
     _require_number,
     _type_name,
@@ -267,9 +269,23 @@ def _parse_iso_time(name: str, text: str) -> time:
         raise EvalError(f"{name}: not a valid ISO time: {text!r}") from error
 
 
+# The grammar Duration.FromText documents, both alternatives:
+#
+#     (-)hh:mm(:ss(.ff))
+#     (-)ddd(.hh:mm(:ss(.ff)))
+#
+# with "hh: Number of hours, between 0 and 23", mm and ss between 0 and 59.
+# The previous pattern required hh:mm:ss and a leading `ddd.` only as a
+# prefix to it, so three documented forms - "1:00", "5", "1.02:03" - were
+# rejected as "not a valid duration text" while being perfectly valid input
+# to the real function.
 _DURATION_TEXT_RE = re.compile(
-    r"^(?P<sign>-)?(?:(?P<days>\d+)\.)?"
-    r"(?P<hours>\d{1,4}):(?P<minutes>\d{2}):(?P<seconds>\d{2}(?:\.\d+)?)$"
+    r"^(?P<sign>-)?(?:"
+    r"(?P<hours>\d{1,2}):(?P<minutes>\d{2})(?::(?P<seconds>\d{2}(?:\.\d+)?))?"
+    r"|(?P<days>\d+)"
+    r"(?:\.(?P<dhours>\d{1,2}):(?P<dminutes>\d{2})"
+    r"(?::(?P<dseconds>\d{2}(?:\.\d+)?))?)?"
+    r")$"
 )
 
 
@@ -277,13 +293,20 @@ def _parse_duration_text(name: str, text: str) -> timedelta:
     match = _DURATION_TEXT_RE.match(text.strip())
     if not match:
         raise EvalError(f"{name}: not a valid duration text: {text!r}")
-    sign = -1 if match.group("sign") else 1
     days = int(match.group("days") or 0)
-    hours = int(match.group("hours"))
-    minutes = int(match.group("minutes"))
-    seconds = float(match.group("seconds"))
+    hours = int(match.group("hours") or match.group("dhours") or 0)
+    minutes = int(match.group("minutes") or match.group("dminutes") or 0)
+    seconds = float(match.group("seconds") or match.group("dseconds") or 0)
+    if hours > 23 or minutes > 59 or seconds >= 60:
+        # The ranges are on the documented grammar. Rolling 25:00 over into
+        # a day would accept text the real function rejects, which is the
+        # direction that turns a green run here into a failure there.
+        raise EvalError(
+            f"{name}: out of range in {text!r} (hours 0-23, minutes and "
+            "seconds 0-59; use the ddd.hh:mm:ss form for longer spans)"
+        )
     delta = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
-    return -delta if sign < 0 else delta
+    return -delta if match.group("sign") else delta
 
 
 # --------------------------------------------------------------------------
@@ -1057,46 +1080,6 @@ def _date_from(args: list[Any], ctx: _Ctx) -> Any:
     return _coerce_date_like("Date.From", args[0])
 
 
-def _from_text(name: str, delegate: Any) -> Any:
-    """Build ``X.FromText`` from the module's own ``X.From``.
-
-    Delegating rather than re-parsing is the point: a second parser for the
-    same family is a second set of edge cases, and the day they disagree the
-    symptom is a value that converts one way through a column type and
-    another way through an explicit call. M draws the text-only line too, so
-    ``Number.FromText(1)`` is an error there as well - accepting it would let
-    a column that never held text report a successful text conversion.
-    """
-
-    def run(args: list[Any], ctx: _Ctx) -> Any:
-        _arity(name, args, 1, 2)
-        # "parsing", not the module default "formatting": this direction reads
-        # text, and a message about formatting sends the reader to the wrong
-        # half of the round trip.
-        _shared_check_culture(
-            name, args[1] if len(args) == 2 else None, "culture-specific parsing"
-        )
-        value = args[0]
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise EvalError(f"{name}: expected text, got {_type_name(value)}")
-        try:
-            return delegate([value], ctx)
-        except EvalError as error:
-            # The delegate reports itself, so a failed Number.FromText would
-            # otherwise say "Number.From: not a number" and send the reader
-            # looking for a call that is not in their query.
-            message = str(error)
-            prefix = f"{name.split('Text')[0]}: "
-            if message.startswith(prefix):
-                message = f"{name}: {message[len(prefix) :]}"
-            raise EvalError(message) from error
-
-    run.__name__ = f"_{name.replace('.', '_').lower()}"
-    return run
-
-
 def _date_year(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Date.Year", args, 1)
     d = _coerce_date_like("Date.Year", args[0])
@@ -1724,38 +1707,6 @@ def _datetimezone_from(args: list[Any], ctx: _Ctx) -> Any:
     raise EvalError(f"DateTimeZone.From: expected a value, got {_type_name(value)}")
 
 
-def _resolve_from_text_options(name: str, rest: list[Any]) -> tuple[str | None, Any]:
-    """(format, culture) for X.FromText's optional 2nd positional arg.
-
-    Mirrors `_resolve_to_text_options`'s [Format=.., Culture=..]-record /
-    bare-text duality, but for PARSING. A non-null Format means custom or
-    standard format-string PARSING (the reverse of `_format_custom`),
-    which this module does not implement - the pre-existing sibling
-    Date/DateTime/Time/Duration.FromText functions don't implement it
-    either (their 2nd argument is only ever read as a bare culture
-    string), so refusing here keeps this the one place in the file that is
-    honest about the gap rather than quietly ignoring the option.
-    """
-    fmt: str | None = None
-    culture: Any = None
-    if len(rest) >= 1 and rest[0] is not None:
-        first = rest[0]
-        if isinstance(first, dict):
-            fmt = first.get("Format")
-            culture = first.get("Culture")
-            unknown = set(first) - {"Format", "Culture"}
-            if unknown:
-                raise UnsupportedError(f"{name}: option(s) {sorted(unknown)}")
-        elif isinstance(first, str):
-            culture = first
-        else:
-            raise EvalError(
-                f"{name}: options must be text or a [Format = ...] record, "
-                f"got {_type_name(first)}"
-            )
-    return fmt, culture
-
-
 def _datetimezone_from_text(args: list[Any], ctx: _Ctx) -> Any:
     _arity("DateTimeZone.FromText", args, 1, 2)
     text = args[0]
@@ -1763,7 +1714,7 @@ def _datetimezone_from_text(args: list[Any], ctx: _Ctx) -> Any:
         return None
     if not isinstance(text, str):
         raise EvalError(f"DateTimeZone.FromText: expected text, got {_type_name(text)}")
-    fmt, culture = _resolve_from_text_options("DateTimeZone.FromText", args[1:])
+    fmt, culture = _from_text_options("DateTimeZone.FromText", args[1:])
     _shared_check_culture("DateTimeZone.FromText", culture, "culture-specific parsing")
     if fmt is not None:
         raise UnsupportedError(
@@ -2131,7 +2082,11 @@ BUILTINS: dict[str, Any] = {
     "Date.FromText": _from_text("Date.FromText", _date_from),
     "DateTime.FromText": _from_text("DateTime.FromText", _datetime_from),
     "Time.FromText": _from_text("Time.FromText", _time_from),
-    "Duration.FromText": _from_text("Duration.FromText", _duration_from),
+    # Duration.FromText(text as nullable text) - one argument, per its
+    # own Syntax block. pqtools took a second one.
+    "Duration.FromText": _from_text(
+        "Duration.FromText", _duration_from, options="none"
+    ),
     "#date": _lit_date,
     "#datetime": _lit_datetime,
     "#datetimezone": _lit_datetimezone,

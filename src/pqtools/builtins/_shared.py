@@ -180,6 +180,106 @@ def _require_record(value: Any) -> dict[str, Any]:
     return value
 
 
+def _from_text_options(name: str, rest: list[Any]) -> tuple[str | None, Any]:
+    """(format, culture) for the optional 2nd argument of ``X.FromText``.
+
+    "options: An optional record ... Format ... Culture ... To support legacy
+    workflows, options can also be a text value. This has the same behavior
+    as if options = [Format = null, Culture = options]."
+    """
+    fmt: str | None = None
+    culture: Any = None
+    if rest and rest[0] is not None:
+        first = rest[0]
+        if isinstance(first, dict):
+            fmt = first.get("Format")
+            culture = first.get("Culture")
+            unknown = set(first) - {"Format", "Culture"}
+            if unknown:
+                raise UnsupportedError(f"{name}: option(s) {sorted(unknown)}")
+        elif isinstance(first, str):
+            culture = first
+        else:
+            raise EvalError(
+                f"{name}: options must be text or a [Format = ...] record, "
+                f"got {_type_name(first)}"
+            )
+    return fmt, culture
+
+
+def _from_text(name: str, delegate: Any, options: str = "record") -> Any:
+    """Build ``X.FromText`` from the family's own ``X.From``.
+
+    Delegating rather than re-parsing is the point: a second parser for the
+    same family is a second set of edge cases, and the day they disagree the
+    symptom is a value that converts one way through a column type and
+    another way through an explicit call. M draws the text-only line too, so
+    ``Number.FromText(1)`` is an error there as well - accepting it would let
+    a column that never held text report a successful text conversion.
+
+    ``options`` is the second parameter's shape, taken from each function's
+    own Syntax block rather than assumed uniform across the family, because
+    it is not uniform:
+
+        "record"   Date/DateTime/Time - `optional options`, a
+                   [Format = ..., Culture = ...] record or a legacy culture
+                   text value
+        "culture"  Number - `optional culture as nullable text`, no record
+        "none"     Duration/Logical - `(text as nullable text)`, one
+                   argument. pqtools accepted a second one, which is the
+                   same defect as an invented function name: the call runs
+                   here and fails in Power Query.
+
+    There were two copies of this factory, one per module, differing only in
+    what they imported. Table.Sort had two copies of its criteria parser and
+    both carried the same bug, so this one lives in exactly one place.
+    """
+    if options not in ("record", "culture", "none"):
+        raise ValueError(f"unknown options shape: {options}")
+
+    def run(args: list[Any], ctx: Any) -> Any:
+        _arity(name, args, 1, 1 if options == "none" else 2)
+        if options == "record":
+            fmt, culture = _from_text_options(name, args[1:])
+            if fmt is not None:
+                raise UnsupportedError(
+                    f"{name}: a custom/standard Format string for parsing "
+                    "(as opposed to formatting) is not implemented"
+                )
+        elif options == "culture":
+            culture = args[1] if len(args) == 2 else None
+            if isinstance(culture, dict):
+                raise EvalError(
+                    f"{name}: the second argument is a culture text value, "
+                    "not an options record"
+                )
+        else:
+            culture = None
+        # "parsing", not the module default "formatting": this direction reads
+        # text, and a message about formatting sends the reader to the wrong
+        # half of the round trip.
+        _check_invariant_culture(name, culture, "culture-specific parsing")
+        value = args[0]
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise EvalError(f"{name}: expected text, got {_type_name(value)}")
+        try:
+            return delegate([value], ctx)
+        except EvalError as error:
+            # The delegate reports itself, so a failed Number.FromText would
+            # otherwise say "Number.From: not a number" and send the reader
+            # looking for a call that is not in their query.
+            message = str(error)
+            prefix = f"{name.split('Text')[0]}: "
+            if message.startswith(prefix):
+                message = f"{name}: {message[len(prefix) :]}"
+            raise EvalError(message) from error
+
+    run.__name__ = f"_{name.replace('.', '_').lower()}"
+    return run
+
+
 def _require_table(value: Any) -> list[dict[str, Any]]:
     rows = _require_list(value)
     for row in rows:
