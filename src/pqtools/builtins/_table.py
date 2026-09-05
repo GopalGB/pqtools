@@ -127,13 +127,20 @@ def _table_select_columns(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_remove_columns(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.RemoveColumns", args, 2)
+    # "an error is raised unless the optional parameter missingField
+    # specifies an alternative behavior (for example, MissingField.UseNull or
+    # MissingField.Ignore)" - the page, verbatim. The parameter was absent, so
+    # the escape hatch it names could not be reached. Ignore and UseNull are
+    # the same instruction for a REMOVAL (there is no value left to null out).
+    _arity("Table.RemoveColumns", args, 2, 3)
     names = _field_name_list(args[1])
+    mode = _missing_field_mode(args[2] if len(args) == 3 else None)
     result = []
     for row in _require_table(args[0]):
-        for name in names:
-            if name not in row:
-                raise EvalError(f"Table.RemoveColumns: no such column: {name}")
+        if mode == _MISSING_FIELD_ERROR:
+            for name in names:
+                if name not in row:
+                    raise EvalError(f"Table.RemoveColumns: no such column: {name}")
         result.append({key: value for key, value in row.items() if key not in names})
     return result
 

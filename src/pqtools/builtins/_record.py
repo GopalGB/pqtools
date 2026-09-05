@@ -12,6 +12,7 @@ from ._shared import (
     _MISSING_FIELD_ERROR,
     _MISSING_FIELD_USE_NULL,
     EvalError,
+    UnsupportedError,
     _arity,
     _field_name_list,
     _missing_field_mode,
@@ -52,9 +53,29 @@ def _record_has_fields(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _record_add_field(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.AddField", args, 3)
+    # `optional delayed as nullable logical` is in the Syntax block, and the
+    # position is accepted here so the documented call runs. `true` is
+    # REFUSED rather than approximated: the page names the parameter and
+    # never says what it does, and a delayed field is a lazily-evaluated
+    # value this evaluator has no representation for (see evaluate.py's
+    # data-model note). Storing the function eagerly would put a function in
+    # the field where Power Query puts that function's result - a wrong
+    # value, silently.
+    _arity("Record.AddField", args, 3, 4)
     record = _require_record(args[0])
     name = _require_str(args[1])
+    delayed = args[3] if len(args) == 4 else None
+    if delayed is not None:
+        if not isinstance(delayed, bool):
+            raise EvalError(
+                f"Record.AddField: delayed must be a logical, got {_type_name(delayed)}"
+            )
+        if delayed:
+            raise UnsupportedError(
+                "Record.AddField: delayed = true defers the field's value "
+                "until it is read; every value here is already computed, so "
+                "there is nothing to defer"
+            )
     if name in record:
         raise EvalError(f"Record.AddField: field already exists: {name}")
     result = dict(record)
@@ -63,11 +84,17 @@ def _record_add_field(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _record_remove_fields(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Record.RemoveFields", args, 2)
+    # missingField was missing, so the documented alternative to the error -
+    # "an error is raised unless the optional parameter missingField
+    # specifies an alternative behavior" - could not be asked for. Ignore and
+    # UseNull are the same instruction for a REMOVAL (there is no value left
+    # to null out), so both mean "leave the absent field alone".
+    _arity("Record.RemoveFields", args, 2, 3)
     record = _require_record(args[0])
     names = _field_name_list(args[1])
+    mode = _missing_field_mode(args[2] if len(args) == 3 else None)
     for name in names:
-        if name not in record:
+        if name not in record and mode == _MISSING_FIELD_ERROR:
             raise EvalError(f"Record.RemoveFields: no such field: {name}")
     return {key: value for key, value in record.items() if key not in names}
 

@@ -223,7 +223,7 @@ shadowed - a binding's expression is only ever evaluated once, and only if
 something actually references it); records (`[a = 1]`) and field access
 (`r[a]`, `r[a]?`, and the `each`-scoped `[a]` shorthand for `_[a]`); lists
 (`{1, 2}`) and index access (`l{0}`, `l{0}?`); `each` and `(x) => ...` lambdas
-and calling them; `try ... otherwise ...`; and these 638 builtins.
+and calling them; `try ... otherwise ...`; and these 640 builtins.
 The list below is generated from `pqtools.evaluate.BUILTINS` and
 `tests/test_readme_builtins.py` fails if the two ever disagree - so it cannot
 silently drift, which a hand-maintained list can and did:
@@ -408,13 +408,13 @@ BinaryFormat.Single BinaryFormat.Text BinaryFormat.Transform
 BinaryFormat.UnsignedInteger16 BinaryFormat.UnsignedInteger32
 BinaryFormat.UnsignedInteger64 BinaryOccurrence.Optional
 BinaryOccurrence.Repeating BinaryOccurrence.Required ByteOrder.BigEndian
-ByteOrder.LittleEndian Day.Friday Day.Monday Day.Saturday Day.Sunday
-Day.Thursday Day.Tuesday Day.Wednesday Diagnostics.Trace Error.Record
-Geography.FromWellKnownText Geography.ToWellKnownText GeographyPoint.From
-Geometry.FromWellKnownText Geometry.ToWellKnownText GeometryPoint.From
-Percentage.From Percentage.Type PercentileMode.ExcelExc
-PercentileMode.ExcelInc PercentileMode.SqlCont PercentileMode.SqlDisc
-RankKind.Competition RankKind.Dense RankKind.Ordinal
+ByteOrder.LittleEndian CsvStyle.QuoteAfterDelimiter CsvStyle.QuoteAlways
+Day.Friday Day.Monday Day.Saturday Day.Sunday Day.Thursday Day.Tuesday
+Day.Wednesday Diagnostics.Trace Error.Record Geography.FromWellKnownText
+Geography.ToWellKnownText GeographyPoint.From Geometry.FromWellKnownText
+Geometry.ToWellKnownText GeometryPoint.From Percentage.From Percentage.Type
+PercentileMode.ExcelExc PercentileMode.ExcelInc PercentileMode.SqlCont
+PercentileMode.SqlDisc RankKind.Competition RankKind.Dense RankKind.Ordinal
 RelativePosition.FromEnd RelativePosition.FromStart TraceLevel.Critical
 TraceLevel.Error TraceLevel.Information TraceLevel.Verbose
 TraceLevel.Warning

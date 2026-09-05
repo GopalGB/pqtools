@@ -868,17 +868,59 @@ def _list_split(args: list[Any], ctx: _Ctx) -> Any:
     return [items[i : i + page_size] for i in range(0, len(items), page_size)]
 
 
+def _median_midpoint(low: Any, high: Any) -> Any:
+    """The average of the two middle items, or None if averaging is wrong.
+
+    "unless the list is comprised entirely of datetimes, durations, numbers
+    or times, in which case it returns the average of the two items" -
+    List.Median, verbatim. DATE is pointedly absent from that list, so two
+    dates take the other branch rather than averaging into a date the list
+    never contained.
+    """
+    if isinstance(low, bool) or isinstance(high, bool):
+        return None  # logical is not number in M, whatever Python thinks
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+        return (low + high) / 2
+    if isinstance(low, datetime.timedelta) and isinstance(high, datetime.timedelta):
+        return (low + high) / 2
+    # datetime before date: datetime IS a date subclass in Python, and date
+    # is the type the page leaves out.
+    if isinstance(low, datetime.datetime) and isinstance(high, datetime.datetime):
+        return low + (high - low) / 2
+    if isinstance(low, datetime.time) and isinstance(high, datetime.time):
+        midnight = datetime.datetime(2000, 1, 1)
+        span = (datetime.datetime.combine(midnight, low) - midnight) + (
+            datetime.datetime.combine(midnight, high) - midnight
+        )
+        return (midnight + span / 2).time()
+    return None
+
+
 def _list_median(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("List.Median", args, 1)
-    items = _require_list(args[0])
+    # Three things the page states that this did not do. Nulls are SKIPPED
+    # ("returns null if the list contains no non-null values"), the items
+    # need not be numbers (the declared return type is `any`), and on an
+    # even count the average is taken ONLY for datetimes, durations, numbers
+    # and times - everything else takes "the smaller of the two median
+    # items", which is the first of the pair in the ordering being used.
+    # comparisonCriteria was missing outright.
+    _arity("List.Median", args, 1, 2)
+    items = [item for item in _require_list(args[0]) if item is not None]
     if not items:
         return None
-    numbers = sorted(_require_number(x) for x in items)
-    n = len(numbers)
-    mid = n // 2
-    if n % 2:
-        return numbers[mid]
-    return (numbers[mid - 1] + numbers[mid]) / 2
+    key, reverse = _comparison_criteria_key(
+        args[1] if len(args) == 2 else None, ctx, "List.Median"
+    )
+    try:
+        ordered = sorted(items, key=key, reverse=reverse)
+    except TypeError as error:
+        raise EvalError("List.Median: values are not comparable") from error
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    low, high = ordered[mid - 1], ordered[mid]
+    midpoint = _median_midpoint(low, high)
+    return low if midpoint is None else midpoint
 
 
 def _list_mode(args: list[Any], ctx: _Ctx) -> Any:

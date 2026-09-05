@@ -23,6 +23,7 @@ from ._shared import (
     _check_invariant_culture,
     _format_number,
     _from_text,
+    _null_propagates,
     _parse_numeric_literal,
     _require_int,
     _require_number,
@@ -139,11 +140,16 @@ def _number_from(args: list[Any], ctx: _Ctx) -> Any:
     #                    LOCAL date and time of value"
     #   time:           "Expressed in fractional days"
     #   duration:       "Expressed in whole and fractional days"
-    # The `culture` parameter the Syntax block also documents is a
-    # pre-existing, separate gap this task does not touch - every existing
-    # call site here already assumes 1 argument, and none of the four
-    # conversions above is culture-sensitive (an OLE serial has no locale).
-    _arity("Number.From", args, 1)
+    # `optional culture as nullable text` is in the Syntax block. Only the
+    # TEXT branch is culture-sensitive (an OLE serial has no locale), but a
+    # culture that would change how "1.234" parses cannot be silently
+    # dropped - that turns 1.234 into 1234 for a de-DE caller.
+    _arity("Number.From", args, 1, 2)
+    _check_invariant_culture(
+        "Number.From",
+        args[1] if len(args) == 2 else None,
+        "culture-specific number parsing",
+    )
     value = args[0]
     if isinstance(value, bool):
         return 1 if value else 0
@@ -201,6 +207,8 @@ _ROUND_UP, _ROUND_DOWN, _ROUND_AWAY, _ROUND_TOWARD, _ROUND_EVEN = 0, 1, 2, 3, 4
 
 def _number_round(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Number.Round", args, 1, 3)
+    if _null_propagates(args):
+        return None
     value = _require_number(args[0])
     digits = _require_int(args[1]) if len(args) >= 2 and args[1] is not None else 0
     if len(args) < 3 or args[2] is None:
@@ -236,6 +244,8 @@ def _number_round(args: list[Any], ctx: _Ctx) -> Any:
 
 def _number_abs(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Number.Abs", args, 1)
+    if _null_propagates(args):
+        return None
     return abs(_require_number(args[0]))
 
 

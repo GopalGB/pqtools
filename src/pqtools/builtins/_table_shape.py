@@ -150,30 +150,57 @@ def _distribute_pieces(
     return row
 
 
-def _find_unquoted(text: str, delimiter: str, quote_style: str) -> int:
+_CSV_QUOTE_AFTER_DELIMITER = "CsvStyle.QuoteAfterDelimiter"
+_CSV_QUOTE_ALWAYS = "CsvStyle.QuoteAlways"
+
+
+def _find_unquoted(
+    text: str,
+    delimiter: str,
+    quote_style: str,
+    csv_style: str = _CSV_QUOTE_AFTER_DELIMITER,
+) -> int:
     """Index of the first ``delimiter`` in ``text`` outside double quotes.
 
     ``QuoteStyle.Csv`` treats ``""`` inside a quoted region as an escaped
     quote (RFC4180-style), matching a delimiter only outside such regions.
     ``QuoteStyle.None`` (or no quotes present) is a plain ``str.find``.
     Returns -1 if not found.
+
+    ``csv_style`` decides WHICH quotes open a quoted region, which this used
+    to get wrong by having no opinion at all:
+
+        CsvStyle.QuoteAfterDelimiter (the default): "Quotes in a field are
+        only significant immediately following the Delimiter."
+        CsvStyle.QuoteAlways: "Quotes in a field are always significant,
+        regardless of where they appear."
+
+    - Csv.Document / Lines.FromText, verbatim. This treated every quote as
+    significant, i.e. QuoteAlways, while the documented default is the other
+    one: `a"b,c"` splits into two fields under the real default and stayed
+    one field here.
     """
     if quote_style != "QuoteStyle.Csv" or '"' not in text:
         return text.find(delimiter)
+    always = csv_style == _CSV_QUOTE_ALWAYS
     in_quotes = False
+    at_field_start = True
     i = 0
     n = len(text)
     while i < n:
         ch = text[i]
-        if ch == '"':
+        if ch == '"' and (always or in_quotes or at_field_start):
             if in_quotes and i + 1 < n and text[i + 1] == '"':
                 i += 2
+                at_field_start = False
                 continue
             in_quotes = not in_quotes
             i += 1
+            at_field_start = False
             continue
         if not in_quotes and text.startswith(delimiter, i):
             return i
+        at_field_start = False
         i += 1
     return -1
 
@@ -184,11 +211,13 @@ def _unquote_csv_field(field: str) -> str:
     return field
 
 
-def _split_delimiter_csv_style(text: str, delimiter: str) -> list[Any]:
+def _split_delimiter_csv_style(
+    text: str, delimiter: str, csv_style: str = _CSV_QUOTE_AFTER_DELIMITER
+) -> list[Any]:
     pieces: list[Any] = []
     remaining = text
     while True:
-        index = _find_unquoted(remaining, delimiter, "QuoteStyle.Csv")
+        index = _find_unquoted(remaining, delimiter, "QuoteStyle.Csv", csv_style)
         if index == -1:
             pieces.append(_unquote_csv_field(remaining))
             return pieces
@@ -400,18 +429,40 @@ def _table_fill_up(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _table_add_index_column(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.AddIndexColumn", args, 2, 4)
+    # `optional columnType as nullable type` completes the Syntax block. The
+    # UI emits it (`Table.AddIndexColumn(t, "Index", 0, 1, Int64.Type)`) the
+    # same way it emits Table.AddColumn's fourth argument, and it is applied
+    # the same way here - accepting it and ignoring it would produce a
+    # differently-typed column than Power Query does.
+    _arity("Table.AddIndexColumn", args, 2, 5)
     table = _require_table(args[0])
     name = _require_str(args[1])
-    initial: int | float = _require_number(args[2]) if len(args) >= 3 else 0
-    increment: int | float = _require_number(args[3]) if len(args) == 4 else 1
+    initial: int | float = (
+        _require_number(args[2]) if len(args) >= 3 and args[2] is not None else 0
+    )
+    increment: int | float = (
+        _require_number(args[3]) if len(args) >= 4 and args[3] is not None else 1
+    )
+    declared = args[4] if len(args) == 5 else None
+    convert = None
+    if declared is not None:
+        # Lazily imported for the reason Table.AddColumn documents: _type
+        # imports nothing from here, and the common path should not pay.
+        from ._type import _converter_for, _MType
+
+        if not isinstance(declared, _MType):
+            raise EvalError(
+                "Table.AddIndexColumn: expected a type value for the column "
+                f"type, got {_type_name(declared)}"
+            )
+        convert = _converter_for(declared)
     if table and name in table[0]:
         raise EvalError(f"Table.AddIndexColumn: column already exists: {name}")
     result: list[dict[str, Any]] = []
     value = initial
     for row in table:
         new_row = dict(row)
-        new_row[name] = value
+        new_row[name] = value if convert is None else convert(value)
         result.append(new_row)
         value = value + increment
     return result
@@ -492,23 +543,33 @@ def _table_split_column(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _splitter_split_text_by_delimiter(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Splitter.SplitTextByDelimiter", args, 1, 2)
+    # `optional csvStyle as nullable number` was missing from the signature,
+    # so the argument that decides which quotes are significant could not be
+    # passed at all.
+    _arity("Splitter.SplitTextByDelimiter", args, 1, 3)
     delimiter = _require_str(args[0])
     if delimiter == "":
         raise EvalError("Splitter.SplitTextByDelimiter: delimiter must not be empty")
     quote_style = (
-        args[1] if len(args) == 2 and args[1] is not None else "QuoteStyle.None"
+        args[1] if len(args) >= 2 and args[1] is not None else "QuoteStyle.None"
     )
     if quote_style not in ("QuoteStyle.None", "QuoteStyle.Csv"):
         raise UnsupportedError(
             f"Splitter.SplitTextByDelimiter: quoteStyle {quote_style!r}"
         )
+    csv_style = (
+        args[2]
+        if len(args) == 3 and args[2] is not None
+        else _CSV_QUOTE_AFTER_DELIMITER
+    )
+    if csv_style not in (_CSV_QUOTE_AFTER_DELIMITER, _CSV_QUOTE_ALWAYS):
+        raise UnsupportedError(f"Splitter.SplitTextByDelimiter: csvStyle {csv_style!r}")
 
     def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
         _arity("Splitter.SplitTextByDelimiter (applied)", inner_args, 1)
         text = _require_str(inner_args[0])
         if quote_style == "QuoteStyle.Csv":
-            return _split_delimiter_csv_style(text, delimiter)
+            return _split_delimiter_csv_style(text, delimiter, csv_style)
         return text.split(delimiter)
 
     return _split
@@ -793,7 +854,20 @@ def _table_buffer(args: list[Any], ctx: _Ctx) -> Any:
     # force - every table value is already fully materialised the moment it
     # exists (see the module docstring's data-model note) - but the UI
     # emits Table.Buffer routinely, so it must not error.
-    _arity("Table.Buffer", args, 1)
+    #
+    # `optional options as nullable record` carries one documented key,
+    # BufferMode (Eager or Delayed). It is accepted and cannot change the
+    # result: with nothing to force, eager and delayed buffering are the same
+    # identity. Any OTHER key is named rather than ignored, so a misspelled
+    # option is not silently dropped. BufferMode.Eager / BufferMode.Delayed
+    # themselves stay unregistered in _enums.py - their numbering is
+    # unconfirmed, and inventing one is the defect that module exists to
+    # avoid.
+    _arity("Table.Buffer", args, 1, 2)
+    options = dict(_require_record(args[1])) if len(args) == 2 and args[1] else {}
+    options.pop("BufferMode", None)
+    if options:
+        raise UnsupportedError(f"Table.Buffer: option(s) {sorted(options)}")
     return list(_require_table(args[0]))
 
 
@@ -1283,6 +1357,12 @@ BUILTINS: dict[str, Any] = {
     # (enum resolution now lives in _enums.py - see its docstring)
     "QuoteStyle.Csv": "QuoteStyle.Csv",
     "QuoteStyle.None": "QuoteStyle.None",
+    # CsvStyle.Type - the two member NAMES are verified (Csv.Document and
+    # Lines.FromText both spell them out and state what each does); their
+    # NUMBERING is not, so they are registered as opaque self-naming values
+    # the way QuoteStyle.* is, rather than as invented integers.
+    "CsvStyle.QuoteAfterDelimiter": "CsvStyle.QuoteAfterDelimiter",
+    "CsvStyle.QuoteAlways": "CsvStyle.QuoteAlways",
     "ExtraValues.Ignore": "ExtraValues.Ignore",
     "ExtraValues.Error": "ExtraValues.Error",
     "ExtraValues.List": "ExtraValues.List",

@@ -108,6 +108,7 @@ unmatched-on-both-sides data.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from ._shared import (
@@ -121,6 +122,7 @@ from ._shared import (
     _require_record,
     _require_str,
     _require_table,
+    _type_name,
 )
 
 if TYPE_CHECKING:
@@ -241,8 +243,41 @@ def _group_aggregation_specs(value: Any) -> list[tuple[str, Any]]:
     return specs
 
 
+def _comparer_keys_equal(
+    comparer: Any, ctx: _Ctx
+) -> Callable[[tuple[Any, ...], tuple[Any, ...]], bool]:
+    """Key equality delegated to a user `comparer`, which returns 0 for equal.
+
+    "When passing a comparer, note that if it treats differing keys as equal,
+    a row may be placed in a group whose keys differ from its own" -
+    Table.Group, verbatim. That is the point of the parameter, so the
+    comparer's verdict is taken as given rather than double-checked against
+    `_m_equal`. A multi-column key compares column by column, all of which
+    must be equal, exactly as the default does.
+    """
+
+    def equal(left: tuple[Any, ...], right: tuple[Any, ...]) -> bool:
+        if len(left) != len(right):
+            return False
+        for a, b in zip(left, right, strict=True):
+            verdict = ctx.invoke(comparer, [a, b], ctx)
+            if isinstance(verdict, bool) or not isinstance(verdict, (int, float)):
+                raise EvalError(
+                    "Table.Group: comparer must return a number (negative, "
+                    f"zero or positive), got {_type_name(verdict)}"
+                )
+            if verdict != 0:
+                return False
+        return True
+
+    return equal
+
+
 def _group_rows_global(
-    table: list[dict[str, Any]], keys: list[str], ctx: _Ctx
+    table: list[dict[str, Any]],
+    keys: list[str],
+    ctx: _Ctx,
+    equal: Callable[[tuple[Any, ...], tuple[Any, ...]], bool] = _keys_equal,
 ) -> list[tuple[tuple[Any, ...], list[dict[str, Any]]]]:
     """Every row with a matching key joins the same group, wherever it sits
     in the table. Output order = first-appearance order of each key."""
@@ -253,7 +288,7 @@ def _group_rows_global(
         placed = False
         for index, existing in enumerate(order):
             ctx.budget.tick()
-            if _keys_equal(existing, key):
+            if equal(existing, key):
                 buckets[index].append(row)
                 placed = True
                 break
@@ -264,7 +299,9 @@ def _group_rows_global(
 
 
 def _group_rows_local(
-    table: list[dict[str, Any]], keys: list[str]
+    table: list[dict[str, Any]],
+    keys: list[str],
+    equal: Callable[[tuple[Any, ...], tuple[Any, ...]], bool] = _keys_equal,
 ) -> list[tuple[tuple[Any, ...], list[dict[str, Any]]]]:
     """Only *consecutive* runs of a matching key form a group - the same key
     reappearing later, after a different key interrupts the run, starts a
@@ -272,7 +309,7 @@ def _group_rows_local(
     groups: list[tuple[tuple[Any, ...], list[dict[str, Any]]]] = []
     for row in table:
         key = _row_key(row, keys, "Table.Group")
-        if groups and _keys_equal(groups[-1][0], key):
+        if groups and equal(groups[-1][0], key):
             groups[-1][1].append(row)
         else:
             groups.append((key, [row]))
@@ -280,19 +317,22 @@ def _group_rows_local(
 
 
 def _table_group(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.Group", args, 3, 4)
+    # `optional comparer as nullable function` completes the Syntax block.
+    _arity("Table.Group", args, 3, 5)
     table = _require_table(args[0])
     keys = _field_name_list(args[1])
     agg_specs = _group_aggregation_specs(args[2])
-    kind = args[3] if len(args) == 4 else _GROUP_GLOBAL
+    kind = args[3] if len(args) >= 4 and args[3] is not None else _GROUP_GLOBAL
     if kind not in (_GROUP_GLOBAL, _GROUP_LOCAL):
         raise UnsupportedError(
             "Table.Group: groupKind must be GroupKind.Global or GroupKind.Local"
         )
+    comparer = args[4] if len(args) == 5 else None
+    equal = _keys_equal if comparer is None else _comparer_keys_equal(comparer, ctx)
     groups = (
-        _group_rows_local(table, keys)
+        _group_rows_local(table, keys, equal)
         if kind == _GROUP_LOCAL
-        else _group_rows_global(table, keys, ctx)
+        else _group_rows_global(table, keys, ctx, equal)
     )
     result: list[dict[str, Any]] = []
     for key_values, subtable in groups:
@@ -328,13 +368,25 @@ def _find_matches(
 
 
 def _table_nested_join(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Table.NestedJoin", args, 5, 6)
+    # `optional keyEqualityComparers as nullable list` completes the Syntax
+    # block. The position is accepted so the documented call runs; a non-null
+    # value is REFUSED rather than ignored, because the page says the feature
+    # "is currently intended for internal use only" and documents nothing
+    # about how the comparers in the list are applied. Guessing would change
+    # which rows join.
+    _arity("Table.NestedJoin", args, 5, 7)
     table1 = _require_table(args[0])
     keys1 = _field_name_list(args[1])
     table2 = _require_table(args[2])
     keys2 = _field_name_list(args[3])
     new_column = _require_str(args[4])
-    kind = args[5] if len(args) == 6 else _JOIN_INNER
+    if len(args) == 7 and args[6] is not None:
+        raise UnsupportedError(
+            "Table.NestedJoin: keyEqualityComparers is documented as "
+            "'intended for internal use only' with no stated semantics, so "
+            "it is refused rather than guessed at (pass null to omit it)"
+        )
+    kind = args[5] if len(args) >= 6 and args[5] is not None else _JOIN_INNER
     if kind not in _JOIN_KINDS:
         raise UnsupportedError("Table.NestedJoin: joinKind must be a JoinKind.* value")
     if len(keys1) != len(keys2):

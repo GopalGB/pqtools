@@ -616,15 +616,85 @@ def _generic_database(
     return connector
 
 
+def _odbc_connection_string(value: Any, what: str) -> str:
+    """``connectionString as any`` - text, or a record of property pairs.
+
+    "connectionString can be text or a record of property value pairs.
+    Property values can either be text or number" - Odbc.Query, verbatim.
+    Only the text half was accepted, so the record spelling failed inside
+    `_require_str` before any connection was attempted.
+    """
+    if isinstance(value, dict):
+        parts = []
+        for key, item in value.items():
+            if isinstance(item, bool) or not isinstance(item, (str, int, float)):
+                raise EvalError(
+                    f"{what}: connection property {key!r} must be text or a "
+                    f"number, got {_type_name(item)}"
+                )
+            parts.append(f"{key}={item}")
+        return ";".join(parts)
+    return _require_str(value)
+
+
+def _odbc_options(
+    options: dict[str, Any], what: str
+) -> tuple[float | None, float | None]:
+    """The three documented Odbc.* options; returns (connect, command) seconds.
+
+    ConnectionTimeout and CommandTimeout are DURATIONS ("A duration that
+    controls how long to wait..."), which is why they share Web.Contents'
+    `_request_timeout` rather than being passed to `float()`.
+    """
+    connect = options.pop("ConnectionTimeout", None)
+    command = options.pop("CommandTimeout", None)
+    windows_auth = options.pop("SqlCompatibleWindowsAuth", None)
+    if windows_auth is not None:
+        if not isinstance(windows_auth, bool):
+            raise EvalError(
+                f"{what}: SqlCompatibleWindowsAuth must be a logical, got "
+                f"{_type_name(windows_auth)}"
+            )
+        if not windows_auth:
+            # Its documented default is true; false suppresses connection
+            # string options this build never adds, so honouring it would be
+            # a no-op dressed as a setting.
+            raise UnsupportedError(
+                f"{what}: SqlCompatibleWindowsAuth = false shapes SQL Server "
+                "Windows-authentication options that are not generated here"
+            )
+    if options:
+        raise UnsupportedError(f"{what}: option(s) {sorted(options)}")
+    return (
+        _request_timeout(connect, 15.0, what) if connect is not None else None,
+        _request_timeout(command, 600.0, what) if command is not None else None,
+    )
+
+
+def _odbc_connect(
+    pyodbc: Any, connection_string: str, connect_timeout: float | None
+) -> Any:
+    if connect_timeout is None:
+        return pyodbc.connect(connection_string)
+    return pyodbc.connect(connection_string, timeout=int(connect_timeout))
+
+
 def _odbc_query(args: list[Any], ctx: _Ctx) -> Any:
-    """``Odbc.Query(connectionString, query)`` - any ODBC source."""
+    """``Odbc.Query(connectionString, query, options)`` - any ODBC source."""
     _policy(ctx).check_db(what="Odbc.Query")
-    _arity("Odbc.Query", args, 2)
-    connection_string = _require_str(args[0])
+    # `optional options as nullable record` was missing from the signature,
+    # and connectionString is `any` (text OR a record of property pairs) -
+    # both halves of the documented call failed before connecting.
+    _arity("Odbc.Query", args, 2, 3)
+    connection_string = _odbc_connection_string(args[0], "Odbc.Query")
     query = _require_str(args[1])
+    options = _optional_record(args[2] if len(args) == 3 else None, "Odbc.Query")
+    connect_timeout, command_timeout = _odbc_options(options, "Odbc.Query")
     pyodbc = _require_driver("pyodbc", "sql", "Odbc.Query")
-    connection = pyodbc.connect(connection_string)
+    connection = _odbc_connect(pyodbc, connection_string, connect_timeout)
     try:
+        if command_timeout is not None:
+            connection.timeout = int(command_timeout)
         return _run_query(connection, query)
     finally:
         connection.close()
@@ -634,13 +704,16 @@ def _odbc_datasource(args: list[Any], ctx: _Ctx) -> Any:
     """``Odbc.DataSource(connectionString, options)`` - the table nav list."""
     _policy(ctx).check_db(what="Odbc.DataSource")
     _arity("Odbc.DataSource", args, 1, 2)
-    connection_string = _require_str(args[0])
+    # Same `connectionString as any` as Odbc.Query - the record spelling was
+    # refused here too.
+    connection_string = _odbc_connection_string(args[0], "Odbc.DataSource")
     options = _optional_record(args[1] if len(args) == 2 else None, "Odbc.DataSource")
     query = options.pop("Query", None)
-    if options:
-        raise UnsupportedError(f"Odbc.DataSource: option(s) {sorted(options)}")
+    connect_timeout, command_timeout = _odbc_options(options, "Odbc.DataSource")
     pyodbc = _require_driver("pyodbc", "sql", "Odbc.DataSource")
-    connection = pyodbc.connect(connection_string)
+    connection = _odbc_connect(pyodbc, connection_string, connect_timeout)
+    if command_timeout is not None:
+        connection.timeout = int(command_timeout)
     try:
         if query is not None:
             return _run_query(connection, _require_str(query))

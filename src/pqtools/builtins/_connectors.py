@@ -35,6 +35,7 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _null_propagates,
     _require_int,
     _require_list,
     _require_str,
@@ -111,6 +112,8 @@ def _file_contents(args: list[Any], ctx: _Ctx) -> Any:
 
 def _text_from_binary(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.FromBinary", args, 1, 2)
+    if _null_propagates(args):
+        return None
     code_page = None if len(args) < 2 or args[1] is None else _require_int(args[1])
     value = args[0]
     if not isinstance(value, bytes):
@@ -327,6 +330,8 @@ def _csv_document(args: list[Any], ctx: _Ctx) -> Any:
 
 def _binary_from_text(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Binary.FromText", args, 1, 2)
+    if _null_propagates(args):
+        return None
     text = _require_str(args[0])
     encoding = args[1] if len(args) == 2 else "BinaryEncoding.Base64"
     if encoding is None:
@@ -346,6 +351,8 @@ def _binary_from_text(args: list[Any], ctx: _Ctx) -> Any:
 
 def _binary_to_text(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Binary.ToText", args, 1, 2)
+    if _null_propagates(args):
+        return None
     value = args[0]
     if not isinstance(value, bytes):
         raise EvalError(f"Binary.ToText: expected binary, got {_type_name(value)}")
@@ -366,6 +373,8 @@ def _binary_to_text(args: list[Any], ctx: _Ctx) -> Any:
 
 def _binary_decompress(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Binary.Decompress", args, 2)
+    if _null_propagates(args):
+        return None
     value = args[0]
     if not isinstance(value, bytes):
         raise EvalError(f"Binary.Decompress: expected binary, got {_type_name(value)}")
@@ -388,6 +397,8 @@ def _binary_decompress(args: list[Any], ctx: _Ctx) -> Any:
 
 def _binary_length(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Binary.Length", args, 1)
+    if _null_propagates(args):
+        return None
     value = args[0]
     if not isinstance(value, bytes):
         raise EvalError(f"Binary.Length: expected binary, got {_type_name(value)}")

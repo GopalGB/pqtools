@@ -335,6 +335,22 @@ def _check_invariant_culture(name: str, culture: Any, detail: str) -> None:
 _CULTURE_SCOPE = "(pqtools only implements invariant/en-US)"
 
 
+def _null_propagates(args: list[Any]) -> bool:
+    """`f(null)` is `null` wherever the page declares parameter one nullable.
+
+    `Text.Lower(text as nullable text, optional culture as nullable text) as
+    nullable text` - BOTH halves of that signature say it: null is an
+    accepted input, and null is a possible output. A function that declared a
+    nullable return and could never return null would be mis-declared.
+
+    97 builtins here already behaved this way and 14 raised "expected text,
+    got null" instead - the same inconsistency 14 times, invisible to every
+    test because each one was individually plausible. The rule now has one
+    home and `test_documented_signatures.py` asks it of every builtin.
+    """
+    return bool(args) and args[0] is None
+
+
 def _column_selection(value: Any, what: str) -> list[str] | None:
     """`columns` as either a list of names or a table TYPE.
 

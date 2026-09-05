@@ -18,8 +18,16 @@ Number.Round now takes a rounding mode. They were found missing by running
 Microsoft's own worked examples, which is the only place a real query's
 vocabulary shows up.
 
-Still deliberately absent: CsvStyle.*, WebMethod.* - numbering unconfirmed and
-nothing consumes them.
+CsvStyle.* is the third mechanism this rule allows. Its member NAMES are
+confirmed (Csv.Document and Lines.FromText spell both out and say what each
+does) while its numbering is not, so - like QuoteStyle.* and ExtraValues.* -
+it is registered next to its consumer in _table_shape.py as an OPAQUE
+self-naming value. Nothing does arithmetic on it, so nothing can be silently
+wrong. Use that shape whenever the name is verified and the number is not;
+this module is for the cases where the number itself is verified.
+
+Still deliberately absent: WebMethod.* - numbering unconfirmed and nothing
+consumes it.
 """
 
 from __future__ import annotations

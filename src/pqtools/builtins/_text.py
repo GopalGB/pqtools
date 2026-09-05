@@ -18,6 +18,7 @@ from ._shared import (
     _arity,
     _check_invariant_culture,
     _format_number,
+    _null_propagates,
     _require_int,
     _require_list,
     _require_str,
@@ -218,17 +219,33 @@ def _text_format(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _text_upper(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Upper", args, 1)
+    # `optional culture as nullable text` is in the Syntax block, and casing
+    # really is culture-sensitive - Turkish maps "i" to "\u0130", not "I". An
+    # accepted-and-ignored culture would hand tr-TR callers en-US casing with
+    # no warning, so a culture this build cannot honour is refused by name.
+    _arity("Text.Upper", args, 1, 2)
+    if _null_propagates(args):
+        return None
+    _check_invariant_culture(
+        "Text.Upper", args[1] if len(args) == 2 else None, "culture-specific casing"
+    )
     return _require_str(args[0]).upper()
 
 
 def _text_lower(args: list[Any], ctx: _Ctx) -> Any:
-    _arity("Text.Lower", args, 1)
+    _arity("Text.Lower", args, 1, 2)
+    if _null_propagates(args):
+        return None
+    _check_invariant_culture(
+        "Text.Lower", args[1] if len(args) == 2 else None, "culture-specific casing"
+    )
     return _require_str(args[0]).lower()
 
 
 def _text_length(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.Length", args, 1)
+    if _null_propagates(args):
+        return None
     return len(_require_str(args[0]))
 
 
@@ -267,6 +284,8 @@ def _text_contains(args: list[Any], ctx: _Ctx) -> Any:
 
 def _text_replace(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.Replace", args, 3)
+    if _null_propagates(args):
+        return None
     return _require_str(args[0]).replace(_require_str(args[1]), _require_str(args[2]))
 
 
@@ -277,6 +296,8 @@ def _text_split(args: list[Any], ctx: _Ctx) -> Any:
 
 def _text_start(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.Start", args, 2)
+    if _null_propagates(args):
+        return None
     text = _require_str(args[0])
     count = _require_int(args[1])
     if count < 0:
@@ -286,6 +307,8 @@ def _text_start(args: list[Any], ctx: _Ctx) -> Any:
 
 def _text_end(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.End", args, 2)
+    if _null_propagates(args):
+        return None
     text = _require_str(args[0])
     count = _require_int(args[1])
     if count < 0:
@@ -309,6 +332,8 @@ def _trim_characters(args: list[Any], index: int, fn_name: str) -> str | None:
 
 def _text_trim(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.Trim", args, 1, 2)
+    if _null_propagates(args):
+        return None
     text = _require_str(args[0])
     chars = _trim_characters(args, 1, "Text.Trim")
     return text.strip() if chars is None else text.strip(chars)

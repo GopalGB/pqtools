@@ -1,0 +1,11528 @@
+{
+ "Binary.ApproximateLength": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Binary.Buffer": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   }
+  ],
+  "returns": "nullable binary"
+ },
+ "Binary.Combine": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binaries",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Binary.Compress": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   },
+   {
+    "name": "compressionType",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable binary"
+ },
+ "Binary.Decompress": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   },
+   {
+    "name": "compressionType",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable binary"
+ },
+ "Binary.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable binary"
+ },
+ "Binary.FromList": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Binary.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable binary"
+ },
+ "Binary.InferContentType": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "source",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "record"
+ },
+ "Binary.Length": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Binary.Range": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Binary.Split": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   },
+   {
+    "name": "pageSize",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "list"
+ },
+ "Binary.ToList": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "list"
+ },
+ "Binary.ToText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Binary.View": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   },
+   {
+    "name": "handlers",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Binary.ViewError": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "errorRecord",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "record"
+ },
+ "Binary.ViewFunction": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "function",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Binary": {
+  "arity": [
+   0,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "length",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Byte": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.ByteOrder": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binaryFormat",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "byteOrder",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Choice": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "binaryFormat",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "chooseFunction",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "type",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable type"
+   },
+   {
+    "name": "combineFunction",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Decimal": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.Double": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.Group": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "binaryFormat",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "group",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "extra",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   },
+   {
+    "name": "lastKey",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Length": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binaryFormat",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "length",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.List": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binaryFormat",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Null": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.Record": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.SignedInteger16": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.SignedInteger32": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.SignedInteger64": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.Single": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.Text": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "length",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.Transform": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binaryFormat",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "function",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "function"
+ },
+ "BinaryFormat.UnsignedInteger16": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.UnsignedInteger32": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "BinaryFormat.UnsignedInteger64": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   }
+  ],
+  "returns": "any"
+ },
+ "Byte.From": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Character.FromNumber": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Character.ToNumber": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "character",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Combiner.CombineTextByDelimiter": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "delimiter",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "function"
+ },
+ "Combiner.CombineTextByEachDelimiter": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "delimiters",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "function"
+ },
+ "Combiner.CombineTextByLengths": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "lengths",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "template",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "function"
+ },
+ "Combiner.CombineTextByPositions": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "positions",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "template",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "function"
+ },
+ "Combiner.CombineTextByRanges": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "ranges",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "template",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "function"
+ },
+ "Comparer.Equals": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "comparer",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "x",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "y",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Comparer.FromCulture": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "culture",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "ignoreCase",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Comparer.Ordinal": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "x",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "y",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "number"
+ },
+ "Comparer.OrdinalIgnoreCase": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "x",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "y",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "number"
+ },
+ "Csv.Document": {
+  "arity": [
+   1,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "source",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "delimiter",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "extraValues",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Currency.From": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.AddDays": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "numberOfDays",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.AddMonths": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "numberOfMonths",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.AddQuarters": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "numberOfQuarters",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.AddWeeks": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "numberOfWeeks",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.AddYears": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "numberOfYears",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.Day": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.DayOfWeek": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "firstDayOfWeek",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.DayOfWeekName": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "date",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Date.DayOfYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.DaysInMonth": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.EndOfDay": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.EndOfMonth": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.EndOfQuarter": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.EndOfWeek": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "firstDayOfWeek",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.EndOfYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable date"
+ },
+ "Date.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable date"
+ },
+ "Date.IsInCurrentDay": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInCurrentMonth": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInCurrentQuarter": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInCurrentWeek": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInCurrentYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextDay": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextMonth": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextNDays": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "days",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextNMonths": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "months",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextNQuarters": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "quarters",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextNWeeks": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "weeks",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextNYears": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "years",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextQuarter": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextWeek": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInNextYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousDay": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousMonth": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousNDays": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "days",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousNMonths": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "months",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousNQuarters": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "quarters",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousNWeeks": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "weeks",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousNYears": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "years",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousQuarter": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousWeek": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInPreviousYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsInYearToDate": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.IsLeapYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Date.Month": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.MonthName": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "date",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Date.QuarterOfYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.StartOfDay": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.StartOfMonth": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.StartOfQuarter": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.StartOfWeek": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "firstDayOfWeek",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.StartOfYear": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Date.ToRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "date",
+    "nullable": false,
+    "optional": false,
+    "type": "date"
+   }
+  ],
+  "returns": "record"
+ },
+ "Date.ToText": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "date",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable date"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Date.WeekOfMonth": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "firstDayOfWeek",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.WeekOfYear": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "firstDayOfWeek",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Date.Year": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "DateTime.AddZone": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetime"
+   },
+   {
+    "name": "timezoneHours",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "timezoneMinutes",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTime.Date": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable date"
+ },
+ "DateTime.FixedLocalNow": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "datetime"
+ },
+ "DateTime.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable datetime"
+ },
+ "DateTime.FromFileTime": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "fileTime",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable datetime"
+ },
+ "DateTime.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable datetime"
+ },
+ "DateTime.IsInCurrentHour": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInCurrentMinute": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInCurrentSecond": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInNextHour": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInNextMinute": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInNextNHours": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "hours",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInNextNMinutes": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "minutes",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInNextNSeconds": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "seconds",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInNextSecond": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInPreviousHour": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInPreviousMinute": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInPreviousNHours": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "hours",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInPreviousNMinutes": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "minutes",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInPreviousNSeconds": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "seconds",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.IsInPreviousSecond": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "DateTime.LocalNow": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "datetime"
+ },
+ "DateTime.Time": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable time"
+ },
+ "DateTime.ToRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": false,
+    "optional": false,
+    "type": "datetime"
+   }
+  ],
+  "returns": "record"
+ },
+ "DateTime.ToText": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetime"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "DateTimeZone.FixedLocalNow": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "datetimezone"
+ },
+ "DateTimeZone.FixedUtcNow": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "datetimezone"
+ },
+ "DateTimeZone.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTimeZone.FromFileTime": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "fileTime",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTimeZone.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTimeZone.LocalNow": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "datetimezone"
+ },
+ "DateTimeZone.RemoveZone": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   }
+  ],
+  "returns": "nullable datetime"
+ },
+ "DateTimeZone.SwitchZone": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   },
+   {
+    "name": "timezoneHours",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "timezoneMinutes",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTimeZone.ToLocal": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTimeZone.ToRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": false,
+    "optional": false,
+    "type": "datetimezone"
+   }
+  ],
+  "returns": "record"
+ },
+ "DateTimeZone.ToText": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "DateTimeZone.ToUtc": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   }
+  ],
+  "returns": "nullable datetimezone"
+ },
+ "DateTimeZone.UtcNow": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "datetimezone"
+ },
+ "DateTimeZone.ZoneHours": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "DateTimeZone.ZoneMinutes": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTimeZone",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable datetimezone"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Decimal.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Diagnostics.Trace": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "traceLevel",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "message",
+    "nullable": false,
+    "optional": false,
+    "type": "anynonnull"
+   },
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "delayed",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "any"
+ },
+ "Double.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.Days": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.From": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable duration"
+ },
+ "Duration.FromText": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable duration"
+ },
+ "Duration.Hours": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.Minutes": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.Seconds": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.ToRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "record"
+ },
+ "Duration.ToText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   },
+   {
+    "name": "format",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Duration.TotalDays": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.TotalHours": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.TotalMinutes": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Duration.TotalSeconds": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "duration",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable duration"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Error.Record": {
+  "arity": [
+   1,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "reason",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "message",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "detail",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "parameters",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   },
+   {
+    "name": "errorCode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "record"
+ },
+ "Excel.Workbook": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "workbook",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   },
+   {
+    "name": "useHeaders",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "delayTypes",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "table"
+ },
+ "Expression.Constant": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "text"
+ },
+ "Expression.Evaluate": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "document",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "environment",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "any"
+ },
+ "Expression.Identifier": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "name",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "text"
+ },
+ "File.Contents": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "path",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Folder.Contents": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "path",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Folder.Files": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "path",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Function.From": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "functionType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "function",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "function"
+ },
+ "Function.Invoke": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "function",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "args",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "any"
+ },
+ "Function.InvokeAfter": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "function",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "delay",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "any"
+ },
+ "Function.ScalarVector": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "scalarFunctionType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "vectorFunction",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "function"
+ },
+ "Geography.FromWellKnownText": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "input",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable record"
+ },
+ "Geography.ToWellKnownText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "input",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable record"
+   },
+   {
+    "name": "omitSRID",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "GeographyPoint.From": {
+  "arity": [
+   2,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "longitude",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "latitude",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "z",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "m",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "srid",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Geometry.FromWellKnownText": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "input",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable record"
+ },
+ "Geometry.ToWellKnownText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "input",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable record"
+   },
+   {
+    "name": "omitSRID",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "GeometryPoint.From": {
+  "arity": [
+   2,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "x",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "y",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "z",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "m",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "srid",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Guid.From": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Int16.From": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Int32.From": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Int64.From": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Int8.From": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Json.Document": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "jsonText",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Json.FromValue": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Lines.FromBinary": {
+  "arity": [
+   1,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": false,
+    "optional": false,
+    "type": "binary"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "includeLineSeparators",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "list"
+ },
+ "Lines.FromText": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "includeLineSeparators",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "list"
+ },
+ "Lines.ToBinary": {
+  "arity": [
+   1,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "lines",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "lineSeparator",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "includeByteOrderMark",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "binary"
+ },
+ "Lines.ToText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "lines",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "lineSeparator",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "text"
+ },
+ "List.Accumulate": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "seed",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "accumulator",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.AllTrue": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.Alternate": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "repeatInterval",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "offset",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.AnyTrue": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.Average": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Buffer": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Combine": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "lists",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Contains": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.ContainsAll": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "values",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.ContainsAny": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "values",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.Count": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "number"
+ },
+ "List.Covariance": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "numberList1",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "numberList2",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "List.DateTimeZones": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "datetimezone"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "step",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.DateTimes": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "datetime"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "step",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Dates": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "date"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "step",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Difference": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list1",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "list2",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Distinct": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Durations": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "step",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.FindText": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.First": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "defaultValue",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.FirstN": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Generate": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "initial",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "condition",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "next",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "selector",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.InsertRange": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "index",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "values",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Intersect": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "lists",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.IsDistinct": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.IsEmpty": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.Last": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "defaultValue",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.LastN": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.MatchesAll": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "condition",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.MatchesAny": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "condition",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "logical"
+ },
+ "List.Max": {
+  "arity": [
+   1,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "includeNulls",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.MaxN": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "includeNulls",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Median": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Min": {
+  "arity": [
+   1,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "includeNulls",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.MinN": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "includeNulls",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Mode": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Modes": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.NonNullCount": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "number"
+ },
+ "List.Numbers": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "increment",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Percentile": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "percentiles",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.PositionOf": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "occurrence",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.PositionOfAny": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "values",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "occurrence",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Positions": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Product": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "numbersList",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "List.Random": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "seed",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Range": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.RemoveFirstN": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.RemoveItems": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list1",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "list2",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.RemoveLastN": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.RemoveMatchingItems": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list1",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "list2",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.RemoveNulls": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.RemoveRange": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "index",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Repeat": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.ReplaceMatchingItems": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "replacements",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.ReplaceRange": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "index",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "replaceWith",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.ReplaceValue": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "oldValue",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "newValue",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "replacer",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Reverse": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Select": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "selection",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Single": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.SingleOrDefault": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Skip": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Sort": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Split": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "pageSize",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.StandardDeviation": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "numbersList",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "List.Sum": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "List.Times": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "time"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "step",
+    "nullable": false,
+    "optional": false,
+    "type": "duration"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Transform": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "transform",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.TransformMany": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "collectionTransform",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "resultTransform",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Union": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "lists",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "list"
+ },
+ "List.Zip": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "lists",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "Logical.From": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Logical.FromText": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Logical.ToText": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "logicalValue",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "MySQL.Database": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "server",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "database",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Number.Abs": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Acos": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Asin": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Atan": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Atan2": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "y",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "x",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.BitwiseAnd": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number1",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "number2",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.BitwiseNot": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Number.BitwiseOr": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number1",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "number2",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.BitwiseShiftLeft": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number1",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "number2",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.BitwiseShiftRight": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number1",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "number2",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.BitwiseXor": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number1",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "number2",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Combinations": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "setSize",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "combinationSize",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Cos": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Cosh": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Exp": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Factorial": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.IntegerDivide": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "number1",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "number2",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.IsEven": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Number.IsNaN": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Number.IsOdd": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Number.Ln": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Log": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "base",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Log10": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Mod": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "divisor",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Permutations": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "setSize",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "permutationSize",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Power": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "power",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Random": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "number"
+ },
+ "Number.RandomBetween": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "bottom",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "top",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "number"
+ },
+ "Number.Round": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "digits",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "roundingMode",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.RoundAwayFromZero": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "digits",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.RoundDown": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "digits",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.RoundTowardZero": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "digits",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.RoundUp": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "digits",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Sign": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Sin": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Sinh": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Sqrt": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Tan": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.Tanh": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Number.ToText": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "number",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable number"
+   },
+   {
+    "name": "format",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "OData.Feed": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "serviceUri",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "headers",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Odbc.DataSource": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "connectionString",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Odbc.Query": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "connectionString",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "query",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Oracle.Database": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "server",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Percentage.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "PostgreSQL.Database": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "server",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "database",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Record.AddField": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "fieldName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "delayed",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.Combine": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "records",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.Field": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "field",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "any"
+ },
+ "Record.FieldCount": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "number"
+ },
+ "Record.FieldNames": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "list"
+ },
+ "Record.FieldOrDefault": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable record"
+   },
+   {
+    "name": "field",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "defaultValue",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Record.FieldValues": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "list"
+ },
+ "Record.FromList": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "fields",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.FromTable": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.HasFields": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "fields",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Record.RemoveFields": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "fields",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.RenameFields": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "renames",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.ReorderFields": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "fieldOrder",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.SelectFields": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "fields",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Record.ToList": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "list"
+ },
+ "Record.ToTable": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Record.TransformFields": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "record",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "transformOperations",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "record"
+ },
+ "Replacer.ReplaceText": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "old",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "new",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Replacer.ReplaceValue": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "old",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "new",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Single.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Splitter.SplitByNothing": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByAnyDelimiter": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "delimiters",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "startAtEnd",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByCharacterTransition": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "before",
+    "nullable": false,
+    "optional": false,
+    "type": "anynonnull"
+   },
+   {
+    "name": "after",
+    "nullable": false,
+    "optional": false,
+    "type": "anynonnull"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByDelimiter": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "delimiter",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "csvStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByEachDelimiter": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "delimiters",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "startAtEnd",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByLengths": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "lengths",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "startAtEnd",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByPositions": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "positions",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "startAtEnd",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByRanges": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "ranges",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "startAtEnd",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByRepeatedLengths": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "length",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "startAtEnd",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "function"
+ },
+ "Splitter.SplitTextByWhitespace": {
+  "arity": [
+   0,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "quoteStyle",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "function"
+ },
+ "Sql.Database": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "server",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "database",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AddColumn": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "columnGenerator",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "columnType",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable type"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AddIndexColumn": {
+  "arity": [
+   2,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "initialValue",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "increment",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "columnType",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable type"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AddJoinColumn": {
+  "arity": [
+   5,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "table1",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "key1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "table2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "key2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AddKey": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "isPrimary",
+    "nullable": false,
+    "optional": false,
+    "type": "logical"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AddRankColumn": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AggregateTableColumn": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "aggregations",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.AlternateRows": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "skip",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "take",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ApproximateRowCount": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "number"
+ },
+ "Table.Buffer": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Column": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.ColumnCount": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "number"
+ },
+ "Table.ColumnNames": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.ColumnsOfType": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "listOfTypes",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.Combine": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "tables",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.CombineColumns": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "sourceColumns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "combiner",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.CombineColumnsToRecord": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "sourceColumns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Contains": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "row",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.ContainsAll": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.ContainsAny": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.DemoteHeaders": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Distinct": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.DuplicateColumn": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "columnType",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable type"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ExpandListColumn": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ExpandRecordColumn": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "fieldNames",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "newColumnNames",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ExpandTableColumn": {
+  "arity": [
+   3,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "columnNames",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "newColumnNames",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FillDown": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FillUp": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FindText": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.First": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.FirstN": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FirstValue": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.FromColumns": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "lists",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FromList": {
+  "arity": [
+   1,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "list",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "splitter",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "extraValues",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FromPartitions": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "partitionColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "partitions",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "partitionColumnType",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable type"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FromRecords": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "records",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FromRows": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.FromValue": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Group": {
+  "arity": [
+   3,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "key",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "aggregatedColumns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "groupKind",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "comparer",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.HasColumns": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.InsertRows": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.IsDistinct": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.IsEmpty": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.Join": {
+  "arity": [
+   4,
+   7
+  ],
+  "parameters": [
+   {
+    "name": "table1",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "key1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "table2",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "key2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "joinKind",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "joinAlgorithm",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "keyEqualityComparers",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Keys": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.Last": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.LastN": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.MatchesAllRows": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "condition",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.MatchesAnyRows": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "condition",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Table.Max": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.MaxN": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Min": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.MinN": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.NestedJoin": {
+  "arity": [
+   5,
+   7
+  ],
+  "parameters": [
+   {
+    "name": "table1",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "key1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "table2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "key2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "newColumnName",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "joinKind",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "keyEqualityComparers",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Partition": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "groups",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "hash",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.PartitionKey": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "nullable list"
+ },
+ "Table.PartitionValues": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Pivot": {
+  "arity": [
+   4,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "pivotValues",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "attributeColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "valueColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "aggregationFunction",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.PositionOf": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "row",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "occurrence",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.PositionOfAny": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "occurrence",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Table.PrefixColumns": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "prefix",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Profile": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "additionalAggregates",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.PromoteHeaders": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Range": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RemoveColumns": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RemoveFirstN": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RemoveLastN": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RemoveMatchingRows": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RemoveRows": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RemoveRowsWithErrors": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RenameColumns": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "renames",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReorderColumns": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columnOrder",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Repeat": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReplaceErrorValues": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "errorReplacement",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReplaceKeys": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "keys",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReplaceMatchingRows": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "replacements",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "equationCriteria",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReplacePartitionKey": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "partitionKey",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReplaceRows": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "rows",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReplaceValue": {
+  "arity": [
+   5,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "oldValue",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "newValue",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "replacer",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "columnsToSearch",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ReverseRows": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.RowCount": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "number"
+ },
+ "Table.Schema": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.SelectColumns": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.SelectRows": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "condition",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.SelectRowsWithErrors": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.SingleRow": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "record"
+ },
+ "Table.Skip": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "countOrCondition",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Sort": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "comparisonCriteria",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Split": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "pageSize",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.SplitAt": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.SplitColumn": {
+  "arity": [
+   3,
+   6
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "sourceColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "splitter",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "columnNamesOrNumber",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "default",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "extraColumns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.StopFolding": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.ToColumns": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.ToList": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "combiner",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.ToRecords": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.ToRows": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.TransformColumnNames": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "nameGenerator",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.TransformColumnTypes": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "typeTransformations",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.TransformColumns": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "transformOperations",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "defaultTransformation",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   },
+   {
+    "name": "missingField",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.TransformRows": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "transform",
+    "nullable": false,
+    "optional": false,
+    "type": "function"
+   }
+  ],
+  "returns": "list"
+ },
+ "Table.Transpose": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "columns",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.Unpivot": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "pivotColumns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "attributeColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "valueColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Table.UnpivotOtherColumns": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "table"
+   },
+   {
+    "name": "pivotColumns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "attributeColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "valueColumn",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "table"
+ },
+ "Text.AfterDelimiter": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "delimiter",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "index",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Text.At": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "index",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.BeforeDelimiter": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "delimiter",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "index",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Text.BetweenDelimiters": {
+  "arity": [
+   3,
+   5
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "startDelimiter",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "endDelimiter",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "startIndex",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "endIndex",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Text.Clean": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Combine": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "texts",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "separator",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "text"
+ },
+ "Text.Contains": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "substring",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "comparer",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Text.End": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.EndsWith": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "substring",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "comparer",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Text.Format": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "formatString",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "arguments",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "text"
+ },
+ "Text.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.FromBinary": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "binary",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable binary"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.InferNumberType": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "type"
+ },
+ "Text.Insert": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "newText",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Length": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Text.Lower": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Middle": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "start",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.NewGuid": {
+  "arity": [
+   0,
+   0
+  ],
+  "parameters": [],
+  "returns": "text"
+ },
+ "Text.PadEnd": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "character",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.PadStart": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "character",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.PositionOf": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "substring",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "occurrence",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "comparer",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "any"
+ },
+ "Text.PositionOfAny": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "characters",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "occurrence",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Text.Proper": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Range": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Remove": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "removeChars",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.RemoveRange": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Repeat": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Replace": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "old",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "new",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.ReplaceRange": {
+  "arity": [
+   4,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "offset",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   },
+   {
+    "name": "newText",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Reverse": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Select": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "selectChars",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Split": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "separator",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "list"
+ },
+ "Text.SplitAny": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "separators",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "list"
+ },
+ "Text.Start": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "count",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.StartsWith": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "substring",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "comparer",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable function"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Text.ToBinary": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "encoding",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   },
+   {
+    "name": "includeByteOrderMark",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable logical"
+   }
+  ],
+  "returns": "nullable binary"
+ },
+ "Text.ToList": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "list"
+ },
+ "Text.Trim": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "trim",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.TrimEnd": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "trim",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.TrimStart": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "trim",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Text.Upper": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Time.EndOfHour": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Time.From": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable time"
+ },
+ "Time.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable time"
+ },
+ "Time.Hour": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Time.Minute": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Time.Second": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable number"
+ },
+ "Time.StartOfHour": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "dateTime",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Time.ToRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "time",
+    "nullable": false,
+    "optional": false,
+    "type": "time"
+   }
+  ],
+  "returns": "record"
+ },
+ "Time.ToText": {
+  "arity": [
+   1,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "time",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable time"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "nullable text"
+ },
+ "Type.AddTableKey": {
+  "arity": [
+   3,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "columns",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   },
+   {
+    "name": "isPrimary",
+    "nullable": false,
+    "optional": false,
+    "type": "logical"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.ClosedRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.Facets": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "record"
+ },
+ "Type.ForFunction": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "signature",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "min",
+    "nullable": false,
+    "optional": false,
+    "type": "number"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.ForRecord": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "fields",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   },
+   {
+    "name": "open",
+    "nullable": false,
+    "optional": false,
+    "type": "logical"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.FunctionParameters": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "record"
+ },
+ "Type.FunctionRequiredParameters": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "number"
+ },
+ "Type.FunctionReturn": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.Is": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "type1",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "type2",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Type.IsNullable": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Type.IsOpenRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Type.ListItem": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.NonNullable": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.OpenRecord": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.RecordFields": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "record"
+ },
+ "Type.ReplaceFacets": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "facets",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.ReplaceTableKeys": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "tableType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "keys",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.ReplaceTablePartitionKey": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "tableType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "partitionKey",
+    "nullable": true,
+    "optional": false,
+    "type": "nullable list"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.TableColumn": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "tableType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   },
+   {
+    "name": "column",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.TableKeys": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "tableType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "list"
+ },
+ "Type.TablePartitionKey": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "tableType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "nullable list"
+ },
+ "Type.TableRow": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "table",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "type"
+ },
+ "Type.TableSchema": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "tableType",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "table"
+ },
+ "Type.Union": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "types",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "type"
+ },
+ "Uri.BuildQueryString": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "query",
+    "nullable": false,
+    "optional": false,
+    "type": "record"
+   }
+  ],
+  "returns": "text"
+ },
+ "Uri.Combine": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "baseUri",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "relativeUri",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "text"
+ },
+ "Uri.EscapeDataString": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "data",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "text"
+ },
+ "Uri.Parts": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "absoluteUri",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   }
+  ],
+  "returns": "record"
+ },
+ "Value.Add": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Alternates": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "alternates",
+    "nullable": false,
+    "optional": false,
+    "type": "list"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.As": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Compare": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "number"
+ },
+ "Value.Divide": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Equals": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Value.Expression": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "nullable record"
+ },
+ "Value.FromText": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "text",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "culture",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable text"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Is": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "logical"
+ },
+ "Value.Metadata": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Multiply": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.NativeQuery": {
+  "arity": [
+   2,
+   4
+  ],
+  "parameters": [
+   {
+    "name": "target",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "query",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "parameters",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.NullableEquals": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "nullable logical"
+ },
+ "Value.Optimize": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.RemoveMetadata": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "metaValue",
+    "nullable": true,
+    "optional": true,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.ReplaceMetadata": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "metaValue",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.ReplaceType": {
+  "arity": [
+   2,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "type",
+    "nullable": false,
+    "optional": false,
+    "type": "type"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Subtract": {
+  "arity": [
+   2,
+   3
+  ],
+  "parameters": [
+   {
+    "name": "value1",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "value2",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   },
+   {
+    "name": "precision",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable number"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Type": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "type"
+ },
+ "Value.VersionIdentity": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "any"
+ },
+ "Value.Versions": {
+  "arity": [
+   1,
+   1
+  ],
+  "parameters": [
+   {
+    "name": "value",
+    "nullable": true,
+    "optional": false,
+    "type": "any"
+   }
+  ],
+  "returns": "table"
+ },
+ "Web.Contents": {
+  "arity": [
+   1,
+   2
+  ],
+  "parameters": [
+   {
+    "name": "url",
+    "nullable": false,
+    "optional": false,
+    "type": "text"
+   },
+   {
+    "name": "options",
+    "nullable": true,
+    "optional": true,
+    "type": "nullable record"
+   }
+  ],
+  "returns": "binary"
+ }
+}
