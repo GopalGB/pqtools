@@ -298,6 +298,37 @@ Same-origin redirects are unchanged and have their own test, because a fix
 that broke ordinary authenticated services would otherwise have looked like a
 pass. Fixed in `a3faea2`.
 
+## Round 3 - the review of the round-2 fixes
+
+`review.sh c7ffc5f..HEAD` again. **Verdict: FIX-FIRST. 1 HIGH, 3 MEDIUM,
+4 LOW.** All fixed in `c13c407` and `475ce01`, each reproduced first and
+positive-controlled after.
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | the `--format csv` guard checked only TOP-LEVEL cells, so a nested unread table printed as data | FIXED |
+| MEDIUM | SUPPORT-MATRIX.md's 786 / 165 / 141 were hand-written and unchecked | FIXED |
+| MEDIUM | the test pinned the literal `"86.1% of NAMES"` instead of computing it | FIXED |
+| MEDIUM | `evaluate()` returned a private type with no public way to read it | FIXED |
+| LOW | env credentials silently dropped when `ConnectionString` was given | FIXED |
+| LOW | a relative `@odata.nextLink` resolved against the pre-redirect URL | FIXED |
+| LOW | `_require_table` forced the deferred value twice | FIXED |
+| LOW | `_MAX_BACKUPS = 100` never prunes | NOT TAKEN - see residuals |
+
+The HIGH is the sharpest lesson in the whole exercise. The fix for round 2's
+CLI finding added a guard whose own comment said it stopped "a table nobody
+read being indistinguishable from a value somebody measured" - and the loop
+under that comment only looked at top-level cells, so a deferred value nested
+one level down (`Table.Group(Sql.Database(...), ...)` produces exactly that)
+went to `csv.DictWriter` and printed as `<deferred ...>` in a data cell. The
+comment described the intent; the code did not implement it. The JSON path
+was correct only because `json.dumps` recurses for free.
+
+The MEDIUMs are the same shape one level up: `SUPPORT-MATRIX.md` was created
+because unenforced prose drifts, and it shipped with three hand-written
+numbers nothing checked, plus a test that pinned a percentage as a literal
+string. Both are now derived.
+
 ## Scope limits - what was NOT verified
 
 Local completion is reported separately from live verification on purpose.
@@ -359,4 +390,30 @@ exercised, and no result here should be read as evidence about any of them:
    Query, because a record literal or field access anywhere in the file stops
    it. The guard was documented, not loosened; narrowing it correctly needs
    binding-aware analysis of the parse tree and its own regression proof.
+
+## Verification on the final tree
+
+Sequential throughout - no `pytest -n auto`, one job at a time. Concurrency
+was tried early and the machine's memory watchdog killed the waiters; the
+runs below were re-done one at a time.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite + coverage | `.venv/bin/python -m pytest -q -p no:randomly --cov=pqtools` | **3958 passed, 93%** (16m31s) |
+| Lint | `ruff check src tests scripts` | clean |
+| Format | `ruff format --check src tests scripts` | 90 files already formatted |
+| Types | `mypy` (strict) | no issues, 25 source files |
+| Bridge tests | `npm test` | 23/23 |
+| Bundle drift | `npm run bundle` + `git diff --exit-code` | no drift |
+| Build | `python -m build` | wheel + sdist |
+| Package metadata | `twine check` | both PASSED |
+| Wheel contents | `py.typed`, `_bridge.cjs`, `THIRD_PARTY_NOTICES.txt` | all present |
+| Installed-wheel workflow | fresh venv, README quick-start end to end | format, check, eval, `--format csv`, `--write`, re-eval, public API - all correct |
+| Container read path | `pq list` / `pq eval` on `.samples/` | 3 containers enumerated, 3 typed errors for files with no DataMashup part; md5 unchanged, nothing written |
+| Secrets | `gitleaks detect --log-opts=c7ffc5f..HEAD` | no leaks |
+| Dependencies | `pip-audit` | no known vulnerabilities |
+| Static analysis | `semgrep` | **NOT RUN - not installed on this machine** |
+
+Coverage rose from 91% to 93% across the work; the suite grew from 3746 to
+3958 tests.
 
