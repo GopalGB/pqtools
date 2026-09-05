@@ -675,6 +675,273 @@ def _number_random_between(args: list[Any], ctx: _Ctx) -> Any:
     return _random.uniform(bottom, top)
 
 
+def _number_combinations(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Combinations(setSize as nullable number, combinationSize as
+    # nullable number) as nullable number. Verified against the docs' own
+    # worked example: Number.Combinations(5, 3) -> 10. `math.comb` returns
+    # 0 (not an error) when combinationSize > setSize - cross-checked with
+    # Python's own math.comb, and this is the standard nCr convention (a
+    # combination size larger than the set has zero ways to choose), not a
+    # guess.
+    _arity("Number.Combinations", args, 2)
+    set_size, combination_size = args[0], args[1]
+    if set_size is None or combination_size is None:
+        return None
+    n = _require_int(set_size)
+    k = _require_int(combination_size)
+    try:
+        return math.comb(n, k)
+    except ValueError as error:
+        raise EvalError(f"Number.Combinations: {error}") from error
+
+
+def _number_permutations(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Permutations(setSize as nullable number, permutationSize as
+    # nullable number) as nullable number. Verified against the docs' own
+    # worked example: Number.Permutations(5, 3) -> 60. Mirrors
+    # Number.Combinations above: `math.perm` gives 0 for
+    # permutationSize > setSize rather than raising, cross-checked with
+    # Python's own math.perm.
+    _arity("Number.Permutations", args, 2)
+    set_size, permutation_size = args[0], args[1]
+    if set_size is None or permutation_size is None:
+        return None
+    n = _require_int(set_size)
+    k = _require_int(permutation_size)
+    try:
+        return math.perm(n, k)
+    except ValueError as error:
+        raise EvalError(f"Number.Permutations: {error}") from error
+
+
+def _number_acos(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Acos(number as nullable number) as nullable number. The docs
+    # page gives no worked example and no domain-error case, but this
+    # module already has an established, cross-checked pattern for exactly
+    # this family ("impossible real result -> NaN", not an exception) on
+    # Number.Sqrt (docs-verified) and Number.Ln (analogy) above - applied
+    # here by the same analogy. .NET's Math.Acos returns NaN for |x| > 1;
+    # Python's math.acos RAISES ValueError instead (cross-checked with
+    # Python's own math module) - the divergence this module's task brief
+    # calls out explicitly, handled the same way Sqrt/Ln already handle it.
+    _arity("Number.Acos", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    value = _require_number(value)
+    try:
+        return math.acos(value)
+    except ValueError:
+        return math.nan
+
+
+def _number_asin(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Asin - same NaN-on-domain-error analogy as Number.Acos above;
+    # Python's math.asin raises ValueError for |x| > 1 where .NET's
+    # Math.Asin returns NaN.
+    _arity("Number.Asin", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    value = _require_number(value)
+    try:
+        return math.asin(value)
+    except ValueError:
+        return math.nan
+
+
+def _number_atan(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Atan(number as nullable number) as nullable number - defined
+    # for every real input in both .NET and Python (no domain restriction,
+    # unlike Acos/Asin), so no divergence to bridge here.
+    _arity("Number.Atan", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    return math.atan(_require_number(value))
+
+
+def _number_atan2(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Atan2(y as nullable number, x as nullable number) as nullable
+    # number - "the angle whose tangent is the quotient y/x". Python's
+    # math.atan2(y, x) takes the SAME (y, x) argument order and follows the
+    # same IEEE-754 atan2 convention .NET's Math.Atan2(y, x) implements
+    # (cross-checked: both give atan2(0, 0) == 0.0 and atan2(0, -1) == pi,
+    # not a domain error), so there is no divergence to bridge for this one.
+    _arity("Number.Atan2", args, 2)
+    y, x = args[0], args[1]
+    if y is None or x is None:
+        return None
+    return math.atan2(_require_number(y), _require_number(x))
+
+
+def _number_cos(args: list[Any], ctx: _Ctx) -> Any:
+    # Verified against the docs' own worked examples: Number.Cos(0) -> 1,
+    # and Number.Cos(pi) -> -1 (checked here against Python's own
+    # math.pi/math.cos rather than the unregistered M identifier
+    # Number.PI - see the module note on Number.PI/Number.E below).
+    _arity("Number.Cos", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    return math.cos(_require_number(value))
+
+
+def _number_sin(args: list[Any], ctx: _Ctx) -> Any:
+    # Verified against the docs' own worked example: Number.Sin(0) -> 0.
+    _arity("Number.Sin", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    return math.sin(_require_number(value))
+
+
+def _number_tan(args: list[Any], ctx: _Ctx) -> Any:
+    # Verified against the docs' own worked example:
+    # Number.Tan(1) -> 1.5574077246549023 (cross-checked with Python's own
+    # math.tan(1), byte-for-byte identical - both are IEEE-754 doubles).
+    _arity("Number.Tan", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    return math.tan(_require_number(value))
+
+
+def _number_cosh(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Cosh - no domain restriction, but a large-magnitude input
+    # OVERFLOWS a Python float in a way .NET's Math.Cosh does not: .NET
+    # returns +Infinity, Python's math.cosh RAISES OverflowError (cross-
+    # checked: math.cosh(1000) raises; the finite range ends well under
+    # 1000). cosh is always >= 1 for every real input, so the overflow
+    # direction is unconditionally +Infinity - mirrors this same module's
+    # existing Number.Exp overflow handling above.
+    _arity("Number.Cosh", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    value = _require_number(value)
+    try:
+        return math.cosh(value)
+    except OverflowError:
+        return math.inf
+
+
+def _number_sinh(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Sinh - same float-overflow divergence as Number.Cosh above
+    # (cross-checked: math.sinh(1000) and math.sinh(-1000) both raise
+    # OverflowError in Python where .NET's Math.Sinh returns +/-Infinity).
+    # Unlike Cosh, sinh is sign-preserving, so the overflow direction
+    # follows the sign of the input.
+    _arity("Number.Sinh", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    value = _require_number(value)
+    try:
+        return math.sinh(value)
+    except OverflowError:
+        return math.inf if value > 0 else -math.inf
+
+
+def _number_tanh(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.Tanh - bounded to (-1, 1) for every finite input and does not
+    # overflow in Python (cross-checked: math.tanh(1000) == 1.0, no
+    # exception), so no divergence to bridge here.
+    _arity("Number.Tanh", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    return math.tanh(_require_number(value))
+
+
+def _number_bitwise_not(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.BitwiseNot(number as any) as any - no worked example on the
+    # docs page. `~x == -x - 1` is the two's-complement NOT identity and is
+    # WIDTH-INDEPENDENT (unlike Number.ToText's "X" hex format above, whose
+    # rendering genuinely depends on which fixed-width integral subtype is
+    # in play - see _render_hex_format's refusal for a negative number).
+    # Python's `~` operator already computes exactly this identity, so it
+    # matches .NET's bitwise NOT for every value this evaluator can
+    # represent, without needing to pick a bit width.
+    _arity("Number.BitwiseNot", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    return ~_require_int(value)
+
+
+def _number_bitwise_shift_left(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.BitwiseShiftLeft(number1, number2) - shifts number1 left by
+    # number2 bits. For a non-negative shift this is exactly
+    # `number1 * 2**number2`, width-independent and identical in .NET and
+    # Python. A NEGATIVE shift count is refused: real .NET masks it to its
+    # low 6 bits (mod 64) because Int64 has a fixed 64-bit width, and this
+    # evaluator's arbitrary-precision numbers have no faithful equivalent
+    # to mask against (the same reason _render_hex_format refuses "X" on a
+    # negative number above) - not a documented worked example, but the
+    # same width-ambiguity refusal already established in this codebase.
+    _arity("Number.BitwiseShiftLeft", args, 2)
+    number1, number2 = args[0], args[1]
+    if number1 is None or number2 is None:
+        return None
+    value = _require_int(number1)
+    shift = _require_int(number2)
+    if shift < 0:
+        raise UnsupportedError(
+            "Number.BitwiseShiftLeft: negative shift amount (the 64-bit "
+            "wraparound this needs is ambiguous for pqtools' "
+            "arbitrary-precision numbers)"
+        )
+    return value << shift
+
+
+def _number_bitwise_shift_right(args: list[Any], ctx: _Ctx) -> Any:
+    # Number.BitwiseShiftRight - mirror of BitwiseShiftLeft above. Python's
+    # `>>` on a (possibly negative) int is an ARITHMETIC shift (sign-
+    # preserving, equivalent to floor division by 2**shift), matching
+    # .NET's `>>` on a signed integer exactly for a non-negative shift
+    # count. Negative shift amounts are refused for the same
+    # fixed-64-bit-width reason as BitwiseShiftLeft.
+    _arity("Number.BitwiseShiftRight", args, 2)
+    number1, number2 = args[0], args[1]
+    if number1 is None or number2 is None:
+        return None
+    value = _require_int(number1)
+    shift = _require_int(number2)
+    if shift < 0:
+        raise UnsupportedError(
+            "Number.BitwiseShiftRight: negative shift amount (the 64-bit "
+            "wraparound this needs is ambiguous for pqtools' "
+            "arbitrary-precision numbers)"
+        )
+    return value >> shift
+
+
+def _logical_to_text(args: list[Any], ctx: _Ctx) -> Any:
+    # Logical.ToText(logicalValue as nullable logical) as nullable text.
+    # Verified against the docs' own worked example: Logical.ToText(true)
+    # -> "true" (LOWERCASE). This module's own Text.From(true) already
+    # produces "TRUE" (uppercase, in _text.py) - two different functions
+    # with two different documented castings for the same input, not a
+    # contradiction to reconcile.
+    _arity("Logical.ToText", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise EvalError(
+            f"Logical.ToText: expected a logical value, got {_type_name(value)}"
+        )
+    return "true" if value else "false"
+
+
+# Number.PI / Number.E are not registered: neither name appeared in the
+# fetched Microsoft Learn Number-functions table this task's diff was built
+# from (only Number.Log's default-base behaviour references Number.E, in a
+# comment above), so adding them would be exactly the "write a function name
+# from memory" this task's brief forbids.
+
+
 # The M-visible names this module owns. builtins/__init__.py merges every
 # module's BUILTINS into one registry, so a new function is added HERE and
 # nowhere else - no central file to edit, and no merge conflict when several
@@ -710,6 +977,22 @@ BUILTINS: dict[str, Any] = {
     "Number.Factorial": _number_factorial,
     "Number.Random": _number_random,
     "Number.RandomBetween": _number_random_between,
+    "Number.Combinations": _number_combinations,
+    "Number.Permutations": _number_permutations,
+    "Number.Acos": _number_acos,
+    "Number.Asin": _number_asin,
+    "Number.Atan": _number_atan,
+    "Number.Atan2": _number_atan2,
+    "Number.Cos": _number_cos,
+    "Number.Sin": _number_sin,
+    "Number.Tan": _number_tan,
+    "Number.Cosh": _number_cosh,
+    "Number.Sinh": _number_sinh,
+    "Number.Tanh": _number_tanh,
+    "Number.BitwiseNot": _number_bitwise_not,
+    "Number.BitwiseShiftLeft": _number_bitwise_shift_left,
+    "Number.BitwiseShiftRight": _number_bitwise_shift_right,
+    "Logical.ToText": _logical_to_text,
     "Precision.Double": _PRECISION_DOUBLE,
     "Precision.Decimal": _PRECISION_DECIMAL,
 }

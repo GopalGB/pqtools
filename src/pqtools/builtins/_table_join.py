@@ -116,6 +116,8 @@ from ._shared import (
     _arity,
     _field_name_list,
     _m_equal,
+    _require_int,
+    _require_list,
     _require_record,
     _require_str,
     _require_table,
@@ -582,3 +584,462 @@ BUILTINS: dict[str, Any] = {
     "Table.Join": _table_join,
     **_ENUM_BUILTINS,
 }
+
+
+# --------------------------------------------------------------------------
+# Table.ContainsAll / Table.ContainsAny / Table.IsDistinct /
+# Table.PositionOfAny / Table.ReplaceMatchingRows / Table.AddRankColumn /
+# Table.MaxN / Table.MinN / Table.AddJoinColumn / Table.AggregateTableColumn
+# - the 0.10.0 gap-fill batch's set/rank/join half. Grounded against
+# learn.microsoft.com/en-us/powerquery-m/<name-lowercased>, one page per
+# function (RankKind.Type separately for Table.AddRankColumn's option).
+# --------------------------------------------------------------------------
+
+
+def _is_invocable(value: Any) -> bool:
+    """True if ``ctx.invoke(value, ...)`` can call ``value`` as an M function.
+
+    Duplicated in miniature from ``_table_shape.py``'s own ``_is_invocable``
+    rather than imported - see that module's docstring and
+    ``_parse_comparison_keys``'s docstring for why sibling ``_table*.py``
+    files duplicate small helpers instead of cross-importing.
+    """
+    return callable(value) or (
+        hasattr(value, "params") and hasattr(value, "body") and hasattr(value, "scope")
+    )
+
+
+def _row_match_predicate(
+    criteria: Any,
+) -> Any:
+    """A ``(search_record, row) -> bool`` test for the Table.Contains*/
+    Table.PositionOfAny/Table.ReplaceMatchingRows family.
+
+    No ``equationCriteria``: subset match on the search record's OWN
+    fields - the same convention this file's sibling ``_table_shape.py``
+    already implements for ``Table.Contains``/``Table.PositionOf``
+    (``all(_m_equal(row.get(k), v) for k, v in search.items())``),
+    duplicated here for the same "keep modules self-contained" reason as
+    ``_is_invocable`` above.
+
+    Given ``equationCriteria``: Microsoft's own examples for
+    ``Table.ContainsAll``/``Table.ContainsAny`` show ONLY a bare column
+    name (``"CustomerID"``), narrowing the comparison to that one field
+    rather than the whole search record. This accepts a name OR a list of
+    names via the same ``_field_name_list`` this codebase already uses
+    uniformly for every other "one or more column names" parameter
+    (``Table.SelectColumns``, ``Table.Distinct``, ``Table.HasColumns``,
+    ...) - a deliberate, consistent generalisation of the one documented
+    shape, not an invented one, and pinned by a test naming it as such.
+    """
+    if criteria is None:
+
+        def match_all_fields(search: dict[str, Any], row: dict[str, Any]) -> bool:
+            return all(_m_equal(row.get(k), v) for k, v in search.items())
+
+        return match_all_fields
+
+    names = _field_name_list(criteria)
+
+    def match_named_fields(search: dict[str, Any], row: dict[str, Any]) -> bool:
+        return all(_m_equal(row.get(name), search.get(name)) for name in names)
+
+    return match_named_fields
+
+
+def _table_contains_all(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.ContainsAll", args, 2, 3)
+    table = _require_table(args[0])
+    search_rows = [_require_record(r) for r in _require_list(args[1])]
+    match = _row_match_predicate(args[2] if len(args) == 3 else None)
+    return all(any(match(search, row) for row in table) for search in search_rows)
+
+
+def _table_contains_any(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.ContainsAny", args, 2, 3)
+    table = _require_table(args[0])
+    search_rows = [_require_record(r) for r in _require_list(args[1])]
+    match = _row_match_predicate(args[2] if len(args) == 3 else None)
+    return any(any(match(search, row) for row in table) for search in search_rows)
+
+
+def _table_is_distinct(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.IsDistinct(table, comparisonCriteria?)`` - "If
+    comparisonCriteria is not specified, all columns are tested" (verbatim
+    from Microsoft's own page).
+
+    Named-columns form mirrors this file's sibling ``_table.py``'s own
+    ``Table.Distinct`` 2-argument form exactly, INCLUDING its use of plain
+    Python tuple equality rather than ``_m_equal`` (duplicated rather than
+    imported, per this module's established self-contained-file
+    convention) - consistency with that sibling matters more here than
+    picking a different equality rule for what is its boolean-negation
+    counterpart. The no-criteria form mirrors ``Table.Distinct``'s own
+    no-argument form, which does use ``_m_equal`` on the whole row.
+    """
+    _arity("Table.IsDistinct", args, 1, 2)
+    table = _require_table(args[0])
+    if len(args) == 2 and args[1] is not None:
+        names = _field_name_list(args[1])
+        seen: list[tuple[Any, ...]] = []
+        for row in table:
+            key = tuple(row.get(name) for name in names)
+            if key in seen:
+                return False
+            seen.append(key)
+        return True
+    seen_rows: list[dict[str, Any]] = []
+    for row in table:
+        if any(_m_equal(row, other) for other in seen_rows):
+            return False
+        seen_rows.append(row)
+    return True
+
+
+def _table_position_of_any(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.PositionOfAny(table, rows, occurrence?, equationCriteria?)``.
+
+    Occurrence handling mirrors this codebase's already-implemented
+    ``List.PositionOfAny`` (``_list.py``) exactly - same
+    ``Occurrence.First``/``Last``/``All`` values (0/1/2), same "-1 when
+    absent" contract, verified against Microsoft's own two worked examples
+    (default -> a single int; ``Occurrence.All`` -> the full list of
+    positions).
+    """
+    _arity("Table.PositionOfAny", args, 2, 4)
+    table = _require_table(args[0])
+    search_rows = [_require_record(r) for r in _require_list(args[1])]
+    occurrence = 0
+    if len(args) >= 3 and args[2] is not None:
+        occurrence = _require_int(args[2])
+        if occurrence not in (0, 1, 2):
+            raise UnsupportedError(
+                "Table.PositionOfAny: occurrence must be Occurrence.First (0), "
+                "Occurrence.Last (1), or Occurrence.All (2)"
+            )
+    match = _row_match_predicate(args[3] if len(args) == 4 else None)
+    positions = [
+        i
+        for i, row in enumerate(table)
+        if any(match(search, row) for search in search_rows)
+    ]
+    if occurrence == 2:
+        return positions
+    if not positions:
+        return -1
+    return positions[0] if occurrence == 0 else positions[-1]
+
+
+def _row_replacement_pairs(value: Any, what: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """``{{old1, new1}, {old2, new2}, ...}`` - a list of ``{old, new}``
+    record pairs, exactly Microsoft's own (only) worked example's shape.
+    No bare single-pair shorthand is documented anywhere for this
+    function (unlike e.g. ``Table.RenameColumns``'s), so none is accepted.
+    """
+    pairs_list = _require_list(value)
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for item in pairs_list:
+        if not (isinstance(item, list) and len(item) == 2):
+            raise EvalError(f"{what}: expected a list of {{old, new}} record pairs")
+        old, new = item
+        pairs.append((_require_record(old), _require_record(new)))
+    return pairs
+
+
+def _table_replace_matching_rows(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.ReplaceMatchingRows(table, replacements, equationCriteria?)``.
+
+    Whole-row replacement, ALL matching occurrences replaced (Microsoft's
+    own worked example replaces both copies of a duplicated row) - not a
+    merge/patch of individual fields. A table row matching more than one
+    ``{old, new}`` spec is not addressed by any example; first-match-in-
+    list-order wins here, a deliberate, tested choice for that unaddressed
+    overlap rather than a verified rule.
+    """
+    _arity("Table.ReplaceMatchingRows", args, 2, 3)
+    table = _require_table(args[0])
+    pairs = _row_replacement_pairs(args[1], "Table.ReplaceMatchingRows")
+    match = _row_match_predicate(args[2] if len(args) == 3 else None)
+    result: list[dict[str, Any]] = []
+    for row in table:
+        replaced = row
+        for old, new in pairs:
+            if match(old, row):
+                replaced = new
+                break
+        result.append(replaced)
+    return result
+
+
+def _is_order_value(value: Any) -> bool:
+    return not isinstance(value, bool) and value in (0, 1)
+
+
+def _parse_rank_criteria(spec: Any, what: str) -> list[tuple[str, bool]]:
+    """comparisonCriteria for AddRankColumn/MaxN/MinN, as Table.Sort's OWN
+    current Microsoft Learn page documents it: a bare column name, a bare
+    ``{"Column", Order.Ascending|Descending}`` pair, or a list mixing plain
+    names and such pairs.
+
+    Deliberately NOT this codebase's existing ``_table_sort``/
+    ``_parse_comparison_keys`` (``_table.py``/``_table_shape.py``): those
+    predate Table.Sort's own bare-pair example and reject it outright - a
+    real, pre-existing gap in code this task does not own, flagged
+    separately rather than silently worked around by reusing it here. A
+    bare pair is a 2-element list whose first element is a string and whose
+    SECOND element is an Order.* value (0 or 1, not a bool) - a 2-element
+    list of two plain column-name strings is instead "two ascending
+    columns", disambiguated by that second-element type check. Verified
+    against Table.Sort's 3 documented shapes plus Table.AddRankColumn's own
+    worked example, which uses the bare-pair form directly.
+    """
+
+    def parse_entry(entry: Any) -> tuple[str, bool]:
+        if isinstance(entry, str):
+            return (entry, False)
+        if (
+            isinstance(entry, list)
+            and len(entry) == 2
+            and isinstance(entry[0], str)
+            and _is_order_value(entry[1])
+        ):
+            return (entry[0], entry[1] == 1)
+        raise UnsupportedError(
+            f"{what}: comparisonCriteria entries must be a column name or "
+            '{"Column", Order.Ascending}'
+        )
+
+    if isinstance(spec, str):
+        return [(spec, False)]
+    if not isinstance(spec, list):
+        raise UnsupportedError(
+            f"{what} with a {type(spec).__name__} comparisonCriteria"
+        )
+    if len(spec) == 2 and isinstance(spec[0], str) and _is_order_value(spec[1]):
+        return [(spec[0], spec[1] == 1)]
+    return [parse_entry(item) for item in spec]
+
+
+# RankKind.Type - registered here rather than in the shared `_enums.py`
+# because nothing outside this one function consumes it, exactly the
+# precedent this file's own JoinKind.*/GroupKind.* enums already set (see
+# the module docstring above). Values verified against Microsoft Learn's
+# RankKind.Type page.
+_RANK_COMPETITION = 0
+_RANK_DENSE = 1
+_RANK_ORDINAL = 2
+_RANK_KIND_ENUM_BUILTINS: dict[str, Any] = {
+    "RankKind.Competition": _RANK_COMPETITION,
+    "RankKind.Dense": _RANK_DENSE,
+    "RankKind.Ordinal": _RANK_ORDINAL,
+}
+
+
+def _table_add_rank_column(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.AddRankColumn(table, newColumnName, comparisonCriteria, options?)``.
+
+    The output is REORDERED to rank order (best rank first) - easy to
+    miss, but Microsoft's own worked example proves it: the input row
+    order is Bob/Jim/Paul/Ringo, the output is Bob/Paul/Jim/Ringo (Paul,
+    tied with Bob for rank 1, moves ahead of Jim). ``options.RankKind``
+    defaults to ``RankKind.Competition`` when omitted - genuinely
+    undocumented (the one worked example always passes it explicitly);
+    value 0 is chosen as the "no option requested" default for the same
+    reason Order.Ascending (also 0) is this codebase's default sort
+    direction elsewhere - a named, tested choice, not a verified fact.
+    """
+    _arity("Table.AddRankColumn", args, 3, 4)
+    table = _require_table(args[0])
+    new_column = _require_str(args[1])
+    keys = _parse_rank_criteria(args[2], "Table.AddRankColumn")
+    for name, _ in keys:
+        if table and name not in table[0]:
+            raise EvalError(f"Table.AddRankColumn: no such column: {name}")
+    if table and new_column in table[0]:
+        raise EvalError(f"Table.AddRankColumn: column already exists: {new_column}")
+    rank_kind = _RANK_COMPETITION
+    if len(args) == 4 and args[3] is not None:
+        options = dict(_require_record(args[3]))
+        if "RankKind" in options:
+            rank_kind = options.pop("RankKind")
+            if rank_kind not in (_RANK_COMPETITION, _RANK_DENSE, _RANK_ORDINAL):
+                raise UnsupportedError(
+                    "Table.AddRankColumn: RankKind must be RankKind.Competition, "
+                    "RankKind.Dense, or RankKind.Ordinal"
+                )
+        if options:
+            raise UnsupportedError(
+                f"Table.AddRankColumn: option(s) {sorted(options)}"
+            )
+
+    ranked = list(table)
+    try:
+        for name, descending in reversed(keys):
+            ranked.sort(key=lambda row: row[name], reverse=descending)
+    except TypeError as error:
+        raise EvalError("Table.AddRankColumn: values are not comparable") from error
+
+    def same_rank(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        return all(_m_equal(a[name], b[name]) for name, _ in keys)
+
+    result: list[dict[str, Any]] = []
+    rank = 0
+    for position, row in enumerate(ranked):
+        new_group = position == 0 or not same_rank(ranked[position - 1], row)
+        if rank_kind == _RANK_ORDINAL:
+            rank = position + 1
+        elif new_group:
+            rank = position + 1 if rank_kind == _RANK_COMPETITION else rank + 1
+        new_row = dict(row)
+        new_row[new_column] = rank
+        result.append(new_row)
+    return result
+
+
+def _table_max_n_or_min_n(
+    args: list[Any], ctx: _Ctx, want_max: bool, what: str
+) -> Any:
+    _arity(what, args, 3)
+    table = _require_table(args[0])
+    keys = _parse_rank_criteria(args[1], what)
+    for name, _ in keys:
+        if table and name not in table[0]:
+            raise EvalError(f"{what}: no such column: {name}")
+    ranked = list(table)
+    try:
+        for name, descending in reversed(keys):
+            ranked.sort(key=lambda row: row[name], reverse=descending)
+    except TypeError as error:
+        raise EvalError(f"{what}: values are not comparable") from error
+    if want_max:
+        # Mirrors this codebase's own Table.Max (_table_shape.py): the
+        # comparisonCriteria sort is always ascending-with-per-key-reverse-
+        # flags; Table.Max takes the LAST row, Table.MaxN takes the last
+        # `count` (or while-condition run) off that SAME ascending sort and
+        # reverses it to present largest-first - exactly the order
+        # Microsoft's own MaxN worked example shows, which directly
+        # contradicts that page's "in ascending order" prose (a copy-paste
+        # artifact off MinN's page, whose own example IS ascending). The
+        # worked example is the stronger evidence and is what this follows.
+        ranked = list(reversed(ranked))
+    spec = args[2]
+    if _is_invocable(spec):
+        # "Once an item fails the condition, no further items are
+        # considered" (verbatim) - a stop-at-first-failure walk over the
+        # already best-first-ordered sequence, not a filter over the whole
+        # table. Confirmed by Microsoft's own second example: the very
+        # first (best) candidate fails, so the result is an empty table,
+        # not the empty set of every row that happens to fail.
+        result: list[dict[str, Any]] = []
+        for row in ranked:
+            keep = ctx.invoke(spec, [row], ctx)
+            if not isinstance(keep, bool):
+                raise EvalError(f"{what}: condition must return a logical value")
+            if not keep:
+                break
+            result.append(row)
+        return result
+    count = _require_int(spec)
+    if count < 0:
+        raise EvalError(f"{what}: count must not be negative")
+    return ranked[:count]
+
+
+def _table_max_n(args: list[Any], ctx: _Ctx) -> Any:
+    return _table_max_n_or_min_n(args, ctx, want_max=True, what="Table.MaxN")
+
+
+def _table_min_n(args: list[Any], ctx: _Ctx) -> Any:
+    return _table_max_n_or_min_n(args, ctx, want_max=False, what="Table.MinN")
+
+
+def _table_add_join_column(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.AddJoinColumn(table1, key1, table2, key2, newColumnName)``.
+
+    Microsoft's own page, verbatim: "This function behaves identically to
+    Table.NestedJoin with joinKind set to JoinKind.LeftOuter." A direct,
+    fully-specified equivalence to this file's own already-implemented
+    ``Table.NestedJoin`` - not sugar with a twist, so it delegates rather
+    than re-implementing (confirmed against the worked example: the new
+    column holds a nested table of the FULL matching row(s), including
+    columns beyond the joined-on key, exactly NestedJoin's own shape).
+    """
+    _arity("Table.AddJoinColumn", args, 5)
+    return _table_nested_join([*args, _JOIN_LEFT_OUTER], ctx)
+
+
+def _table_aggregate_table_column(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.AggregateTableColumn(table, column, aggregations)``.
+
+    ``aggregations`` is a list of ``{sourceColumnInNestedTable,
+    aggregationFunction, newColumnName}`` triples, verified against
+    Microsoft's one worked example (4 aggregations over one nested-table
+    column). The nested-table column is dropped from the output, replaced
+    by the new aggregate columns (which the example's own output places
+    FIRST, ahead of the outer table's other, untouched columns - matched
+    here exactly, not just approximated by dict equality).
+    """
+    _arity("Table.AggregateTableColumn", args, 3)
+    table = _require_table(args[0])
+    column = _require_str(args[1])
+    agg_specs = _require_list(args[2])
+    specs: list[tuple[str, Any, str]] = []
+    seen_names: set[str] = set()
+    for item in agg_specs:
+        if not (
+            isinstance(item, list)
+            and len(item) == 3
+            and isinstance(item[0], str)
+            and isinstance(item[2], str)
+        ):
+            raise EvalError(
+                "Table.AggregateTableColumn: aggregations must be "
+                "{sourceColumn, function, newColumnName} triples"
+            )
+        source_column, function, new_name = item
+        if new_name in seen_names:
+            raise EvalError(
+                f"Table.AggregateTableColumn: duplicate aggregate column: {new_name}"
+            )
+        seen_names.add(new_name)
+        specs.append((source_column, function, new_name))
+    result: list[dict[str, Any]] = []
+    for row in table:
+        if column not in row:
+            raise EvalError(f"Table.AggregateTableColumn: no such column: {column}")
+        nested = _require_table(row[column])
+        remaining = {key: value for key, value in row.items() if key != column}
+        for name in seen_names:
+            if name in remaining:
+                raise EvalError(
+                    f"Table.AggregateTableColumn: column already exists: {name}"
+                )
+        new_row: dict[str, Any] = {}
+        for source_column, function, new_name in specs:
+            if nested and source_column not in nested[0]:
+                raise EvalError(
+                    "Table.AggregateTableColumn: no such column in nested "
+                    f"table: {source_column}"
+                )
+            values = [nested_row.get(source_column) for nested_row in nested]
+            new_row[new_name] = ctx.invoke(function, [values], ctx)
+        new_row.update(remaining)
+        result.append(new_row)
+    return result
+
+
+BUILTINS.update(
+    {
+        "Table.ContainsAll": _table_contains_all,
+        "Table.ContainsAny": _table_contains_any,
+        "Table.IsDistinct": _table_is_distinct,
+        "Table.PositionOfAny": _table_position_of_any,
+        "Table.ReplaceMatchingRows": _table_replace_matching_rows,
+        "Table.AddRankColumn": _table_add_rank_column,
+        "Table.MaxN": _table_max_n,
+        "Table.MinN": _table_min_n,
+        "Table.AddJoinColumn": _table_add_join_column,
+        "Table.AggregateTableColumn": _table_aggregate_table_column,
+        **_RANK_KIND_ENUM_BUILTINS,
+    }
+)

@@ -253,6 +253,174 @@ def _table_last_n(args: list[Any], ctx: _Ctx) -> Any:
     return table[len(table) - count :] if count else []
 
 
+def _is_invocable(value: Any) -> bool:
+    """True if ``ctx.invoke(value, ...)`` can call ``value`` as an M function.
+
+    Duplicated in miniature from ``_table_shape.py``'s own ``_is_invocable``
+    (same reasoning: a ``_Lambda`` from ``evaluate.py`` cannot be imported
+    here without a circular import - see that module's docstring) rather
+    than imported, to keep this module self-contained while the sibling
+    file is edited elsewhere - the same convention ``_table_shape.py``'s
+    ``_parse_comparison_keys`` docstring already documents for this exact
+    situation.
+    """
+    return callable(value) or (
+        hasattr(value, "params") and hasattr(value, "body") and hasattr(value, "scope")
+    )
+
+
+def _table_first(args: list[Any], ctx: _Ctx) -> Any:
+    # No worked example on Microsoft's own page covers "empty table, no
+    # default" - mirrors this codebase's List.First (_list.py) for the same
+    # undocumented corner: null, not an error. Pinned by a test naming it as
+    # a choice, not a verified fact.
+    _arity("Table.First", args, 1, 2)
+    table = _require_table(args[0])
+    if table:
+        return table[0]
+    return args[1] if len(args) == 2 else None
+
+
+def _table_last(args: list[Any], ctx: _Ctx) -> Any:
+    # Same undocumented-corner choice as Table.First above.
+    _arity("Table.Last", args, 1, 2)
+    table = _require_table(args[0])
+    if table:
+        return table[-1]
+    return args[1] if len(args) == 2 else None
+
+
+def _table_first_value(args: list[Any], ctx: _Ctx) -> Any:
+    # Microsoft's page has no worked example at all for this one. "First
+    # column of the first row" reads unambiguously as: take row 0, then its
+    # first field in column order. A table whose first row happens to have
+    # zero fields is not addressed anywhere either - falling through to the
+    # same default/null path as an empty table is the choice made here
+    # (there is no "first column" to return in either case), not a verified
+    # documented rule.
+    _arity("Table.FirstValue", args, 1, 2)
+    table = _require_table(args[0])
+    if table and table[0]:
+        return next(iter(table[0].values()))
+    return args[1] if len(args) == 2 else None
+
+
+def _table_single_row(args: list[Any], ctx: _Ctx) -> Any:
+    # Microsoft's page declares the return type as plain `record` (not
+    # `nullable record`) and takes no default argument - unlike Table.First/
+    # Table.Last's `as any` with an optional default. Docs only state the
+    # error for >1 row; 0 rows is unaddressed. Erroring on 0 rows too is the
+    # reading forced by that non-nullable return type: there is no record
+    # this function could honestly return for an empty table. Pinned by a
+    # test naming it as a choice.
+    _arity("Table.SingleRow", args, 1)
+    table = _require_table(args[0])
+    if len(table) != 1:
+        raise EvalError(f"Table.SingleRow: expected exactly one row, got {len(table)}")
+    return table[0]
+
+
+def _table_remove_first_n(args: list[Any], ctx: _Ctx) -> Any:
+    # Three documented forms: omitted -> remove exactly 1; a number -> remove
+    # that many from the top; a condition -> remove rows from the top while
+    # it holds, stopping at the first row that fails it (NOT a filter over
+    # the whole table - Microsoft's own worked example proves the stop-at-
+    # first-failure shape: {<=2,<=2,>2,>2} removes only the leading run).
+    _arity("Table.RemoveFirstN", args, 1, 2)
+    table = _require_table(args[0])
+    if len(args) == 1:
+        return table[1:]
+    spec = args[1]
+    if _is_invocable(spec):
+        i = 0
+        while i < len(table):
+            keep_removing = ctx.invoke(spec, [table[i]], ctx)
+            if not isinstance(keep_removing, bool):
+                raise EvalError(
+                    "Table.RemoveFirstN: condition must return a logical value"
+                )
+            if not keep_removing:
+                break
+            i += 1
+        return table[i:]
+    count = _require_int(spec)
+    if count < 0:
+        raise EvalError("Table.RemoveFirstN: count must not be negative")
+    # A count past the end is not documented; mirrors this file's own
+    # Table.FirstN/Table.LastN, which already clamp via plain slicing rather
+    # than erroring.
+    return table[count:]
+
+
+def _table_remove_last_n(args: list[Any], ctx: _Ctx) -> Any:
+    # Mirror of Table.RemoveFirstN, from the tail: a condition walks
+    # backward from the last row and stops removing at the first (from-the-
+    # end) row that fails it - confirmed by Microsoft's own worked example
+    # (a leading-from-the-end run of `>=2` rows is removed, the first `<2`
+    # row stops it).
+    _arity("Table.RemoveLastN", args, 1, 2)
+    table = _require_table(args[0])
+    if len(args) == 1:
+        return table[:-1]
+    spec = args[1]
+    if _is_invocable(spec):
+        i = len(table)
+        while i > 0:
+            keep_removing = ctx.invoke(spec, [table[i - 1]], ctx)
+            if not isinstance(keep_removing, bool):
+                raise EvalError(
+                    "Table.RemoveLastN: condition must return a logical value"
+                )
+            if not keep_removing:
+                break
+            i -= 1
+        return table[:i]
+    count = _require_int(spec)
+    if count < 0:
+        raise EvalError("Table.RemoveLastN: count must not be negative")
+    return table[: len(table) - count]
+
+
+def _table_remove_rows(args: list[Any], ctx: _Ctx) -> Any:
+    # "Removes count of rows ... starting at offset. A default count of 1 is
+    # used if count isn't provided." Out-of-range offset+count is not
+    # documented; clamped via plain slicing (consistent with this file's own
+    # Table.FirstN/LastN, which do not error on an over-long count either) -
+    # only offset itself is bounds-checked, matching Table.Range's own
+    # offset validation (_table_shape.py) for the sibling function that
+    # shares this exact "start position into a table" shape.
+    _arity("Table.RemoveRows", args, 2, 3)
+    table = _require_table(args[0])
+    offset = _require_int(args[1])
+    if offset < 0:
+        raise EvalError("Table.RemoveRows: offset must not be negative")
+    if offset > len(table):
+        raise EvalError("Table.RemoveRows: offset is out of range")
+    count = _require_int(args[2]) if len(args) == 3 else 1
+    if count < 0:
+        raise EvalError("Table.RemoveRows: count must not be negative")
+    return table[:offset] + table[offset + count :]
+
+
+def _table_replace_rows(args: list[Any], ctx: _Ctx) -> Any:
+    # All four parameters are required (no optional form, unlike
+    # Table.RemoveRows). Splice: skip `offset` rows, delete the next `count`,
+    # insert `rows` there - `rows`' length need not match `count` (Microsoft's
+    # own worked example replaces 3 rows with 2, shrinking the table by one).
+    _arity("Table.ReplaceRows", args, 4)
+    table = _require_table(args[0])
+    offset = _require_int(args[1])
+    if offset < 0:
+        raise EvalError("Table.ReplaceRows: offset must not be negative")
+    if offset > len(table):
+        raise EvalError("Table.ReplaceRows: offset is out of range")
+    count = _require_int(args[2])
+    if count < 0:
+        raise EvalError("Table.ReplaceRows: count must not be negative")
+    new_rows = _require_table(args[3])
+    return table[:offset] + list(new_rows) + table[offset + count :]
+
+
 def _table_distinct(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Table.Distinct", args, 1, 2)
     table = _require_table(args[0])
@@ -292,4 +460,12 @@ BUILTINS: dict[str, Any] = {
     "Table.FirstN": _table_first_n,
     "Table.LastN": _table_last_n,
     "Table.Distinct": _table_distinct,
+    "Table.First": _table_first,
+    "Table.FirstValue": _table_first_value,
+    "Table.Last": _table_last,
+    "Table.SingleRow": _table_single_row,
+    "Table.RemoveFirstN": _table_remove_first_n,
+    "Table.RemoveLastN": _table_remove_last_n,
+    "Table.RemoveRows": _table_remove_rows,
+    "Table.ReplaceRows": _table_replace_rows,
 }

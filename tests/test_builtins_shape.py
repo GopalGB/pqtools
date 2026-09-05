@@ -609,25 +609,6 @@ def test_remove_rows_with_errors_is_identity():
     assert evaluate(query) == [{"a": 1}, {"a": 2}]
 
 
-def test_select_duplicates_keeps_every_row_in_a_group_of_two_or_more():
-    query = """
-    Table.SelectDuplicates(
-        Table.FromRecords({[a=1],[a=2],[a=1],[a=3],[a=1]})
-    )
-    """
-    assert [r["a"] for r in evaluate(query)] == [1, 1, 1]
-
-
-def test_select_duplicates_with_criteria_columns():
-    query = """
-    Table.SelectDuplicates(
-        Table.FromRecords({[a=1,b=1],[a=1,b=2],[a=2,b=3]}),
-        {"a"}
-    )
-    """
-    assert evaluate(query) == [{"a": 1, "b": 1}, {"a": 1, "b": 2}]
-
-
 def test_table_max_matches_the_microsoft_docs_examples():
     assert evaluate('Table.Max(Table.FromRecords({[a=2,b=4],[a=6,b=8]}), "a")') == {
         "a": 6,

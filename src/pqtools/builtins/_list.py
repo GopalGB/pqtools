@@ -10,7 +10,10 @@ zero behaviour change) - see PRD-0.5.0-builtins.md.
 
 from __future__ import annotations
 
+import datetime
+import decimal
 import math
+import random as _random
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +25,7 @@ from ._shared import (
     _require_int,
     _require_list,
     _require_number,
+    _require_str,
 )
 
 if TYPE_CHECKING:
@@ -774,6 +778,670 @@ def _list_replace_value(args: list[Any], ctx: _Ctx) -> Any:
     return [ctx.invoke(replacer, [item, old_value, new_value], ctx) for item in items]
 
 
+# --------------------------------------------------------------------------
+# 0.10.0 gap-fill - the 25 List.* names Microsoft documents that this
+# package did not have. Grounded against learn.microsoft.com/en-us/
+# powerquery-m/<name> (fetched fresh for this change), following each
+# page's own syntax block and worked examples. Grouped in the same order
+# task tracking used, not by theme.
+# --------------------------------------------------------------------------
+
+
+def _list_alternate(args: list[Any], ctx: _Ctx) -> Any:
+    # List.Alternate(list, count, optional repeatInterval, optional offset).
+    # Algorithm reverse-engineered from all 4 of the docs' own worked
+    # examples (verified: every one of the 4 reproduces exactly): keep the
+    # first `offset` items untouched, then repeatedly skip `count` items and
+    # keep `repeatInterval` items; if `repeatInterval` is omitted, keep
+    # everything after the initial skip and stop.
+    _arity("List.Alternate", args, 2, 4)
+    items = _require_list(args[0])
+    count = _require_int(args[1])
+    if count < 0:
+        raise EvalError("List.Alternate: count must not be negative")
+    repeat_interval: int | None = None
+    if len(args) >= 3 and args[2] is not None:
+        repeat_interval = _require_int(args[2])
+        if repeat_interval < 0:
+            raise EvalError("List.Alternate: repeatInterval must not be negative")
+    offset = 0
+    if len(args) == 4 and args[3] is not None:
+        offset = _require_int(args[3])
+        if offset < 0:
+            raise EvalError("List.Alternate: offset must not be negative")
+    result = list(items[:offset])
+    i = offset
+    n = len(items)
+    # ctx.budget.tick() guards the one input the docs never address: count=0
+    # AND repeatInterval=0 together never advance `i`, which would otherwise
+    # hang forever (same protection List.Generate uses for the same reason).
+    while i < n:
+        ctx.budget.tick()
+        i += count
+        if repeat_interval is None:
+            result.extend(items[i:])
+            break
+        result.extend(items[i : i + repeat_interval])
+        i += repeat_interval
+    return result
+
+
+def _list_find_text(args: list[Any], ctx: _Ctx) -> Any:
+    # List.FindText(list, text) - "the values from list which contained the
+    # value text". A case-sensitive substring test (the docs' own example is
+    # single-case so it can't itself prove case-sensitivity; this matches
+    # Text.Contains' own default-comparer behaviour in _text.py, which IS
+    # ordinal/case-sensitive unless a comparer says otherwise). Non-text
+    # items cannot "contain" text, so they are excluded rather than raising
+    # - a documented choice (the docs' own example never mixes types), not a
+    # verified fact.
+    _arity("List.FindText", args, 2)
+    items = _require_list(args[0])
+    text = _require_str(args[1])
+    return [item for item in items if isinstance(item, str) and text in item]
+
+
+def _list_is_distinct(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("List.IsDistinct", args, 1, 2)
+    items = _require_list(args[0])
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 2 and args[1] is not None:
+        equal = _equation_criteria_predicate(
+            args[1], ctx, "List.IsDistinct", allow_custom_comparer=False
+        )
+    seen: list[Any] = []
+    for item in items:
+        if any(equal(item, other) for other in seen):
+            return False
+        seen.append(item)
+    return True
+
+
+def _list_matches_all(args: list[Any], ctx: _Ctx) -> Any:
+    # Empty-list result is not in the docs' examples; True is the
+    # conventional vacuous-truth answer (matches Python's own all([])) and
+    # is pinned as a documented choice, not a verified fact.
+    _arity("List.MatchesAll", args, 2)
+    condition = args[1]
+    for item in _require_list(args[0]):
+        keep = ctx.invoke(condition, [item], ctx)
+        if not isinstance(keep, bool):
+            raise EvalError("List.MatchesAll: condition must return a logical value")
+        if not keep:
+            return False
+    return True
+
+
+def _list_matches_any(args: list[Any], ctx: _Ctx) -> Any:
+    # Empty-list result is not in the docs' examples; False is the
+    # conventional vacuous-truth answer (matches Python's own any([])) and
+    # is pinned as a documented choice, not a verified fact.
+    _arity("List.MatchesAny", args, 2)
+    condition = args[1]
+    for item in _require_list(args[0]):
+        keep = ctx.invoke(condition, [item], ctx)
+        if not isinstance(keep, bool):
+            raise EvalError("List.MatchesAny: condition must return a logical value")
+        if keep:
+            return True
+    return False
+
+
+def _list_single(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("List.Single", args, 1)
+    items = _require_list(args[0])
+    if not items:
+        raise EvalError("List.Single: the list is empty")
+    if len(items) > 1:
+        raise EvalError(
+            "List.Single: there were too many elements in the enumeration "
+            "to complete the operation"
+        )
+    return items[0]
+
+
+def _list_single_or_default(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("List.SingleOrDefault", args, 1, 2)
+    items = _require_list(args[0])
+    if not items:
+        return args[1] if len(args) == 2 else None
+    if len(items) > 1:
+        raise EvalError(
+            "List.SingleOrDefault: there were too many elements in the "
+            "enumeration to complete the operation"
+        )
+    return items[0]
+
+
+def _list_remove_first_n(args: list[Any], ctx: _Ctx) -> Any:
+    # List.RemoveFirstN(list, optional countOrCondition) - omitted/null
+    # removes exactly the first element (the docs' own base description,
+    # before countOrCondition is even introduced).
+    _arity("List.RemoveFirstN", args, 1, 2)
+    items = _require_list(args[0])
+    count_or_condition = args[1] if len(args) == 2 else None
+    if count_or_condition is None:
+        return items[1:]
+    if _is_count(count_or_condition):
+        count = _require_int(count_or_condition)
+        if count < 0:
+            raise EvalError("List.RemoveFirstN: count must not be negative")
+        return items[count:]
+    idx = 0
+    for item in items:
+        keep = ctx.invoke(count_or_condition, [item], ctx)
+        if not isinstance(keep, bool):
+            raise EvalError("List.RemoveFirstN: condition must return a logical value")
+        if not keep:
+            break
+        idx += 1
+    return items[idx:]
+
+
+def _list_remove_last_n(args: list[Any], ctx: _Ctx) -> Any:
+    # List.RemoveLastN(list, optional countOrCondition) - the docs' own
+    # words for the omitted/null case: "only one item is removed".
+    _arity("List.RemoveLastN", args, 1, 2)
+    items = _require_list(args[0])
+    count_or_condition = args[1] if len(args) == 2 else None
+    if count_or_condition is None:
+        return items[:-1] if items else []
+    if _is_count(count_or_condition):
+        count = _require_int(count_or_condition)
+        if count < 0:
+            raise EvalError("List.RemoveLastN: count must not be negative")
+        return list(items) if count == 0 else items[:-count]
+    idx = len(items)
+    for item in reversed(items):
+        keep = ctx.invoke(count_or_condition, [item], ctx)
+        if not isinstance(keep, bool):
+            raise EvalError("List.RemoveLastN: condition must return a logical value")
+        if not keep:
+            break
+        idx -= 1
+    return items[:idx]
+
+
+def _list_remove_matching_items(args: list[Any], ctx: _Ctx) -> Any:
+    # Same shape as the existing List.RemoveItems (removes every occurrence
+    # of every value found in list2), plus the optional equationCriteria
+    # List.RemoveItems does not take - kept as a separate function rather
+    # than adding a parameter to List.RemoveItems, since that would change
+    # an already-shipped, already-tested function's signature.
+    _arity("List.RemoveMatchingItems", args, 2, 3)
+    items1 = _require_list(args[0])
+    items2 = _require_list(args[1])
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 3 and args[2] is not None:
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "List.RemoveMatchingItems", allow_custom_comparer=False
+        )
+    return [x for x in items1 if not any(equal(x, y) for y in items2)]
+
+
+def _list_remove_range(args: list[Any], ctx: _Ctx) -> Any:
+    # List.RemoveRange(list, index, optional count) - the docs' only worked
+    # example always passes count explicitly, so the omitted/null default is
+    # NOT verified from an example. Picked: 1 (mirrors List.RemoveLastN's
+    # own documented "if this parameter is null, only one item is removed"),
+    # pinned as a choice by a dedicated test, not claimed as a fact.
+    _arity("List.RemoveRange", args, 2, 3)
+    items = _require_list(args[0])
+    index = _require_int(args[1])
+    if index < 0 or index > len(items):
+        raise EvalError("List.RemoveRange: index out of range")
+    if len(args) == 3 and args[2] is not None:
+        count = _require_int(args[2])
+        if count < 0:
+            raise EvalError("List.RemoveRange: count must not be negative")
+    else:
+        count = 1
+    if index + count > len(items):
+        raise EvalError("List.RemoveRange: count exceeds the remaining items")
+    return items[:index] + items[index + count :]
+
+
+def _list_replace_matching_items(args: list[Any], ctx: _Ctx) -> Any:
+    # List.ReplaceMatchingItems(list, replacements, optional equationCriteria)
+    # - each replacement is a {oldValue, newValue} pair; the FIRST pair
+    # whose oldValue matches an item wins (the docs' own example never has
+    # two pairs match the same item, so "first wins" is a documented choice,
+    # not a verified fact).
+    _arity("List.ReplaceMatchingItems", args, 2, 3)
+    items = _require_list(args[0])
+    replacements = _require_list(args[1])
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 3 and args[2] is not None:
+        equal = _equation_criteria_predicate(
+            args[2], ctx, "List.ReplaceMatchingItems", allow_custom_comparer=False
+        )
+    pairs: list[tuple[Any, Any]] = []
+    for pair in replacements:
+        pair_items = _require_list(pair)
+        if len(pair_items) != 2:
+            raise EvalError(
+                "List.ReplaceMatchingItems: each replacement must be a "
+                "two-item list of {oldValue, newValue}"
+            )
+        pairs.append((pair_items[0], pair_items[1]))
+    result = []
+    for item in items:
+        replaced = item
+        for old, new in pairs:
+            if equal(item, old):
+                replaced = new
+                break
+        result.append(replaced)
+    return result
+
+
+def _list_replace_range(args: list[Any], ctx: _Ctx) -> Any:
+    # List.ReplaceRange(list, index, count, replaceWith) - unlike
+    # RemoveRange, `count` is REQUIRED here (not `optional` in the docs'
+    # own syntax block), so there is no default to guess.
+    _arity("List.ReplaceRange", args, 4)
+    items = _require_list(args[0])
+    index = _require_int(args[1])
+    count = _require_int(args[2])
+    if index < 0 or index > len(items):
+        raise EvalError("List.ReplaceRange: index out of range")
+    if count < 0:
+        raise EvalError("List.ReplaceRange: count must not be negative")
+    if index + count > len(items):
+        raise EvalError("List.ReplaceRange: count exceeds the remaining items")
+    replace_with = _require_list(args[3])
+    return items[:index] + replace_with + items[index + count :]
+
+
+def _list_transform_many(args: list[Any], ctx: _Ctx) -> Any:
+    # List.TransformMany(list, collectionTransform, resultTransform) -
+    # collectionTransform(x) as list projects each element into an
+    # intermediate list; resultTransform(x, y) builds the final item from
+    # the ORIGINAL element x and each y drawn from that intermediate list.
+    _arity("List.TransformMany", args, 3)
+    items = _require_list(args[0])
+    collection_transform = args[1]
+    result_transform = args[2]
+    result = []
+    for item in items:
+        sub_items = _require_list(ctx.invoke(collection_transform, [item], ctx))
+        for sub in sub_items:
+            result.append(ctx.invoke(result_transform, [item, sub], ctx))
+    return result
+
+
+def _list_max_min_n(name: str, args: list[Any], ctx: _Ctx, *, descending: bool) -> Any:
+    # List.MaxN/List.MinN share one shape: (list, countOrCondition, optional
+    # comparisonCriteria, optional includeNulls). Two things do NOT
+    # generalise across the pair, verified by reading each function's OWN
+    # docs page rather than assuming symmetry:
+    #   - a null countOrCondition: only List.MinN's page defines it ("the
+    #     single smallest value in the list is returned"); List.MaxN's page
+    #     never mentions this case, so List.MaxN refuses it.
+    #   - a condition function: List.MaxN's page says "the returned list
+    #     includes all items that meet the condition" (a full filter over
+    #     the whole sorted list); List.MinN's page says "once an item fails
+    #     the condition, no further items are considered" (stop at the
+    #     first miss). Both are honoured literally below.
+    _arity(name, args, 2, 4)
+    items = _require_list(args[0])
+    count_or_condition = args[1]
+    comparison_criteria = args[2] if len(args) >= 3 else None
+    include_nulls = True
+    if len(args) == 4 and args[3] is not None:
+        if not isinstance(args[3], bool):
+            raise EvalError(f"{name}: includeNulls must be a logical value")
+        include_nulls = args[3]
+
+    if comparison_criteria is not None:
+        # MaxN's own worked example (a `each Date.FromText(...)` key
+        # selector) is the only shape any worked example demonstrates for
+        # comparisonCriteria here - a two-argument comparer or a
+        # {selector, comparer} list (the shapes equationCriteria allows
+        # elsewhere in this file) are a DIFFERENT, undocumented-for-this-
+        # function shape, so they are refused rather than guessed.
+        if _equation_arity(comparison_criteria) != 1:
+            raise UnsupportedError(
+                f"{name}: comparisonCriteria must be a one-argument key "
+                "selector function (the only documented/worked-example "
+                "shape - a two-argument comparer or a {selector, comparer} "
+                "list is not supported here)"
+            )
+
+        def key(item: Any) -> Any:
+            return ctx.invoke(comparison_criteria, [item], ctx)
+    else:
+
+        def key(item: Any) -> Any:
+            return item
+
+    working = items if include_nulls else [x for x in items if x is not None]
+    try:
+        ordered = sorted(working, key=key, reverse=descending)
+    except TypeError as error:
+        # Matches this file's existing List.Max/List.Sort convention: a
+        # null left in the list (includeNulls defaults to True) that then
+        # meets a non-null value during sorting is "not comparable", the
+        # same error those functions already raise on mixed-type input -
+        # not a new invented null-ordering rule.
+        raise EvalError(f"{name}: values are not comparable") from error
+
+    if count_or_condition is None:
+        if name == "List.MinN":
+            return ordered[:1]
+        raise UnsupportedError(
+            f"{name}: countOrCondition of null is undocumented for {name} "
+            "(List.MinN's own page defines this case; List.MaxN's does not)"
+        )
+
+    if _is_count(count_or_condition):
+        n = _require_int(count_or_condition)
+        if n < 0:
+            raise EvalError(f"{name}: count must not be negative")
+        return ordered[:n]
+
+    # A condition function, invoked on the ORIGINAL item: comparisonCriteria
+    # only transforms values "before they're compared" (the sort step) and
+    # plays no part in the filter step.
+    result: list[Any] = []
+    for item in ordered:
+        keep = ctx.invoke(count_or_condition, [item], ctx)
+        if not isinstance(keep, bool):
+            raise EvalError(f"{name}: condition must return a logical value")
+        if keep:
+            result.append(item)
+        elif name == "List.MinN":
+            break
+    return result
+
+
+def _list_max_n(args: list[Any], ctx: _Ctx) -> Any:
+    return _list_max_min_n("List.MaxN", args, ctx, descending=True)
+
+
+def _list_min_n(args: list[Any], ctx: _Ctx) -> Any:
+    return _list_max_min_n("List.MinN", args, ctx, descending=False)
+
+
+def _list_modes(args: list[Any], ctx: _Ctx) -> Any:
+    # List.Modes returns EVERY value tied for the highest frequency (unlike
+    # List.Mode above, which picks exactly one and documents its own tie
+    # rule in the comment at its definition). The order returned here is
+    # first-occurrence order - the docs' one worked example
+    # ({"A",1,2,3,3,4,5,5} -> {3,5}) is consistent with BOTH
+    # first-occurrence order and value-ascending order (3 occurs before 5,
+    # AND 3 < 5), so it cannot verify which rule this package should use.
+    # First-occurrence order is picked because it reuses the exact grouping
+    # List.Mode already builds, needing no extra invented rule; pinned by a
+    # test where the two candidate orders would actually differ.
+    _arity("List.Modes", args, 1, 2)
+    items = _require_list(args[0])
+    if not items:
+        raise EvalError("List.Modes: list must not be empty")
+    equal: Callable[[Any, Any], bool] = _m_equal
+    if len(args) == 2 and args[1] is not None:
+        equal = _equation_criteria_predicate(
+            args[1], ctx, "List.Modes", allow_custom_comparer=False
+        )
+    groups: list[list[Any]] = []  # [value, count] pairs, first-occurrence order
+    for item in items:
+        for group in groups:
+            if equal(group[0], item):
+                group[1] += 1
+                break
+        else:
+            groups.append([item, 1])
+    best_count = max(count for _, count in groups)
+    return [value for value, count in groups if count == best_count]
+
+
+def _list_covariance(args: list[Any], ctx: _Ctx) -> Any:
+    # List.Covariance is documented "as nullable number" (unlike
+    # List.StandardDeviation's non-nullable `as number`, which is why THAT
+    # function raises instead of returning null on too few values) - null
+    # is treated as the answer for the one case with no numbers to compare:
+    # both lists empty. The docs' own example ({1,2,3},{1,2,3}) -> 0.6667
+    # is POPULATION covariance (sum((x-mean)(y-mean))/n, n not n-1):
+    # mean=2, sum((x-2)^2)=2, 2/3=0.66666... matches exactly; sample
+    # covariance (n-1=2) would give 1.0, which does not match.
+    _arity("List.Covariance", args, 2)
+    xs = _require_list(args[0])
+    ys = _require_list(args[1])
+    if len(xs) != len(ys):
+        raise EvalError(
+            "List.Covariance: numberList1 and numberList2 must contain the "
+            "same number of values"
+        )
+    if not xs:
+        return None
+    x_values = [_require_number(x) for x in xs]
+    y_values = [_require_number(y) for y in ys]
+    n = len(x_values)
+    mean_x = sum(x_values) / n
+    mean_y = sum(y_values) / n
+    pairs = zip(x_values, y_values, strict=True)
+    return sum((x - mean_x) * (y - mean_y) for x, y in pairs) / n
+
+
+# Precision.Double=0 / Precision.Decimal=1 - the same enum _number.py's
+# Number.IntegerDivide/Number.Mod already expose as BUILTINS constants.
+# Duplicated here in miniature rather than imported: family builtin modules
+# stay independent by design (see builtins/__init__.py's docstring and
+# _equation_arity's docstring above for why), and at the M level these are
+# just plain integers by the time they reach this function's args anyway.
+_PRECISION_DECIMAL = 1
+
+
+def _list_product(args: list[Any], ctx: _Ctx) -> Any:
+    # List.Product(numbersList, optional precision) - "the product of the
+    # NON-NULL numbers", "null if there are no non-null values" (both
+    # verified against the docs' own wording; the docs' single example has
+    # no nulls, so the skip-nulls behaviour itself is grounded in the prose,
+    # not a worked example). Precision.Decimal multiplies through
+    # decimal.Decimal (str-round-tripped, exactly as _number.py's own
+    # _decimal_truncate_divide does) so repeated multiplication does not
+    # accumulate binary-float rounding error - a real, exactly implementable
+    # difference, not a guess.
+    _arity("List.Product", args, 1, 2)
+    items = _require_list(args[0])
+    precision = None
+    if len(args) == 2 and args[1] is not None:
+        precision = _require_int(args[1])
+        if precision not in (0, _PRECISION_DECIMAL):
+            raise EvalError(
+                "List.Product: precision must be Precision.Double or Precision.Decimal"
+            )
+    numbers = [_require_number(x) for x in items if x is not None]
+    if not numbers:
+        return None
+    if precision == _PRECISION_DECIMAL:
+        product = decimal.Decimal(1)
+        for number in numbers:
+            product *= decimal.Decimal(str(number))
+        if all(isinstance(number, int) for number in numbers):
+            return int(product)
+        return float(product)
+    total: int | float = 1
+    for number in numbers:
+        total = total * number
+    return total
+
+
+def _temporal_start_type_name(value: Any) -> str:
+    return type(value).__name__ if value is not None else "null"
+
+
+def _generate_temporal_list(
+    name: str,
+    args: list[Any],
+    ctx: _Ctx,
+    *,
+    is_start: Callable[[Any], bool],
+    type_label: str,
+    advance: Callable[[Any, datetime.timedelta], Any],
+) -> Any:
+    # Shared shape behind List.Dates/List.DateTimes/List.DateTimeZones/
+    # List.Durations/List.Times: (start, count, step as duration), each
+    # verified against its own docs page - all 5 share the identical
+    # "returns count values starting at start, incremented by step" wording
+    # and worked examples.
+    _arity(name, args, 3)
+    start = args[0]
+    if not is_start(start):
+        raise EvalError(
+            f"{name}: start must be a {type_label}, got "
+            f"{_temporal_start_type_name(start)}"
+        )
+    count = _require_int(args[1])
+    if count < 0:
+        raise EvalError(f"{name}: count must not be negative")
+    step = args[2]
+    if not isinstance(step, datetime.timedelta):
+        raise EvalError(f"{name}: step must be a duration")
+    _consume_budget(ctx, count)
+    result: list[Any] = []
+    current = start
+    for _ in range(count):
+        result.append(current)
+        current = advance(current, step)
+    return result
+
+
+def _advance_plain(current: Any, step: datetime.timedelta) -> Any:
+    return current + step
+
+
+def _advance_time_wrapping(
+    current: datetime.time, step: datetime.timedelta
+) -> datetime.time:
+    # datetime.time cannot represent >=24h or <0h - Python refuses `time +
+    # timedelta` outright, so wrapping via modulo 24h is the only value a
+    # `time` result CAN hold, not a stylistic choice among alternatives
+    # (List.Times' own docs example never crosses midnight, so this is
+    # pinned by a dedicated wraparound test, not a worked example).
+    day_micros = 24 * 60 * 60 * 1_000_000
+    current_micros = (
+        current.hour * 3_600_000_000
+        + current.minute * 60_000_000
+        + current.second * 1_000_000
+        + current.microsecond
+    )
+    step_micros = (step.days * 86_400 + step.seconds) * 1_000_000 + step.microseconds
+    total_micros = (current_micros + step_micros) % day_micros
+    hour, remainder = divmod(total_micros, 3_600_000_000)
+    minute, remainder = divmod(remainder, 60_000_000)
+    second, micro = divmod(remainder, 1_000_000)
+    return datetime.time(int(hour), int(minute), int(second), int(micro))
+
+
+def _is_date_only(value: Any) -> bool:
+    return isinstance(value, datetime.date) and not isinstance(value, datetime.datetime)
+
+
+def _is_naive_datetime(value: Any) -> bool:
+    return isinstance(value, datetime.datetime) and value.tzinfo is None
+
+
+def _is_aware_datetime(value: Any) -> bool:
+    return isinstance(value, datetime.datetime) and value.tzinfo is not None
+
+
+def _list_dates(args: list[Any], ctx: _Ctx) -> Any:
+    return _generate_temporal_list(
+        "List.Dates",
+        args,
+        ctx,
+        is_start=_is_date_only,
+        type_label="date",
+        advance=_advance_plain,
+    )
+
+
+def _list_datetimes(args: list[Any], ctx: _Ctx) -> Any:
+    return _generate_temporal_list(
+        "List.DateTimes",
+        args,
+        ctx,
+        is_start=_is_naive_datetime,
+        type_label="datetime",
+        advance=_advance_plain,
+    )
+
+
+def _list_datetimezones(args: list[Any], ctx: _Ctx) -> Any:
+    # `datetimezone` values already exist in this engine - the `#datetimezone`
+    # literal (`_lit_datetimezone` in _datetime.py) and `DateTime.AddZone`
+    # both already produce a tz-AWARE datetime.datetime with a fixed-offset
+    # tzinfo, which IS what M's datetimezone type is (a fixed UTC offset,
+    # never an IANA/DST-observing zone) - verified directly:
+    # `evaluate("#datetimezone(2011,12,31,23,55,0,-8,0)")` returns a
+    # tzinfo=timezone(timedelta(hours=-8)) datetime. Stepping an aware
+    # datetime by a timedelta preserves that same fixed tzinfo exactly, so
+    # this is real datetimezone arithmetic, not naive datetimes standing in
+    # for it.
+    return _generate_temporal_list(
+        "List.DateTimeZones",
+        args,
+        ctx,
+        is_start=_is_aware_datetime,
+        type_label="datetimezone",
+        advance=_advance_plain,
+    )
+
+
+def _list_durations(args: list[Any], ctx: _Ctx) -> Any:
+    return _generate_temporal_list(
+        "List.Durations",
+        args,
+        ctx,
+        is_start=lambda value: isinstance(value, datetime.timedelta),
+        type_label="duration",
+        advance=_advance_plain,
+    )
+
+
+def _list_times(args: list[Any], ctx: _Ctx) -> Any:
+    return _generate_temporal_list(
+        "List.Times",
+        args,
+        ctx,
+        is_start=lambda value: isinstance(value, datetime.time),
+        type_label="time",
+        advance=_advance_time_wrapping,
+    )
+
+
+def _list_random(args: list[Any], ctx: _Ctx) -> Any:
+    # List.Random(count, optional seed) - the docs' own seeded example
+    # (seed=2 -> {0.883002, 0.245344, 0.723212}) cannot be reproduced by
+    # ANY third-party implementation: Microsoft has never published the
+    # algorithm behind Power Query's RNG, so there is no way to be
+    # bit-for-bit compatible with it (an implementation detail, not part of
+    # the M language spec - unlike, say, List.Mode's tie rule, there is no
+    # authoritative source to even attempt to match). What IS part of the
+    # documented CONTRACT, and what this implements exactly:
+    #   - no seed -> every call returns a different list (uses the shared
+    #     process-level `random` module - the same instance Number.Random
+    #     in _number.py already draws from).
+    #   - a seed -> every call with that SAME seed returns the SAME list
+    #     (a private `random.Random(seed)` instance, so seeding does not
+    #     also make an unrelated Number.Random()/unseeded List.Random() call
+    #     elsewhere in the same query newly reproducible).
+    #   - every value in [0, 1), as documented.
+    # A test pins pqtools' OWN seeded-reproducibility contract; it does not
+    # and cannot assert the exact numbers from the MS docs example.
+    _arity("List.Random", args, 1, 2)
+    count = _require_int(args[0])
+    if count < 0:
+        raise EvalError("List.Random: count must not be negative")
+    _consume_budget(ctx, count)
+    if len(args) == 2 and args[1] is not None:
+        seed = _require_number(args[1])
+        rng = _random.Random(seed)
+        return [rng.random() for _ in range(count)]
+    return [_random.random() for _ in range(count)]
+
+
 # The M-visible names this module owns. builtins/__init__.py merges every
 # module's BUILTINS into one registry, so a new function is added HERE and
 # nowhere else - no central file to edit, and no merge conflict when several
@@ -824,4 +1492,29 @@ BUILTINS: dict[str, Any] = {
     "List.PositionOfAny": _list_position_of_any,
     "List.InsertRange": _list_insert_range,
     "List.ReplaceValue": _list_replace_value,
+    "List.Alternate": _list_alternate,
+    "List.FindText": _list_find_text,
+    "List.IsDistinct": _list_is_distinct,
+    "List.MatchesAll": _list_matches_all,
+    "List.MatchesAny": _list_matches_any,
+    "List.Single": _list_single,
+    "List.SingleOrDefault": _list_single_or_default,
+    "List.RemoveFirstN": _list_remove_first_n,
+    "List.RemoveLastN": _list_remove_last_n,
+    "List.RemoveMatchingItems": _list_remove_matching_items,
+    "List.RemoveRange": _list_remove_range,
+    "List.ReplaceMatchingItems": _list_replace_matching_items,
+    "List.ReplaceRange": _list_replace_range,
+    "List.TransformMany": _list_transform_many,
+    "List.MaxN": _list_max_n,
+    "List.MinN": _list_min_n,
+    "List.Modes": _list_modes,
+    "List.Covariance": _list_covariance,
+    "List.Product": _list_product,
+    "List.Dates": _list_dates,
+    "List.DateTimes": _list_datetimes,
+    "List.DateTimeZones": _list_datetimezones,
+    "List.Durations": _list_durations,
+    "List.Random": _list_random,
+    "List.Times": _list_times,
 }

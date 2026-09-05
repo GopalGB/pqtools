@@ -17,6 +17,7 @@ from ._shared import (
     _require_list,
     _require_record,
     _require_str,
+    _require_table,
 )
 
 if TYPE_CHECKING:
@@ -214,6 +215,27 @@ def _record_to_table(args: list[Any], ctx: _Ctx) -> Any:
     return [{"Name": name, "Value": value} for name, value in record.items()]
 
 
+def _record_from_table(args: list[Any], ctx: _Ctx) -> Any:
+    # Record.FromTable(table as table) as record - the exact inverse of
+    # Record.ToTable. Verified against the docs' own worked example: a
+    # 3-row {Name, Value} table -> [CustomerID = 1, Name = "Bob",
+    # Phone = "123-4567"], field order following row order. "An error is
+    # raised if the field names are not unique" (docs, verbatim).
+    _arity("Record.FromTable", args, 1)
+    table = _require_table(args[0])
+    result: dict[str, Any] = {}
+    for index, row in enumerate(table):
+        if "Name" not in row or "Value" not in row:
+            raise EvalError(
+                f"Record.FromTable: row {index + 1} is missing a Name or Value field"
+            )
+        name = _require_str(row["Name"])
+        if name in result:
+            raise EvalError(f"Record.FromTable: field names are not unique: {name}")
+        result[name] = row["Value"]
+    return result
+
+
 def _record_field_or_default(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Record.FieldOrDefault", args, 2, 3)
     record = args[0]
@@ -300,6 +322,7 @@ BUILTINS: dict[str, Any] = {
     "Record.RenameFields": _record_rename_fields,
     "Record.TransformFields": _record_transform_fields,
     "Record.ToTable": _record_to_table,
+    "Record.FromTable": _record_from_table,
     "Record.FieldOrDefault": _record_field_or_default,
     "Record.FieldCount": _record_field_count,
     "Record.ReorderFields": _record_reorder_fields,

@@ -36,6 +36,7 @@ from ._shared import (
     UnsupportedError,
     _arity,
     _require_int,
+    _require_list,
     _require_str,
     _type_name,
 )
@@ -388,6 +389,24 @@ def _binary_length(args: list[Any], ctx: _Ctx) -> Any:
     return len(value)
 
 
+def _bytes_from_number_list(values: list[Any], what: str) -> bytes:
+    """Shared by ``#binary``'s list form and ``Binary.FromList``.
+
+    Extracted rather than duplicated - the two entry points accept the exact
+    same shape (a list of 0-255 byte values), and a divergence between them
+    would be a wrong-but-plausible answer for whichever one drifted.
+    """
+    out = bytearray()
+    for item in values:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise EvalError(f"{what}: a list argument must hold byte values")
+        byte = int(item)
+        if byte != item or not 0 <= byte <= 255:
+            raise EvalError(f"{what}: {item!r} is not a byte value (0-255)")
+        out.append(byte)
+    return bytes(out)
+
+
 def _hash_binary(args: list[Any], ctx: _Ctx) -> Any:
     """``#binary(value)`` - M's binary literal.
 
@@ -403,16 +422,151 @@ def _hash_binary(args: list[Any], ctx: _Ctx) -> Any:
     if isinstance(value, str):
         return _binary_from_text([value], ctx)
     if isinstance(value, list):
-        out = bytearray()
-        for item in value:
-            if isinstance(item, bool) or not isinstance(item, (int, float)):
-                raise EvalError("#binary: a list argument must hold byte values")
-            byte = int(item)
-            if byte != item or not 0 <= byte <= 255:
-                raise EvalError(f"#binary: {item!r} is not a byte value (0-255)")
-            out.append(byte)
-        return bytes(out)
+        return _bytes_from_number_list(value, "#binary")
     raise EvalError("#binary: expects a list of byte values or base64 text")
+
+
+def _binary_from_list(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.FromList", args, 1)
+    return _bytes_from_number_list(_require_list(args[0]), "Binary.FromList")
+
+
+def _binary_to_list(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.ToList", args, 1)
+    value = args[0]
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.ToList: expected binary, got {_type_name(value)}")
+    return list(value)
+
+
+def _binary_from(args: list[Any], ctx: _Ctx) -> Any:
+    # Binary.From(value, optional encoding) - "If value is null, returns
+    # null. If value is binary, value is returned. [text] converts via
+    # Binary.FromText. If value is of any other type, an error is
+    # returned." (docs, verbatim). Verified against the docs' own example:
+    # Binary.From("1011") is stated equivalent to
+    # Binary.FromText("1011", BinaryEncoding.Base64) - the same default
+    # encoding Binary.FromText itself already uses when encoding is omitted.
+    _arity("Binary.From", args, 1, 2)
+    value = args[0]
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        text_args = [value] if len(args) < 2 else [value, args[1]]
+        return _binary_from_text(text_args, ctx)
+    raise EvalError(
+        f"Binary.From: cannot convert a {_type_name(value)} value to binary"
+    )
+
+
+def _binary_approximate_length(args: list[Any], ctx: _Ctx) -> Any:
+    # This evaluator's binaries are always fully materialised in memory -
+    # there is no lazy/streaming source to approximate over - so the
+    # "approximate" length (docs: "or an error if the data source doesn't
+    # support an approximate length") is exactly the real one.
+    _arity("Binary.ApproximateLength", args, 1)
+    value = args[0]
+    if value is None:
+        return None
+    if not isinstance(value, bytes):
+        raise EvalError(
+            f"Binary.ApproximateLength: expected binary, got {_type_name(value)}"
+        )
+    return len(value)
+
+
+def _binary_compress(args: list[Any], ctx: _Ctx) -> Any:
+    # Docs list only Compression.GZip and Compression.Deflate for
+    # Binary.Compress (unlike Binary.Decompress, which also accepts
+    # Compression.None) - so only those two are implemented here. Deflate
+    # is raw deflate (no zlib header), the exact inverse of the encoding
+    # Binary.Decompress's own Compression.Deflate branch was verified
+    # against a real .pbix payload for.
+    _arity("Binary.Compress", args, 2)
+    value = args[0]
+    if value is None:
+        return None
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.Compress: expected binary, got {_type_name(value)}")
+    kind = args[1]
+    if kind == "Compression.Deflate":
+        compressor = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
+        return compressor.compress(value) + compressor.flush()
+    if kind == "Compression.GZip":
+        return gzip.compress(value)
+    raise UnsupportedError(
+        f"Binary.Compress kind {kind!r} (known: Compression.GZip, "
+        "Compression.Deflate - Compression.None is not a documented option "
+        "for Binary.Compress)"
+    )
+
+
+def _binary_range(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.Range", args, 2, 3)
+    value = args[0]
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.Range: expected binary, got {_type_name(value)}")
+    offset = _require_int(args[1])
+    if offset < 0 or offset > len(value):
+        raise EvalError(
+            f"Binary.Range: offset {offset} is out of range for a "
+            f"{len(value)}-byte value"
+        )
+    if len(args) == 3 and args[2] is not None:
+        count = _require_int(args[2])
+        if count < 0:
+            raise EvalError("Binary.Range: count must not be negative")
+        return value[offset : offset + count]
+    return value[offset:]
+
+
+def _binary_split(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.Split", args, 2)
+    value = args[0]
+    if not isinstance(value, bytes):
+        raise EvalError(f"Binary.Split: expected binary, got {_type_name(value)}")
+    page_size = _require_int(args[1])
+    if page_size <= 0:
+        raise EvalError("Binary.Split: pageSize must be positive")
+    return [value[i : i + page_size] for i in range(0, len(value), page_size)]
+
+
+def _binary_infer_content_type(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.InferContentType", args, 1)
+    raise UnsupportedError(
+        "Binary.InferContentType: MIME/CSV-shape sniffing uses Microsoft's "
+        "proprietary detection tables, which are not documented byte-for-"
+        "byte. A wrong content type is a plausible-looking wrong answer, so "
+        "this refuses rather than guesses at the signature table"
+    )
+
+
+def _binary_view(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.View", args, 2)
+    raise UnsupportedError(
+        "Binary.View: creates a lazy, handler-dispatched binary value for "
+        "custom-connector query folding. This evaluator's values are fully "
+        "eager (see evaluate.py's module docstring) and has no view/handler "
+        "abstraction to run the handlers against"
+    )
+
+
+def _binary_view_error(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.ViewError", args, 1)
+    raise UnsupportedError(
+        "Binary.ViewError: only meaningful paired with Binary.View, which "
+        "is refused above for the same reason"
+    )
+
+
+def _binary_view_function(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Binary.ViewFunction", args, 1)
+    raise UnsupportedError(
+        "Binary.ViewFunction: only meaningful paired with Binary.View, "
+        "which is refused above for the same reason"
+    )
 
 
 BUILTINS: dict[str, Any] = {
@@ -424,6 +578,17 @@ BUILTINS: dict[str, Any] = {
     "Binary.ToText": _binary_to_text,
     "Binary.Decompress": _binary_decompress,
     "Binary.Length": _binary_length,
+    "Binary.FromList": _binary_from_list,
+    "Binary.ToList": _binary_to_list,
+    "Binary.From": _binary_from,
+    "Binary.ApproximateLength": _binary_approximate_length,
+    "Binary.Compress": _binary_compress,
+    "Binary.Range": _binary_range,
+    "Binary.Split": _binary_split,
+    "Binary.InferContentType": _binary_infer_content_type,
+    "Binary.View": _binary_view,
+    "Binary.ViewError": _binary_view_error,
+    "Binary.ViewFunction": _binary_view_function,
     # Enum-like bare identifiers, registered as sentinels rather than numbers.
     # The numeric values of BinaryEncoding.* and Compression.* could not be
     # verified, and a wrong number is silent wrongness - but the functions

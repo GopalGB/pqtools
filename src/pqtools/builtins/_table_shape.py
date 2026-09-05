@@ -1207,7 +1207,13 @@ BUILTINS: dict[str, Any] = {
     "Table.HasColumns": _table_has_columns,
     "Table.TransformColumnNames": _table_transform_column_names,
     "Table.RemoveRowsWithErrors": _table_remove_rows_with_errors,
-    "Table.SelectDuplicates": _table_select_duplicates,
+    # There is deliberately no `Table.SelectDuplicates`. pqtools shipped one
+    # until 0.10.0, but it does not appear in Microsoft's table of the ~114
+    # real Table.* functions (learn.microsoft.com/en-us/powerquery-m/
+    # table-functions) and its own reference page is a 404 while a real page
+    # like table-selectrows is a 200. Table.Distinct (keep one row per key)
+    # and Table.Group (count/collect occurrences per key) already cover
+    # every real use a "give me the duplicates" query has.
     "Table.Max": _table_max,
     "Table.Min": _table_min,
     "Table.FromList": _table_from_list,
@@ -1435,5 +1441,444 @@ BUILTINS.update(
         "Table.AlternateRows": _table_alternate_rows,
         "Table.Schema": _table_schema,
         "Table.Profile": _table_profile,
+    }
+)
+
+
+# --------------------------------------------------------------------------
+# Table.FindText / Table.PrefixColumns / Table.CombineColumns* / Table.Split /
+# Table.TransformRows - the 0.10.0 gap-fill batch (46 documented names this
+# package did not have). Grounded against learn.microsoft.com/en-us/
+# powerquery-m/<name-lowercased>, one page per function.
+# --------------------------------------------------------------------------
+
+
+def _table_find_text(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.FindText(table, text)`` - rows containing ``text`` anywhere.
+
+    Only text-typed cells are searched, with a case-sensitive substring
+    match. Microsoft's own page has exactly one worked example and it uses
+    an all-text table - it states no stringification rule for numbers/dates
+    and no case-sensitivity rule at all. Coercing every cell through a
+    Text.From-style conversion to widen the search would be inventing
+    behaviour this page never describes; the narrower, literal reading is
+    the safer wrong-to-be-caught choice. Pinned by a test naming this as a
+    choice, not a verified fact.
+    """
+    _arity("Table.FindText", args, 2)
+    table = _require_table(args[0])
+    text = _require_str(args[1])
+    return [
+        row
+        for row in table
+        if any(isinstance(v, str) and text in v for v in row.values())
+    ]
+
+
+def _table_prefix_columns(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.PrefixColumns", args, 2)
+    table = _require_table(args[0])
+    prefix = _require_str(args[1])
+    return [{f"{prefix}.{name}": value for name, value in row.items()} for row in table]
+
+
+def _table_columns_of_type(args: list[Any], ctx: _Ctx) -> Any:
+    """Refused - not approximated.
+
+    Microsoft's own worked example ascribes a DECLARED table type
+    (``type table[a=Number.Type, b=Text.Type]``) and matches ``listOfTypes``
+    against that declared type, independent of what the rows actually hold.
+    This evaluator's tables are plain ``list[dict[str, Any]]`` with no
+    per-column declared type attached (see the module docstring) - every
+    table here is implicitly ``any``-typed in the sense the real function
+    cares about. Checking each cell's *runtime* kind instead would silently
+    disagree with real Power Query on the ordinary case of an unascribed
+    table (e.g. every column of numbers would "match" ``type number`` here
+    but not in Power Query, where an unascribed column is typed ``any``) -
+    exactly the plausible-wrong-answer failure this package refuses to ship.
+    """
+    _arity("Table.ColumnsOfType", args, 2)
+    raise UnsupportedError(
+        "Table.ColumnsOfType: matches a column's DECLARED type, which this "
+        "evaluator's tables do not carry independent of their row data - "
+        "see the function's docstring for why a runtime-value guess would "
+        "silently disagree with real Power Query"
+    )
+
+
+def _table_combine_columns(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.CombineColumns(table, sourceColumns, combiner, column)``.
+
+    The combined column lands at the position of the FIRST source column,
+    and every source column is removed - not directly shown by Microsoft's
+    2-column worked example (which cannot distinguish a position among only
+    two total columns), but the same convention this file's own
+    ``Table.SplitColumn`` already uses for its inverse operation (replace
+    the source column(s) in place), applied here for consistency rather
+    than invented fresh.
+    """
+    _arity("Table.CombineColumns", args, 4)
+    table = _require_table(args[0])
+    source_columns = _field_name_list(args[1])
+    combiner = args[2]
+    new_column = _require_str(args[3])
+    if not source_columns:
+        raise EvalError("Table.CombineColumns: sourceColumns must not be empty")
+    header = _column_order(table)
+    for name in source_columns:
+        if table and name not in header:
+            raise EvalError(f"Table.CombineColumns: no such column: {name}")
+    if new_column != source_columns[0] and new_column in header:
+        raise EvalError(f"Table.CombineColumns: column already exists: {new_column}")
+    result: list[dict[str, Any]] = []
+    for row in table:
+        combined = ctx.invoke(combiner, [[row[name] for name in source_columns]], ctx)
+        new_row: dict[str, Any] = {}
+        for key in header:
+            if key == source_columns[0]:
+                new_row[new_column] = combined
+            elif key not in source_columns:
+                new_row[key] = row[key]
+        result.append(new_row)
+    return result
+
+
+def _table_combine_columns_to_record(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.CombineColumnsToRecord(table, newColumnName, sourceColumns, options?)``.
+
+    Microsoft's page has no worked example at all (Syntax + About only), so
+    two things are inferred rather than verified: source columns are
+    removed and the new column takes their first position - mirroring the
+    sibling ``Table.CombineColumns`` above, which this function is
+    otherwise identical to except for producing a record instead of running
+    a combiner. ``options`` (``DisplayNameColumn``/``TypeName``) are
+    presentation/data-load metadata ("used during data load to drive
+    behavior by the loading environment") with no stated effect on the
+    record's VALUE in a headless evaluator - validated, not applied.
+    """
+    _arity("Table.CombineColumnsToRecord", args, 3, 4)
+    table = _require_table(args[0])
+    new_column = _require_str(args[1])
+    source_columns = _field_name_list(args[2])
+    options = args[3] if len(args) == 4 else None
+    if options is not None:
+        remaining = dict(_require_record(options))
+        remaining.pop("DisplayNameColumn", None)
+        remaining.pop("TypeName", None)
+        if remaining:
+            raise UnsupportedError(
+                f"Table.CombineColumnsToRecord: option(s) {sorted(remaining)}"
+            )
+    if not source_columns:
+        raise EvalError(
+            "Table.CombineColumnsToRecord: sourceColumns must not be empty"
+        )
+    header = _column_order(table)
+    for name in source_columns:
+        if table and name not in header:
+            raise EvalError(f"Table.CombineColumnsToRecord: no such column: {name}")
+    if new_column != source_columns[0] and new_column in header:
+        raise EvalError(
+            f"Table.CombineColumnsToRecord: column already exists: {new_column}"
+        )
+    result: list[dict[str, Any]] = []
+    for row in table:
+        record = {name: row[name] for name in source_columns}
+        new_row: dict[str, Any] = {}
+        for key in header:
+            if key == source_columns[0]:
+                new_row[new_column] = record
+            elif key not in source_columns:
+                new_row[key] = row[key]
+        result.append(new_row)
+    return result
+
+
+def _table_split(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.Split(table, pageSize)`` - a list of tables, ``pageSize`` rows
+    each; the last chunk is short rather than padded or errored (Microsoft's
+    own 5-rows/pageSize=2 worked example ends in a 1-row table)."""
+    _arity("Table.Split", args, 2)
+    table = _require_table(args[0])
+    page_size = _require_int(args[1])
+    if page_size <= 0:
+        raise EvalError("Table.Split: pageSize must be a positive number")
+    return [table[i : i + page_size] for i in range(0, len(table), page_size)]
+
+
+def _table_transform_rows(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.TransformRows(table, transform)`` - a LIST, not a table
+    (List.Transform over the table's rows-as-records; Microsoft's own two
+    examples return a bare list of scalars and a bare list of records,
+    never a table)."""
+    _arity("Table.TransformRows", args, 2)
+    table = _require_table(args[0])
+    transform = args[1]
+    return [ctx.invoke(transform, [row], ctx) for row in table]
+
+
+# --------------------------------------------------------------------------
+# Table.AddKey / Table.Keys / Table.ReplaceKeys / Table.PartitionKey /
+# Table.ReplacePartitionKey - value-level metadata attached to a table.
+#
+# Real Power Query keys/partition-keys are declared on a table's static
+# TYPE. This evaluator's tables are plain ``list[dict[str, Any]]`` with no
+# type object attached at all (see the module docstring) - there is no
+# existing channel to store "this table has these keys" independent of its
+# rows. Rather than fabricate connector/type-system behaviour this
+# evaluator cannot have, ``_KeyedTable`` attaches the metadata to the
+# specific list OBJECT ``Table.AddKey``/``Table.ReplaceKeys``/
+# ``Table.ReplacePartitionKey`` return; the getters read it off the object
+# they are given. Metadata does NOT propagate through an unrelated
+# transform building a fresh list (Table.Sort, Table.SelectRows, ...) -
+# nothing documented claims it should, and this evaluator has no type
+# checker to justify inventing that propagation. An ordinary list is simply
+# "no keys declared" / "no partition key declared", exactly like a table
+# Table.AddKey was never called on. Verified against learn.microsoft.com's
+# own worked examples for Table.AddKey/Table.Keys/Table.ReplaceKeys (all
+# three round-trip through a plain ``Table.FromRecords`` table with no
+# connector involved, confirming this is a value-level operation, not a
+# folding/connector one) - Table.PartitionKey/Table.ReplacePartitionKey have
+# no worked example on Microsoft's site at all, so their opaque-list
+# storage is a deliberate, narrower choice: store exactly what is given,
+# interpret nothing, since no documented function is ever shown reading the
+# partition key's internal shape.
+# --------------------------------------------------------------------------
+
+
+class _KeyedTable(list[dict[str, Any]]):
+    """A table value that also carries AddKey/ReplaceKeys/
+    ReplacePartitionKey metadata. See the section banner above."""
+
+    __slots__ = ("pq_keys", "pq_partition_key")
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        super().__init__(rows)
+        self.pq_keys: list[dict[str, Any]] = []
+        self.pq_partition_key: Any = None
+
+
+def _key_spec_list(value: Any, what: str) -> list[dict[str, Any]]:
+    """``{[Columns = {...}, Primary = true/false], ...}`` - the exact shape
+    ``Table.Keys`` returns and ``Table.ReplaceKeys`` accepts back, per
+    Microsoft's own worked examples for both."""
+    specs = _require_list(value)
+    result: list[dict[str, Any]] = []
+    for item in specs:
+        record = _require_record(item)
+        if "Columns" not in record or "Primary" not in record:
+            raise EvalError(
+                f"{what}: expected a list of [Columns = ..., Primary = ...] records"
+            )
+        columns = _field_name_list(record["Columns"])
+        primary = record["Primary"]
+        if not isinstance(primary, bool):
+            raise EvalError(f"{what}: Primary must be a logical value")
+        result.append({"Columns": columns, "Primary": primary})
+    return result
+
+
+def _table_add_key(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.AddKey", args, 3)
+    rows = _require_table(args[0])
+    columns = _field_name_list(args[1])
+    is_primary = args[2]
+    if not isinstance(is_primary, bool):
+        raise EvalError("Table.AddKey: isPrimary must be a logical value")
+    result = _KeyedTable(rows)
+    if isinstance(rows, _KeyedTable):
+        result.pq_keys = list(rows.pq_keys)
+        result.pq_partition_key = rows.pq_partition_key
+    result.pq_keys.append({"Columns": columns, "Primary": is_primary})
+    return result
+
+
+def _table_keys(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.Keys", args, 1)
+    rows = _require_table(args[0])
+    if isinstance(rows, _KeyedTable):
+        return list(rows.pq_keys)
+    return []
+
+
+def _table_replace_keys(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.ReplaceKeys", args, 2)
+    rows = _require_table(args[0])
+    keys = _key_spec_list(args[1], "Table.ReplaceKeys")
+    result = _KeyedTable(rows)
+    if isinstance(rows, _KeyedTable):
+        result.pq_partition_key = rows.pq_partition_key
+    result.pq_keys = keys
+    return result
+
+
+def _table_partition_key(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.PartitionKey", args, 1)
+    rows = _require_table(args[0])
+    if isinstance(rows, _KeyedTable):
+        return rows.pq_partition_key
+    return None
+
+
+def _table_replace_partition_key(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Table.ReplacePartitionKey", args, 2)
+    rows = _require_table(args[0])
+    partition_key = args[1]
+    if partition_key is not None and not isinstance(partition_key, list):
+        raise EvalError(
+            "Table.ReplacePartitionKey: partitionKey must be a list or null"
+        )
+    result = _KeyedTable(rows)
+    if isinstance(rows, _KeyedTable):
+        result.pq_keys = list(rows.pq_keys)
+    result.pq_partition_key = partition_key
+    return result
+
+
+def _table_from_partitions(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.FromPartitions(partitionColumn, partitions, partitionColumnType?)``.
+
+    ``partitions`` is a list of ``{value, table}`` pairs; each pair's rows
+    are flattened into the result with ``partitionColumn`` = that pair's
+    value added to every row. Nesting (a partition's own table built by a
+    recursive ``Table.FromPartitions`` call) needs no special handling here
+    - it is just an M-level function call producing an ordinary table by
+    the time this function sees it. Verified against Microsoft's own
+    3-level nested worked example (Year -> Month -> Day), which this
+    reasoning reproduces exactly.
+    """
+    _arity("Table.FromPartitions", args, 2, 3)
+    column = _require_str(args[0])
+    partitions = _require_list(args[1])
+    if len(args) == 3 and args[2] is not None:
+        from ._type import _MType
+
+        if not isinstance(args[2], _MType):
+            raise EvalError(
+                "Table.FromPartitions: expected a type value for "
+                f"partitionColumnType, got {_type_name(args[2])}"
+            )
+        # "The type of the column defaults to any, but can be specified" -
+        # a type ASCRIPTION, with no worked example showing it coerce
+        # values (unlike Table.AddColumn's 4th argument, documented
+        # elsewhere as an active TransformColumnTypes-style conversion).
+        # Validated, not applied - inventing a coercion this page never
+        # describes would be worse than a no-op.
+    result: list[dict[str, Any]] = []
+    for entry in partitions:
+        pair = _require_list(entry)
+        if len(pair) != 2:
+            raise EvalError(
+                "Table.FromPartitions: each partition must be a "
+                "{value, table} pair"
+            )
+        value, subtable = pair
+        for row in _require_table(subtable):
+            if column in row:
+                raise EvalError(
+                    f"Table.FromPartitions: column already exists: {column}"
+                )
+            new_row = dict(row)
+            new_row[column] = value
+            result.append(new_row)
+    return result
+
+
+def _table_partition(args: list[Any], ctx: _Ctx) -> Any:
+    """``Table.Partition(table, column, groups, hash)`` - splits ``table``
+    into ``groups`` tables by ``hash(row[column]) mod groups``. Verified
+    against Microsoft's own worked example (4 rows, 2 groups, identity
+    hash)."""
+    _arity("Table.Partition", args, 4)
+    table = _require_table(args[0])
+    column = _require_str(args[1])
+    groups = _require_int(args[2])
+    if groups < 1:
+        raise EvalError("Table.Partition: groups must be at least 1")
+    hash_fn = args[3]
+    buckets: list[list[dict[str, Any]]] = [[] for _ in range(groups)]
+    for row in table:
+        if column not in row:
+            raise EvalError(f"Table.Partition: no such column: {column}")
+        hash_value = _require_int(ctx.invoke(hash_fn, [row[column]], ctx))
+        buckets[hash_value % groups].append(row)
+    return buckets
+
+
+def _table_approximate_row_count(args: list[Any], ctx: _Ctx) -> Any:
+    """Refused - not approximated.
+
+    Microsoft's own page: "Returns the approximate number of rows in the
+    table, or an error if the data source doesn't support approximation."
+    Approximation is a stated DATA-SOURCE capability (the page's own
+    example is a SQL cardinality estimate). An in-memory, connector-less
+    table has no such capability by construction, so the documented answer
+    for this evaluator is the error branch, not ``Table.RowCount``'s exact
+    count silently relabeled as an approximate one.
+    """
+    _arity("Table.ApproximateRowCount", args, 1)
+    raise UnsupportedError(
+        "Table.ApproximateRowCount: the underlying data source does not "
+        "support approximation (pqtools has no connector to ask, and "
+        "Microsoft's own docs define exactly this case as an error - "
+        "returning Table.RowCount's exact count under an 'approximate' "
+        "label would be the plausible-wrong-answer this package refuses "
+        "to ship)"
+    )
+
+
+def _table_partition_values(args: list[Any], ctx: _Ctx) -> Any:
+    """Refused - not approximated.
+
+    Microsoft's own page: "Returns information about how a table is
+    partitioned. A table is returned where each column is a partition
+    column in the original table." This describes a data SOURCE's physical
+    partitioning scheme (e.g. a partitioned SQL/Delta table) - it is a
+    different concept from this file's own ``Table.Partition`` (a pure,
+    in-memory hash-split with no partition metadata attached to its output)
+    or ``Table.ReplacePartitionKey`` (an opaque, uninterpreted value). There
+    is no connector here to report a physical partitioning scheme from.
+    """
+    _arity("Table.PartitionValues", args, 1)
+    raise UnsupportedError(
+        "Table.PartitionValues: reads a data source's physical partitioning "
+        "scheme, which this evaluator's in-memory tables do not have and no "
+        "connector here could ever produce"
+    )
+
+
+def _table_stop_folding(args: list[Any], ctx: _Ctx) -> Any:
+    # "Prevents any downstream operations from being run against the
+    # original source" - this evaluator never folds anything to begin with
+    # (always eager, no connector to fold work into), so "folding stops
+    # here" is already, vacuously true for every table value it holds.
+    # Identity is the honest answer, not an approximation of one - the
+    # same argument Table.Buffer makes above for the same reason. Like
+    # Table.Buffer, this deliberately does NOT preserve _KeyedTable
+    # metadata (keys/partition key never propagate through an unrelated
+    # transform - see the class docstring above).
+    _arity("Table.StopFolding", args, 1)
+    return list(_require_table(args[0]))
+
+
+BUILTINS.update(
+    {
+        "Table.FindText": _table_find_text,
+        "Table.PrefixColumns": _table_prefix_columns,
+        "Table.ColumnsOfType": _table_columns_of_type,
+        "Table.CombineColumns": _table_combine_columns,
+        "Table.CombineColumnsToRecord": _table_combine_columns_to_record,
+        "Table.Split": _table_split,
+        "Table.TransformRows": _table_transform_rows,
+        "Table.AddKey": _table_add_key,
+        "Table.Keys": _table_keys,
+        "Table.ReplaceKeys": _table_replace_keys,
+        "Table.PartitionKey": _table_partition_key,
+        "Table.ReplacePartitionKey": _table_replace_partition_key,
+        "Table.FromPartitions": _table_from_partitions,
+        "Table.Partition": _table_partition,
+        "Table.ApproximateRowCount": _table_approximate_row_count,
+        "Table.PartitionValues": _table_partition_values,
+        "Table.StopFolding": _table_stop_folding,
     }
 )

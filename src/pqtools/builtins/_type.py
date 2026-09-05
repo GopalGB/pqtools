@@ -71,11 +71,13 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _field_name_list,
     _format_number,
     _m_equal,
     _parse_numeric_literal,
     _require_int,
     _require_list,
+    _require_number,
     _require_record,
     _require_str,
     _require_table,
@@ -709,6 +711,214 @@ def _type_is(args: list[Any], ctx: _Ctx) -> Any:
     return False
 
 
+# --------------------------------------------------------------------------
+# Type.IsNullable / Type.NonNullable
+#
+# The M language spec ("Nullable types", m-spec-types) makes `type nullable
+# T` an ABSTRACT type - "no value can be directly of abstract type" - and
+# this evaluator's `_eval_type_primary` (evaluate.py) already refuses to
+# even construct one: writing `type nullable text` raises UnsupportedError
+# at parse time, because that grammar shape "wraps something other than
+# PrimitiveType" (see this module's own docstring). So every `_MType` these
+# two functions can ever actually receive is one of the constructible kinds
+# below - never the nullable wrapper itself.
+# --------------------------------------------------------------------------
+
+
+def _type_is_nullable(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Type.IsNullable", args, 1)
+    type_value = args[0]
+    if not isinstance(type_value, _MType):
+        raise EvalError(
+            f"Type.IsNullable: expected a type value, got {_type_name(type_value)}"
+        )
+    if type_value.kind == "any":
+        # The spec states `type nullable any` is equivalent to `any`, but
+        # gives no worked example of what Type.IsNullable itself returns
+        # for `any` specifically, and this evaluator's _MType carries no
+        # nullable flag to check instead of guessing - so this one shape is
+        # refused rather than assumed either way.
+        raise UnsupportedError(
+            "Type.IsNullable(type any): ambiguous from the M language spec "
+            "(`type nullable any` is stated equivalent to `any`, but no "
+            "worked example gives IsNullable's verdict for `any` itself) "
+            "and this evaluator's type values carry no nullable flag to "
+            "check instead of guessing"
+        )
+    # Every other constructible type here (a primitive keyword type, a
+    # nominal number subtype, or a `type table [...]`) is, by construction,
+    # never the nullable-wrapper type - it is exactly the shape the docs'
+    # own Example 1 covers (`Type.IsNullable(type number)` -> `false`).
+    return False
+
+
+def _type_non_nullable(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Type.NonNullable", args, 1)
+    type_value = args[0]
+    if not isinstance(type_value, _MType):
+        raise EvalError(
+            f"Type.NonNullable: expected a type value, got {_type_name(type_value)}"
+        )
+    if type_value.kind == "any":
+        # Spec equivalence: `Type.NonNullable(type any)` == `type
+        # anynonnull` - a type this evaluator does not model at all (it is
+        # not in _PRIMITIVE_TYPES). Returning `type any` unchanged would be
+        # silently wrong, not merely incomplete.
+        raise UnsupportedError(
+            "Type.NonNullable(type any): the M language spec states this "
+            "is equivalent to `type anynonnull`, a type this evaluator "
+            "does not model"
+        )
+    # Every other constructible type here is already non-nullable (the
+    # `type nullable T` wrapper cannot be constructed at all - see
+    # Type.IsNullable above), so stripping nullability is a no-op, per the
+    # spec's own idempotence rule: `Type.NonNullable(Type.NonNullable(type
+    # T)) == Type.NonNullable(type T)`.
+    return type_value
+
+
+# --------------------------------------------------------------------------
+# Value.Metadata / Value.RemoveMetadata / Value.ReplaceMetadata /
+# Value.Optimize / Value.NativeQuery
+#
+# `meta` (the M operator that attaches metadata to a value) is unimplemented
+# here - evaluate.py's `_SIMPLE_UNSUPPORTED` table refuses `MetadataExpression`
+# outright - and Value.ReplaceMetadata (the only OTHER way to attach
+# metadata) is refused below. So no value this evaluator ever produces can
+# carry attached metadata, which makes Value.Metadata/RemoveMetadata fully,
+# honestly answerable rather than approximated: see each function for the
+# citation.
+# --------------------------------------------------------------------------
+
+
+def _value_metadata(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.Metadata", args, 1)
+    # The docs' own Value.RemoveMetadata Example 1 proves the answer for a
+    # value with no metadata attached: stripping metadata and then asking
+    # for it back returns the empty record `[]`. Every value here is in
+    # that state (see the section note above), always.
+    return {}
+
+
+def _value_remove_metadata(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.RemoveMetadata", args, 1, 2)
+    if len(args) == 2 and args[1] is not None:
+        _field_name_list(args[1])  # validated; nothing to remove either way
+    # Every value already carries no metadata (see the section note above),
+    # so "strip metadata" is a no-op that returns the value unchanged.
+    return args[0]
+
+
+def _value_replace_metadata(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.ReplaceMetadata", args, 2)
+    raise UnsupportedError(
+        "Value.ReplaceMetadata: attaching metadata that a later "
+        "Value.Metadata call could read back requires a value wrapper this "
+        "evaluator's flat data model does not have - plain int/text/list/"
+        "record values carry no side channel for it, so returning the "
+        "value unchanged would make every later Value.Metadata call lie "
+        "about it"
+    )
+
+
+def _value_optimize(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.Optimize", args, 1)
+    # "When used within Value.Expression, ... indicates the optimized
+    # expression should be returned. Otherwise, value is passed through
+    # with no effect." (docs, verbatim). Value.Expression is not
+    # implemented here (this evaluator tracks no AST/expression provenance
+    # for a runtime value), so the "within Value.Expression" trigger can
+    # never fire - the "otherwise" branch is the only behaviour this
+    # evaluator can ever exercise, and it is a plain pass-through.
+    return args[0]
+
+
+def _value_native_query(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.NativeQuery", args, 2, 4)
+    raise UnsupportedError(
+        "Value.NativeQuery: runs a target-specific query (e.g. T-SQL) "
+        "against a live connection to `target`. pqtools evaluates M "
+        "locally and opens no such connection"
+    )
+
+
+# --------------------------------------------------------------------------
+# Value.As / Value.NullableEquals / Value.Add / Value.Subtract /
+# Value.Multiply / Value.Divide
+# --------------------------------------------------------------------------
+
+
+def _value_as(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.As", args, 2)
+    value, type_value = args[0], args[1]
+    if not isinstance(type_value, _MType):
+        raise EvalError(
+            f"Value.As: expected a type value, got {_type_name(type_value)}"
+        )
+    if not _matches(value, type_value):
+        raise EvalError(
+            f"Value.As: the value of type {_type_name(value)} is not "
+            f"compatible with {type_value.display}"
+        )
+    return value
+
+
+def _value_nullable_equals(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Value.NullableEquals", args, 2, 3)
+    if len(args) == 3 and args[2] is not None:
+        raise UnsupportedError("Value.NullableEquals with a precision argument")
+    if args[0] is None or args[1] is None:
+        return None
+    return _m_equal(args[0], args[1])
+
+
+def _make_value_arithmetic(
+    name: str, apply: Callable[[int | float, int | float], int | float]
+) -> Callable[[list[Any], "_Ctx"], Any]:
+    # Value.Add/Subtract/Multiply/Divide all accept an optional `precision`
+    # (Precision.Double by default, per each function's own docs). pqtools
+    # has one numeric representation (Python int/float - see
+    # _shared._type_name) and does not model Precision.Double vs
+    # Precision.Decimal separately, so a non-null precision is refused
+    # rather than silently ignored. This mirrors the `+`/`-`/`*`/`/`
+    # operators' own numeric-only restriction (evaluate.py's
+    # `_eval_arithmetic`) exactly, so Value.Add etc. never accept an
+    # operand the bare operator would refuse either.
+    def _fn(args: list[Any], ctx: _Ctx) -> Any:
+        _arity(name, args, 2, 3)
+        if len(args) == 3 and args[2] is not None:
+            raise UnsupportedError(f"{name} with a precision argument")
+        left = _require_number(args[0])
+        right = _require_number(args[1])
+        return apply(left, right)
+
+    return _fn
+
+
+def _add(left: int | float, right: int | float) -> int | float:
+    return left + right
+
+
+def _subtract(left: int | float, right: int | float) -> int | float:
+    return left - right
+
+
+def _multiply(left: int | float, right: int | float) -> int | float:
+    return left * right
+
+
+def _divide(left: int | float, right: int | float) -> int | float:
+    if right == 0:
+        raise EvalError("division by zero")
+    return left / right
+
+
+_value_add = _make_value_arithmetic("Value.Add", _add)
+_value_subtract = _make_value_arithmetic("Value.Subtract", _subtract)
+_value_multiply = _make_value_arithmetic("Value.Multiply", _multiply)
+_value_divide = _make_value_arithmetic("Value.Divide", _divide)
+
+
 # The M-visible names this module owns: the nominal/alias type identifiers
 # (referenced as plain values, never invoked - see evaluate.py's
 # _eval_identifier_expression, which returns whatever BUILTINS.get(name)
@@ -725,5 +935,18 @@ BUILTINS: dict[str, Any] = {
     "Value.Is": _value_is,
     "Value.Equals": _value_equals,
     "Value.Compare": _value_compare,
+    "Value.As": _value_as,
+    "Value.NullableEquals": _value_nullable_equals,
+    "Value.Add": _value_add,
+    "Value.Subtract": _value_subtract,
+    "Value.Multiply": _value_multiply,
+    "Value.Divide": _value_divide,
+    "Value.Metadata": _value_metadata,
+    "Value.RemoveMetadata": _value_remove_metadata,
+    "Value.ReplaceMetadata": _value_replace_metadata,
+    "Value.Optimize": _value_optimize,
+    "Value.NativeQuery": _value_native_query,
     "Type.Is": _type_is,
+    "Type.IsNullable": _type_is_nullable,
+    "Type.NonNullable": _type_non_nullable,
 }
