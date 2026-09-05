@@ -397,3 +397,22 @@ def test_a_same_origin_redirect_still_authenticates(redirector: Any) -> None:
     )
     assert rows == [{"id": 9}]
     assert redirector.landed.get("Authorization") == "Bearer dummy-token"
+
+
+def test_a_relative_next_link_resolves_against_where_the_page_LANDED(
+    redirector: Any, feed: Any
+) -> None:
+    """`_http_fetch` returned bytes only, so the redirect was invisible.
+
+    A page fetched from `/start` but served after a 302 to `/v2/page1`
+    carries a relative next link meant to resolve against `/v2/`. Resolving
+    it against the requested URL builds the wrong path. It fails loudly with
+    a 404 rather than silently, which is why this was LOW - but a wrong URL
+    is still a wrong URL.
+    """
+    feed.pages["/v2/page1"] = _page([{"id": 1}], "page2")
+    feed.pages["/v2/page2"] = _page([{"id": 2}])
+    redirector.target = f"{feed.base}/v2/page1"
+    rows = evaluate(f'OData.Feed("{redirector.base}/start")', io=NET)
+    assert rows == [{"id": 1}, {"id": 2}]
+    assert feed.hits == ["/v2/page1", "/v2/page2"]

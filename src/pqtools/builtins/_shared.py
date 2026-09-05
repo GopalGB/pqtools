@@ -201,6 +201,18 @@ class _DeferredRows:
             self._rows = self._fetch()
         return self._rows
 
+    def read(self) -> list[dict[str, Any]]:
+        """Run the query and return its rows, caching them.
+
+        `evaluate()` is a public API, so a library caller can be handed one
+        of these in a `Sql.Database` navigation row's `Data` field. Without
+        a public way to read it they would face a value that raises on
+        `len`, `iter`, `==` and `bool` and has no documented alternative.
+        This is that alternative; the CLI refuses instead, because printing
+        a navigation table would run one query per catalog entry.
+        """
+        return self._force()
+
     def __repr__(self) -> str:
         state = "unread" if self._rows is None else f"{len(self._rows)} row(s)"
         return f"<deferred {self._what}: {state}>"
@@ -354,7 +366,8 @@ def _from_text(
 
 
 def _require_table(value: Any) -> list[dict[str, Any]]:
-    rows = _require_list(_force_rows(value))
+    # `_require_list` forces already; doing it here too was redundant.
+    rows = _require_list(value)
     for row in rows:
         if not isinstance(row, dict):
             raise EvalError("expected a table (a list of records)")

@@ -1,5 +1,6 @@
 """Typed offline tooling for Power Query M source."""
 
+from .builtins._shared import _DeferredRows as DeferredTable
 from .containers import (
     ContainerError,
     QuerySection,
@@ -27,6 +28,7 @@ from .evaluate import EvalError, UnsupportedError, evaluate
 
 __all__ = [
     "AdapterError",
+    "DeferredTable",
     "EvalError",
     "ContainerError",
     "Diagnostic",

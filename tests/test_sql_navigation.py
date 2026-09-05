@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from pqtools import EvalError, evaluate
+from pqtools.core import MQueryError
 from pqtools.io import IOPolicy
 
 ALLOW_DB = IOPolicy(allow_db=True)
@@ -270,3 +271,67 @@ def test_selecting_an_item_through_the_cli_still_prints_its_rows(
     )
     assert code == 0, err
     assert '"Note": "keep"' in out
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        {"Data": "TOP"},
+        {"nav": [{"Item": "Orders", "Data": "TOP"}]},
+        {"grouped": {"inner": {"Data": "TOP"}}},
+        {"deep": [[{"Data": "TOP"}]]},
+    ],
+)
+def test_csv_refuses_an_unread_table_at_any_depth(shape: dict[str, Any]) -> None:
+    """The first version of this guard looked only at top-level cells.
+
+    `Table.Group(Sql.Database(...), {"Schema"}, {{"all", each _}})` nests the
+    navigation rows inside a cell, so the deferred value went straight to
+    `csv.DictWriter`, which `str()`s it into `<deferred ...>` - a table
+    nobody read, printed where a value somebody measured would go. The
+    comment above the check claimed that case was closed while the code did
+    not do it. The JSON path never had the bug, because `json.dumps` recurses.
+    """
+    import json as _json
+
+    from pqtools.builtins._shared import _DeferredRows
+    from pqtools.cli import _print_csv
+
+    deferred = _DeferredRows(lambda: [{"a": 1}], "Sql.Database: dbo.Orders")
+    row = _json.loads(_json.dumps(shape).replace('"TOP"', "null"))
+
+    def place(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {k: (deferred if v is None else place(v)) for k, v in node.items()}
+        if isinstance(node, list):
+            return [place(item) for item in node]
+        return node
+
+    with pytest.raises(MQueryError, match="has not been read"):
+        _print_csv([place(row)])
+
+
+def test_csv_still_prints_ordinary_rows() -> None:
+    # The recursive check must not refuse data that is merely nested.
+    from pqtools.cli import _print_csv
+
+    _print_csv([{"a": 1, "b": {"nested": [1, 2]}}])
+
+
+def test_a_library_caller_has_a_public_way_to_read_a_deferred_table(
+    odbc: dict[str, Any],
+) -> None:
+    """`evaluate()` is public, so the deferred value reaches library callers.
+
+    It raises on `len`, `iter`, `==` and `bool` by design. Without a public
+    accessor that design is a dead end for anyone not using the CLI.
+    """
+    from pqtools import DeferredTable
+
+    rows = evaluate('Sql.Database("srv", "db")', io=ALLOW_DB)
+    data = next(r["Data"] for r in rows if r["Item"] == "Wanted")
+    assert isinstance(data, DeferredTable)
+    assert data.read() == [{"Id": 1, "Note": "keep"}]
+    # Reading twice runs the query once.
+    assert data.read() == [{"Id": 1, "Note": "keep"}]
+    assert len(_table_reads(odbc)) == 1

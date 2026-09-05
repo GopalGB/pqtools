@@ -298,3 +298,26 @@ def test_a_connection_property_NAME_cannot_inject_a_keyword(
 def test_an_ordinary_property_name_still_works(odbc: list[str]) -> None:
     evaluate('Odbc.Query([Driver = "d", UID = "u"], "select 1")', io=ALLOW_DB)
     assert _parse_connection_string(odbc[0]) == {"Driver": "d", "UID": "u"}
+
+
+def test_env_credentials_with_an_explicit_connection_string_are_refused(
+    odbc: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """They were read and then silently dropped.
+
+    `UID`/`PWD` are only appended in the branch that BUILDS the connection
+    string, so with an explicit `ConnectionString` the environment
+    credentials went nowhere - and the caller connected as somebody else
+    without being told. `MultiSubnetFailover`, three lines away and in the
+    identical position, was already refused by name.
+    """
+    monkeypatch.setenv("PQTOOLS_SQL_USER", USER)
+    monkeypatch.setenv("PQTOOLS_SQL_PASSWORD", PASSWORD)
+    with pytest.raises(UnsupportedError, match="cannot be applied"):
+        evaluate('Sql.Database("s", "d", [ConnectionString = "DSN=x"])', io=ALLOW_DB)
+    assert odbc == []
+
+
+def test_an_explicit_connection_string_alone_still_works(odbc: list[str]) -> None:
+    evaluate('Sql.Database("s", "d", [ConnectionString = "DSN=x"])', io=ALLOW_DB)
+    assert odbc == ["DSN=x"]

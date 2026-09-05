@@ -179,19 +179,37 @@ def _load_binding(path: Path) -> Any:
         raise MQueryError(f"{path}: invalid JSON") from error
 
 
+def _reject_deferred(value: Any, column: str) -> None:
+    """Refuse an unread table anywhere inside a cell, at any depth.
+
+    The first version of this check looked at top-level cells only, so a
+    deferred value one level down - `Table.Group(Sql.Database(...), ...)`
+    nests the navigation rows inside a cell - was handed to
+    `csv.DictWriter`, which `str()`s it into `<deferred ...>`. That is
+    precisely the "a table nobody read is indistinguishable from a value
+    somebody measured" case the check was written to stop, and the comment
+    said so while the code did not do it. The JSON path never had the bug
+    because `json.dumps(default=...)` recurses on its own.
+    """
+    if isinstance(value, _DeferredRows):
+        raise MQueryError(
+            f"column {column!r} holds a table that has not been read "
+            f"({value!r}); --format csv cannot represent it. Select the one "
+            'you want first, for example Source{[Schema="dbo", '
+            'Item="Orders"]}[Data]'
+        )
+    if isinstance(value, dict):
+        for item in value.values():
+            _reject_deferred(item, column)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_deferred(item, column)
+
+
 def _print_csv(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         for column, cell in row.items():
-            # csv.DictWriter would str() this into a data cell, so a table
-            # nobody read would be indistinguishable from a value somebody
-            # measured. Same refusal as the JSON path.
-            if isinstance(cell, _DeferredRows):
-                raise MQueryError(
-                    f"column {column!r} holds a table that has not been read "
-                    f"({cell!r}); --format csv cannot represent it. Select "
-                    "the one you want first, for example "
-                    'Source{[Schema="dbo", Item="Orders"]}[Data]'
-                )
+            _reject_deferred(cell, column)
     fieldnames: list[str] = list(rows[0].keys()) if rows else []
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()

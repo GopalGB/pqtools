@@ -212,6 +212,14 @@ def _request_timeout(
 
 
 def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> bytes:
+    """The bytes. Callers that must resolve a relative link want
+    `_http_fetch_resolved`, which also reports where the response came from."""
+    return _http_fetch_resolved(url, options, ctx, what)[0]
+
+
+def _http_fetch_resolved(
+    url: str, options: dict[str, Any], ctx: _Ctx, what: str
+) -> tuple[bytes, str]:
     policy = _policy(ctx)
     url = _build_url(url, options, what)
     policy.check_net(url, what=what)
@@ -251,6 +259,11 @@ def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> byte
     try:
         with opener.open(request, timeout=timeout) as response:  # noqa: S310
             data: bytes = response.read(_MAX_RESPONSE_BYTES + 1)
+            # Where the bytes actually came from. A relative `@odata.nextLink`
+            # has to resolve against THIS, not against the URL that was
+            # requested - a page reached by a 302 to a different path would
+            # otherwise produce a next URL built on the old one.
+            final_url: str = response.geturl() or url
     except urllib.error.HTTPError as error:
         raise EvalError(f"{what}: HTTP {error.code} from {url}") from error
     except urllib.error.URLError as error:
@@ -259,7 +272,7 @@ def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> byte
         raise EvalError(
             f"{what}: response from {url} exceeds the {_MAX_RESPONSE_BYTES}-byte limit"
         )
-    return data
+    return data, final_url
 
 
 def _web_contents(args: list[Any], ctx: _Ctx) -> Any:
@@ -382,7 +395,9 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
             )
         seen.add(current)
         ctx.budget.tick()
-        raw = _http_fetch(current, dict(page_options), ctx, "OData.Feed")
+        raw, landed = _http_fetch_resolved(
+            current, dict(page_options), ctx, "OData.Feed"
+        )
 
         # `_http_fetch` caps ONE response. Following up to _MAX_ODATA_PAGES of
         # them turned that into a per-page cap, so the total a feed could hand
@@ -415,7 +430,7 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
             raise EvalError("OData.Feed: 'value' is not an array")
         rows.extend(row if isinstance(row, dict) else {"Value": row} for row in page)
 
-        nxt = _odata_next_link(document, current)
+        nxt = _odata_next_link(document, landed)
         if nxt is None:
             return rows
         current = nxt
@@ -761,6 +776,17 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
             "property, so it cannot be combined with an explicit "
             "ConnectionString; put MultiSubnetFailover=Yes and "
             "ApplicationIntent=ReadOnly in that string instead"
+        )
+    elif user or password:
+        # Same shape as the refusal above, and it was missing: UID/PWD are
+        # only appended in the branch that BUILDS the string, so with an
+        # explicit ConnectionString the environment credentials were read
+        # and then silently dropped. A caller who set PQTOOLS_SQL_PASSWORD
+        # would have connected as somebody else without being told.
+        raise UnsupportedError(
+            "Sql.Database: PQTOOLS_SQL_USER/PQTOOLS_SQL_PASSWORD are set but "
+            "cannot be applied to an explicit ConnectionString; put UID and "
+            "PWD in that string, or unset the variables"
         )
 
     connection = _odbc_connect(pyodbc, str(connection_string), connect_timeout)

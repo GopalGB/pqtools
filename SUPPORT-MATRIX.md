@@ -25,9 +25,15 @@ the three things a caller depends on.
 | Enum values verified against the reference | 73 | The actual numbers, from `tests/fixtures/m-enum-values.json`. |
 
 **Semantic compatibility is not measured, and is not claimed.** The closest
-evidence is Microsoft's own worked examples: of 786 harvested examples, 165
-print an output that is itself evaluable M, and **141 of those 165 reproduce
-their documented value exactly**. The remaining 24 are individually accounted
+evidence is Microsoft's own worked examples:
+
+| Worked examples | Count |
+|---|---|
+| Harvested from the reference | 786 |
+| ... whose printed Output is itself evaluable M | 165 |
+| ... of those, reproducing their documented value exactly | 141 |
+
+**141 of 165** is the closest thing to a semantic measure this package has. The remaining 24 are individually accounted
 for in `tests/test_doc_examples.py` - 3 recorded divergences and 21 examples
 that cannot be compared here, each with its reason. The other 621 examples have
 no printed output to check against, so they prove only that the expression runs.
@@ -59,6 +65,20 @@ A query's `Source` step names where the data comes from. These run here.
 
 **No query folding.** `Table.SelectRows` after a database source filters
 locally; it does not become a `WHERE` clause. Same rows, more bytes.
+
+**`Sql.Database` navigation is lazy, and the laziness is visible.** Each row
+of the navigation table carries a `Data` field that is a `pqtools.DeferredTable`,
+not a list: the `SELECT *` runs only when that row is selected, so reading one
+table does not read every other table in the catalog.
+
+- In M, selecting it reads it: `Source{[Schema="dbo", Item="Orders"]}[Data]`.
+- From Python, `evaluate()` hands you the object; call `.read()` on it.
+- Every other way of touching it - `len`, `iter`, `==`, `bool` - raises a
+  typed error rather than answering. A lazy value that returned "empty" on a
+  path nobody anticipated would be the silent wrong answer this package
+  exists to refuse.
+- `pq eval` refuses to print a navigation table for the same reason: printing
+  it would mean running one query per catalog entry. Select the item first.
 
 ### Connector options, honoured vs refused
 
