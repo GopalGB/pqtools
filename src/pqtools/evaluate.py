@@ -32,6 +32,7 @@ from .builtins import BUILTINS
 from .builtins._shared import (
     EvalError,
     UnsupportedError,
+    _force_rows,
     _m_equal,
     _numeric_quotient,
     _parse_numeric_literal,
@@ -995,7 +996,10 @@ def _record_field_access(base: Any, name: str, optional: bool) -> Any:
             return None
         raise EvalError(f"cannot select a field from a {_type_name(base)} value")
     if name in base:
-        return base[name]
+        # `Source{[Schema=..., Item=...]}[Data]` is where SQL navigation
+        # finally names the one table it wants, so it is where a deferred
+        # read is triggered. Every other value passes through untouched.
+        return _force_rows(base[name])
     if optional:
         return None
     raise EvalError(f"field not found: {name}")

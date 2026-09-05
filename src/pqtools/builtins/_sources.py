@@ -48,6 +48,7 @@ from ._shared import (
     EvalError,
     UnsupportedError,
     _arity,
+    _DeferredRows,
     _require_record,
     _require_str,
     _type_name,
@@ -155,8 +156,10 @@ class _PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _request_timeout(raw: Any, default: float, what: str) -> float:
-    """The documented ``Timeout`` option, which is a DURATION.
+def _request_timeout(
+    raw: Any, default: float, what: str, option: str = "Timeout"
+) -> float:
+    """A documented timeout option, which is a DURATION.
 
     "Specifying this value as a duration will change the timeout for an HTTP
     request" - web-contents, verbatim. `float()` on a `timedelta` raises
@@ -171,11 +174,11 @@ def _request_timeout(raw: Any, default: float, what: str) -> float:
     elif isinstance(raw, bool) or not isinstance(raw, (int, float)):
         # A number is accepted because it is unambiguous and cheap to allow;
         # anything else is named rather than coerced.
-        raise EvalError(f"{what}: Timeout must be a duration, got {_type_name(raw)}")
+        raise EvalError(f"{what}: {option} must be a duration, got {_type_name(raw)}")
     else:
         seconds = float(raw)
     if seconds <= 0:
-        raise EvalError(f"{what}: Timeout must be positive, got {seconds}")
+        raise EvalError(f"{what}: {option} must be positive, got {seconds}")
     return seconds
 
 
@@ -231,12 +234,78 @@ def _web_contents(args: list[Any], ctx: _Ctx) -> Any:
     return _http_fetch(url, options, ctx, "Web.Contents")
 
 
+# A server decides how many pages a feed has, so the ceiling is ours, not
+# theirs. 200 pages of the documented 256 MB-per-response limit is already
+# far past any query a person is waiting on.
+_MAX_ODATA_PAGES = 200
+
+
+def _odata_document(raw: bytes, url: str) -> Any:
+    """Decode and parse one OData response, with typed errors throughout.
+
+    A 200 does not promise well-formed JSON. Letting UnicodeDecodeError or
+    JSONDecodeError out raises a bare Python exception through the evaluator,
+    which the CLI prints as a traceback - the one shape `MQueryError` exists
+    to prevent. Both become an EvalError naming the endpoint, so the reader
+    learns which URL lied about its content type.
+    """
+    try:
+        text = raw.decode("utf-8-sig", errors="strict").lstrip()
+    except UnicodeDecodeError as error:
+        raise EvalError(
+            f"OData.Feed: {url} returned bytes that are not valid UTF-8 "
+            f"({error.reason} at byte {error.start})"
+        ) from error
+    if text.startswith("<"):
+        raise UnsupportedError(
+            "OData.Feed: this endpoint returned Atom/XML; only the JSON "
+            "representation is read. Request JSON with an Accept header."
+        )
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as error:
+        raise EvalError(
+            f"OData.Feed: {url} did not return valid JSON ({error.msg} at "
+            f"line {error.lineno} column {error.colno})"
+        ) from error
+
+
+def _odata_next_link(document: Any, current: str) -> str | None:
+    """The absolute URL of the next page, or None when this was the last.
+
+    v4 spells it `@odata.nextLink`; v3 minimal-metadata spells it
+    `odata.nextLink`. Both may be RELATIVE to the page that carried them,
+    which is why this resolves rather than using the value as given.
+    """
+    if not isinstance(document, dict):
+        return None
+    for key in ("@odata.nextLink", "odata.nextLink"):
+        if key not in document:
+            continue
+        link = document[key]
+        if not isinstance(link, str) or not link.strip():
+            # Refusing beats returning page one as if it were the whole feed.
+            raise EvalError(
+                f"OData.Feed: {current} carried a {key} that is not a usable "
+                f"URL ({link!r}), so the feed cannot be read completely"
+            )
+        return urllib.parse.urljoin(current, link.strip())
+    return None
+
+
 def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
-    """``OData.Feed(url, headers, options)`` - the ``value`` array as a table.
+    """``OData.Feed(url, headers, options)`` - the whole feed, as a table.
 
     Only the JSON (v4) representation is read. An Atom/XML feed raises rather
     than being half-parsed, because a partially-understood feed is the shape
     of a wrong answer.
+
+    Server-driven paging is FOLLOWED. It used to be ignored: one fetch, the
+    first page's `value` returned, and `@odata.nextLink` dropped - so a
+    two-page feed silently produced half its rows, which is the same shape of
+    wrong answer the Atom refusal above exists to avoid. Every page goes back
+    through `_http_fetch`, so the network policy is re-checked per request and
+    per redirect rather than once for the first URL.
     """
     _arity("OData.Feed", args, 1, 3)
     url = _require_str(args[0])
@@ -253,40 +322,54 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
     headers.setdefault("Accept", "application/json")
     options["Headers"] = headers
 
-    raw = _http_fetch(url, options, ctx, "OData.Feed")
-    # A 200 does not promise well-formed JSON. Letting UnicodeDecodeError or
-    # JSONDecodeError out raises a bare Python exception through the
-    # evaluator, which the CLI prints as a traceback - the one shape
-    # `MQueryError` exists to prevent. Both become an EvalError naming the
-    # endpoint, so the reader learns which URL lied about its content type.
-    try:
-        text = raw.decode("utf-8-sig", errors="strict").lstrip()
-    except UnicodeDecodeError as error:
-        raise EvalError(
-            f"OData.Feed: {url} returned bytes that are not valid UTF-8 "
-            f"({error.reason} at byte {error.start})"
-        ) from error
-    if text.startswith("<"):
-        raise UnsupportedError(
-            "OData.Feed: this endpoint returned Atom/XML; only the JSON "
-            "representation is read. Request JSON with an Accept header."
+    rows: list[Any] = []
+    seen: set[str] = set()
+    current = url
+    # Page one carries the caller's options; later pages get an ABSOLUTE URL
+    # from the server, so RelativePath/Query must not be applied again -
+    # only the headers (which may carry auth) and the timeout travel on.
+    page_options = dict(options)
+    for _ in range(_MAX_ODATA_PAGES):
+        if current in seen:
+            raise EvalError(
+                f"OData.Feed: {current} was served again as its own next "
+                "page; the feed's paging links form a cycle"
+            )
+        seen.add(current)
+        ctx.budget.tick()
+        document = _odata_document(
+            _http_fetch(current, dict(page_options), ctx, "OData.Feed"), current
         )
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError as error:
-        raise EvalError(
-            f"OData.Feed: {url} did not return valid JSON ({error.msg} at "
-            f"line {error.lineno} column {error.colno})"
-        ) from error
-    if isinstance(document, dict) and "value" in document:
-        rows = document["value"]
-    elif isinstance(document, list):
-        rows = document
-    else:
-        return document
-    if not isinstance(rows, list):
-        raise EvalError("OData.Feed: 'value' is not an array")
-    return [row if isinstance(row, dict) else {"Value": row} for row in rows]
+
+        if isinstance(document, dict) and "value" in document:
+            page = document["value"]
+        elif isinstance(document, list):
+            page = document
+        elif rows or len(seen) > 1:
+            raise EvalError(
+                f"OData.Feed: {current} was reached as a next page but is not "
+                "a collection response, so the feed cannot be read completely"
+            )
+        else:
+            # A single entity, not a collection. There is nothing to page.
+            return document
+        if not isinstance(page, list):
+            raise EvalError("OData.Feed: 'value' is not an array")
+        rows.extend(row if isinstance(row, dict) else {"Value": row} for row in page)
+
+        nxt = _odata_next_link(document, current)
+        if nxt is None:
+            return rows
+        current = nxt
+        page_options = {"Headers": headers}
+        if "Timeout" in options:
+            page_options["Timeout"] = options["Timeout"]
+
+    raise EvalError(
+        f"OData.Feed: stopped after {_MAX_ODATA_PAGES} pages without reaching "
+        f"the end of {url}; returning part of a feed as if it were all of it "
+        "would be a wrong answer, so this refuses instead"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -426,16 +509,33 @@ def _rows_from_cursor(cursor: Any) -> list[dict[str, Any]]:
     return [dict(zip(names, row, strict=False)) for row in cursor.fetchall()]
 
 
-def _credentials(options: dict[str, Any], prefix: str) -> tuple[str | None, str | None]:
-    """Username/password from the options record, else from the environment.
+def _credentials(
+    options: dict[str, Any], prefix: str, what: str
+) -> tuple[str | None, str | None]:
+    """Username/password from the environment, and ONLY from the environment.
 
-    Environment first in the docs, options second in practice: a password
-    written into an M file gets committed, and this package refuses to make
-    that the path of least resistance. The options are honoured because some
-    real queries already carry them, not because it is a good idea.
+    The README states twice, as a security property, that "credentials come
+    from the environment, not from the M file". The code accepted
+    ``[Username=..., Password=...]`` out of the record and preferred them
+    OVER the environment, so the documented guarantee was the opposite of
+    the behaviour. Neither name is a documented Power Query option either -
+    the connectors' pages list no credential options at all, because real
+    Power Query takes credentials from its credential store - so honouring
+    them also invented two options Microsoft does not have.
+
+    They are refused by name rather than ignored: a query that carries a
+    password must fail loudly, or the password stays in the file and the
+    author believes it is doing something.
     """
-    user = options.pop("Username", None) or os.environ.get(f"{prefix}_USER")
-    password = options.pop("Password", None) or os.environ.get(f"{prefix}_PASSWORD")
+    for option, suffix in (("Username", "USER"), ("Password", "PASSWORD")):
+        if option in options:
+            raise UnsupportedError(
+                f"{what}: {option} is not read from the M file; set "
+                f"{prefix}_{suffix} in the environment instead, because a "
+                "credential written into a query gets committed"
+            )
+    user = os.environ.get(f"{prefix}_USER")
+    password = os.environ.get(f"{prefix}_PASSWORD")
     return (str(user) if user else None, str(password) if password else None)
 
 
@@ -457,6 +557,87 @@ def _run_query(connection: Any, query: str) -> list[dict[str, Any]]:
         cursor.close()
 
 
+def _require_logical(value: Any, option: str, what: str) -> bool:
+    """A documented ``logical (true/false)`` option, refused if it is not one."""
+    if not isinstance(value, bool):
+        raise EvalError(f"{what}: {option} must be a logical, got {_type_name(value)}")
+    return value
+
+
+def _sql_server_options(
+    options: dict[str, Any], what: str
+) -> tuple[float | None, float | None, bool]:
+    """The Sql.Database options this build can honour; returns (connect, command, msf).
+
+    All four were being POPPED AND DISCARDED. A query that set
+    ``[CommandTimeout = ...]`` ran with no timeout, one that set
+    ``[MultiSubnetFailover = true]`` got a connection string without it, and
+    one that asked for ``[HierarchicalNavigation = true]`` got the flat
+    navigation table anyway - three wrong answers a caller could not tell
+    from right ones. `Odbc.Query` in this same file had validated and
+    applied its `CommandTimeout` the whole time, so the two connector
+    families disagreed about the same documented option.
+
+    ``HierarchicalNavigation`` is accepted only as `false`. Its documented
+    default IS false, so `false` describes exactly what this build returns;
+    `true` asks for tables grouped by schema, and the shape of that grouped
+    table is not something Microsoft's page specifies - inventing one would
+    be the same defect class as an invented arity, so it is refused by name.
+    """
+    connect = options.pop("ConnectionTimeout", None)
+    command = options.pop("CommandTimeout", None)
+    hierarchical = options.pop("HierarchicalNavigation", None)
+    multi_subnet = options.pop("MultiSubnetFailover", None)
+
+    if hierarchical is not None and _require_logical(
+        hierarchical, "HierarchicalNavigation", what
+    ):
+        raise UnsupportedError(
+            f"{what}: HierarchicalNavigation = true groups the navigation "
+            "table by schema; this build returns the flat table, which is "
+            "the documented default (false)"
+        )
+    return (
+        _request_timeout(connect, 15.0, what, "ConnectionTimeout")
+        if connect is not None
+        else None,
+        _request_timeout(command, 600.0, what, "CommandTimeout")
+        if command is not None
+        else None,
+        multi_subnet is not None
+        and _require_logical(multi_subnet, "MultiSubnetFailover", what),
+    )
+
+
+def _deferred_query(
+    driver: Any,
+    connection_string: str,
+    sql: str,
+    what: str,
+    connect_timeout: float | None = None,
+    command_timeout: float | None = None,
+) -> _DeferredRows:
+    """A navigation row's `Data`: one query, run only if the row is selected.
+
+    The connection is opened and closed inside the fetch, so a navigation
+    table that is never selected from holds nothing open, and selecting one
+    table does not keep a connection alive for the others. The timeouts come
+    along because this connection - not the catalog one - is where the read
+    the caller asked to bound actually happens.
+    """
+
+    def fetch() -> list[dict[str, Any]]:
+        connection = _odbc_connect(driver, connection_string, connect_timeout)
+        try:
+            if command_timeout is not None:
+                connection.timeout = int(command_timeout)
+            return _run_query(connection, sql)
+        finally:
+            connection.close()
+
+    return _DeferredRows(fetch, what)
+
+
 def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
     """``Sql.Database(server, database, options)`` - SQL Server.
 
@@ -474,14 +655,11 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
     options = _optional_record(args[2] if len(args) == 3 else None, "Sql.Database")
 
     query = options.pop("Query", None)
-    user, password = _credentials(options, "PQTOOLS_SQL")
+    user, password = _credentials(options, "PQTOOLS_SQL", "Sql.Database")
     connection_string = options.pop("ConnectionString", None)
-    for unsupported in (
-        "CommandTimeout",
-        "HierarchicalNavigation",
-        "MultiSubnetFailover",
-    ):
-        options.pop(unsupported, None)
+    connect_timeout, command_timeout, multi_subnet = _sql_server_options(
+        options, "Sql.Database"
+    )
     if options:
         raise UnsupportedError(f"Sql.Database: option(s) {sorted(options)}")
 
@@ -489,18 +667,36 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
     if connection_string is None:
         parts = [
             "DRIVER={ODBC Driver 18 for SQL Server}",
-            f"SERVER={server}",
-            f"DATABASE={database}",
+            f"SERVER={_odbc_escape(server)}",
+            f"DATABASE={_odbc_escape(database)}",
             "TrustServerCertificate=yes",
         ]
+        if multi_subnet:
+            # "sets the value of the 'MultiSubnetFailover' property in the
+            # connection string ... It also sets ApplicationIntent=readonly"
+            # - sql-database, verbatim. The second half is easy to miss and
+            # changes which replica the query lands on.
+            parts += ["MultiSubnetFailover=Yes", "ApplicationIntent=ReadOnly"]
         if user:
-            parts += [f"UID={user}", f"PWD={password or ''}"]
+            parts += [
+                f"UID={_odbc_escape(user)}",
+                f"PWD={_odbc_escape(password or '')}",
+            ]
         else:
             parts.append("Trusted_Connection=yes")
         connection_string = ";".join(parts)
+    elif multi_subnet:
+        raise UnsupportedError(
+            "Sql.Database: MultiSubnetFailover sets a connection-string "
+            "property, so it cannot be combined with an explicit "
+            "ConnectionString; put MultiSubnetFailover=Yes and "
+            "ApplicationIntent=ReadOnly in that string instead"
+        )
 
-    connection = pyodbc.connect(str(connection_string))
+    connection = _odbc_connect(pyodbc, str(connection_string), connect_timeout)
     try:
+        if command_timeout is not None:
+            connection.timeout = int(command_timeout)
         if query is not None:
             return _run_query(connection, _require_str(query))
         catalog = _run_query(
@@ -508,21 +704,31 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
             "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE "
             "FROM INFORMATION_SCHEMA.TABLES",
         )
-        return [
-            {
-                "Schema": row["TABLE_SCHEMA"],
-                "Item": row["TABLE_NAME"],
-                "Name": row["TABLE_NAME"],
-                "Kind": "View" if row["TABLE_TYPE"] == "VIEW" else "Table",
-                "Data": _run_query(
-                    connection,
-                    f'SELECT * FROM "{row["TABLE_SCHEMA"]}"."{row["TABLE_NAME"]}"',
-                ),
-            }
-            for row in catalog
-        ]
     finally:
         connection.close()
+    # Each row's `Data` is DEFERRED. It used to be a completed `SELECT *` for
+    # every table in the catalog, run before the query said which one it
+    # wanted, so `Source{[Item="Orders"]}[Data]` on a small table paid for
+    # every other table beside it - and failed if any of them failed. The
+    # read now happens when the field is selected, on its own short-lived
+    # connection, so nothing is left open waiting to be used.
+    return [
+        {
+            "Schema": row["TABLE_SCHEMA"],
+            "Item": row["TABLE_NAME"],
+            "Name": row["TABLE_NAME"],
+            "Kind": "View" if row["TABLE_TYPE"] == "VIEW" else "Table",
+            "Data": _deferred_query(
+                pyodbc,
+                str(connection_string),
+                f'SELECT * FROM "{row["TABLE_SCHEMA"]}"."{row["TABLE_NAME"]}"',
+                f"Sql.Database: {row['TABLE_SCHEMA']}.{row['TABLE_NAME']}",
+                connect_timeout,
+                command_timeout,
+            ),
+        }
+        for row in catalog
+    ]
 
 
 def _oracle_database(args: list[Any], ctx: _Ctx) -> Any:
@@ -555,7 +761,7 @@ def _oracle_database(args: list[Any], ctx: _Ctx) -> Any:
     options = _optional_record(args[1] if len(args) == 2 else None, "Oracle.Database")
 
     query = options.pop("Query", None)
-    user, password = _credentials(options, "PQTOOLS_ORACLE")
+    user, password = _credentials(options, "PQTOOLS_ORACLE", "Oracle.Database")
     if options:
         raise UnsupportedError(f"Oracle.Database: option(s) {sorted(options)}")
     if query is None:
@@ -592,7 +798,7 @@ def _generic_database(
         options = _optional_record(args[2] if len(args) == 3 else None, name)
 
         query = options.pop("Query", None)
-        user, password = _credentials(options, env)
+        user, password = _credentials(options, env, name)
         if options:
             raise UnsupportedError(f"{name}: option(s) {sorted(options)}")
 
@@ -616,6 +822,25 @@ def _generic_database(
     return connector
 
 
+def _odbc_escape(value: str) -> str:
+    """Quote one connection-string VALUE so its contents stay a value.
+
+    Values were interpolated raw. A password of ``x;Encrypt=no`` therefore
+    did not produce a wrong password - it produced an extra connection-string
+    keyword, and that particular one turns TLS off. Server, database and user
+    were injectable the same way, and a password legitimately containing `;`
+    or `}` could not be expressed at all.
+
+    Braces are ODBC's quoting mechanism; a `}` inside a braced value is
+    written twice. Only values are escaped - the literal `DRIVER={...}`
+    written by this module is already a quoted value and must not be quoted
+    again.
+    """
+    if value and (value != value.strip() or any(c in value for c in ";{}=")):
+        return "{" + value.replace("}", "}}") + "}"
+    return value
+
+
 def _odbc_connection_string(value: Any, what: str) -> str:
     """``connectionString as any`` - text, or a record of property pairs.
 
@@ -632,7 +857,7 @@ def _odbc_connection_string(value: Any, what: str) -> str:
                     f"{what}: connection property {key!r} must be text or a "
                     f"number, got {_type_name(item)}"
                 )
-            parts.append(f"{key}={item}")
+            parts.append(f"{key}={_odbc_escape(str(item))}")
         return ";".join(parts)
     return _require_str(value)
 
@@ -666,8 +891,12 @@ def _odbc_options(
     if options:
         raise UnsupportedError(f"{what}: option(s) {sorted(options)}")
     return (
-        _request_timeout(connect, 15.0, what) if connect is not None else None,
-        _request_timeout(command, 600.0, what) if command is not None else None,
+        _request_timeout(connect, 15.0, what, "ConnectionTimeout")
+        if connect is not None
+        else None,
+        _request_timeout(command, 600.0, what, "CommandTimeout")
+        if command is not None
+        else None,
     )
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import math
+from collections.abc import Callable
 from typing import Any
 
 from ..core import MQueryError
@@ -168,7 +169,65 @@ def _require_int(value: Any) -> int:
     return number
 
 
+class _DeferredRows:
+    """Rows that are fetched only if something actually asks for them.
+
+    Built for SQL navigation. `Sql.Database(server, db)` returns one row per
+    table in the catalog, each with a `Data` field, and the query then picks
+    ONE of them: `Source{[Schema="dbo", Item="Orders"]}[Data]`. That `Data`
+    used to be a completed `SELECT *` for EVERY table in the database,
+    performed before the query said which one it wanted - so reading one
+    small table could fail, or move gigabytes, because of an unrelated table
+    beside it.
+
+    This evaluator is otherwise eager (see evaluate.py's data-model note), so
+    the deferral is deliberately narrow and LOUD. `_force` is the only way to
+    get the rows; every other way of touching the object - iterating it,
+    taking its length, comparing it - raises. That matters more than the
+    convenience of quacking like a list: a lazy value that answered "empty"
+    on an unforeseen path would be exactly the silent wrong answer this
+    package refuses to produce.
+    """
+
+    __slots__ = ("_fetch", "_rows", "_what")
+
+    def __init__(self, fetch: Callable[[], list[dict[str, Any]]], what: str) -> None:
+        self._fetch = fetch
+        self._what = what
+        self._rows: list[dict[str, Any]] | None = None
+
+    def _force(self) -> list[dict[str, Any]]:
+        if self._rows is None:
+            self._rows = self._fetch()
+        return self._rows
+
+    def __repr__(self) -> str:
+        state = "unread" if self._rows is None else f"{len(self._rows)} row(s)"
+        return f"<deferred {self._what}: {state}>"
+
+    def _refuse(self, *_: Any) -> Any:
+        raise EvalError(
+            f"{self._what}: this table is read on demand and was used in a "
+            "way that cannot trigger the read. Select it first "
+            '(Source{[Schema=..., Item=...]}[Data]) or pass [Query="..."].'
+        )
+
+    __iter__ = _refuse
+    __len__ = _refuse
+    __getitem__ = _refuse
+    __contains__ = _refuse
+    __eq__ = _refuse
+    __bool__ = _refuse
+    __hash__ = None  # type: ignore[assignment]
+
+
+def _force_rows(value: Any) -> Any:
+    """Materialise a `_DeferredRows`; leave every other value untouched."""
+    return value._force() if isinstance(value, _DeferredRows) else value
+
+
 def _require_list(value: Any) -> list[Any]:
+    value = _force_rows(value)
     if not isinstance(value, list):
         raise EvalError(f"expected a list, got {_type_name(value)}")
     return value
@@ -295,7 +354,7 @@ def _from_text(
 
 
 def _require_table(value: Any) -> list[dict[str, Any]]:
-    rows = _require_list(value)
+    rows = _require_list(_force_rows(value))
     for row in rows:
         if not isinstance(row, dict):
             raise EvalError("expected a table (a list of records)")
