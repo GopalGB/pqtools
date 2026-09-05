@@ -35,8 +35,13 @@ from ._list import (
     _row_equation_criteria_predicate,
 )
 from ._shared import (
+    _CSV_QUOTE_AFTER_DELIMITER,
+    _CSV_QUOTE_ALWAYS,
+    _EXTRA_ERROR,
+    _EXTRA_LIST,
     _MISSING_FIELD_ERROR,
     _MISSING_FIELD_IGNORE,
+    _QUOTE_CSV,
     EvalError,
     UnsupportedError,
     _arity,
@@ -51,6 +56,9 @@ from ._shared import (
     _require_record,
     _require_str,
     _require_table,
+    _resolve_csv_style,
+    _resolve_extra_values,
+    _resolve_quote_style,
     _sort_criteria,
     _type_name,
 )
@@ -111,7 +119,7 @@ def _distribute_pieces(
     pieces: list[Any] | None,
     column_names: list[str],
     default: Any,
-    extra: str,
+    extra: int,
     what: str,
 ) -> dict[str, Any]:
     """Map a splitter's output onto ``column_names`` slots.
@@ -136,10 +144,10 @@ def _distribute_pieces(
         for name in column_names:
             row[name] = None
         return row
-    if len(pieces) > slot_count and extra == "ExtraValues.Error":
+    if len(pieces) > slot_count and extra == _EXTRA_ERROR:
         raise EvalError(f"{what}: more split values than columns")
     for i, name in enumerate(column_names):
-        if i == slot_count - 1 and extra == "ExtraValues.List":
+        if i == slot_count - 1 and extra == _EXTRA_LIST:
             row[name] = (
                 pieces[slot_count - 1 :] if len(pieces) >= slot_count else default
             )
@@ -150,15 +158,11 @@ def _distribute_pieces(
     return row
 
 
-_CSV_QUOTE_AFTER_DELIMITER = "CsvStyle.QuoteAfterDelimiter"
-_CSV_QUOTE_ALWAYS = "CsvStyle.QuoteAlways"
-
-
 def _find_unquoted(
     text: str,
     delimiter: str,
-    quote_style: str,
-    csv_style: str = _CSV_QUOTE_AFTER_DELIMITER,
+    quote_style: int,
+    csv_style: int = _CSV_QUOTE_AFTER_DELIMITER,
 ) -> int:
     """Index of the first ``delimiter`` in ``text`` outside double quotes.
 
@@ -180,7 +184,7 @@ def _find_unquoted(
     one: `a"b,c"` splits into two fields under the real default and stayed
     one field here.
     """
-    if quote_style != "QuoteStyle.Csv" or '"' not in text:
+    if quote_style != _QUOTE_CSV or '"' not in text:
         return text.find(delimiter)
     always = csv_style == _CSV_QUOTE_ALWAYS
     in_quotes = False
@@ -212,12 +216,12 @@ def _unquote_csv_field(field: str) -> str:
 
 
 def _split_delimiter_csv_style(
-    text: str, delimiter: str, csv_style: str = _CSV_QUOTE_AFTER_DELIMITER
+    text: str, delimiter: str, csv_style: int = _CSV_QUOTE_AFTER_DELIMITER
 ) -> list[Any]:
     pieces: list[Any] = []
     remaining = text
     while True:
-        index = _find_unquoted(remaining, delimiter, "QuoteStyle.Csv", csv_style)
+        index = _find_unquoted(remaining, delimiter, _QUOTE_CSV, csv_style)
         if index == -1:
             pieces.append(_unquote_csv_field(remaining))
             return pieces
@@ -482,9 +486,9 @@ def _table_split_column(args: list[Any], ctx: _Ctx) -> Any:
         raise EvalError("Table.SplitColumn: splitter must be a function")
     names_or_number = args[3] if len(args) >= 4 else None
     default = args[4] if len(args) >= 5 else None
-    extra = args[5] if len(args) >= 6 and args[5] is not None else "ExtraValues.Ignore"
-    if extra not in ("ExtraValues.Ignore", "ExtraValues.Error", "ExtraValues.List"):
-        raise UnsupportedError(f"Table.SplitColumn: extraColumns {extra!r}")
+    extra = _resolve_extra_values(
+        args[5] if len(args) >= 6 else None, "Table.SplitColumn"
+    )
     if table and source_column not in table[0]:
         raise EvalError(f"Table.SplitColumn: no such column: {source_column}")
 
@@ -550,25 +554,17 @@ def _splitter_split_text_by_delimiter(args: list[Any], ctx: _Ctx) -> Any:
     delimiter = _require_str(args[0])
     if delimiter == "":
         raise EvalError("Splitter.SplitTextByDelimiter: delimiter must not be empty")
-    quote_style = (
-        args[1] if len(args) >= 2 and args[1] is not None else "QuoteStyle.None"
+    quote_style = _resolve_quote_style(
+        args[1] if len(args) >= 2 else None, "Splitter.SplitTextByDelimiter"
     )
-    if quote_style not in ("QuoteStyle.None", "QuoteStyle.Csv"):
-        raise UnsupportedError(
-            f"Splitter.SplitTextByDelimiter: quoteStyle {quote_style!r}"
-        )
-    csv_style = (
-        args[2]
-        if len(args) == 3 and args[2] is not None
-        else _CSV_QUOTE_AFTER_DELIMITER
+    csv_style = _resolve_csv_style(
+        args[2] if len(args) == 3 else None, "Splitter.SplitTextByDelimiter"
     )
-    if csv_style not in (_CSV_QUOTE_AFTER_DELIMITER, _CSV_QUOTE_ALWAYS):
-        raise UnsupportedError(f"Splitter.SplitTextByDelimiter: csvStyle {csv_style!r}")
 
     def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
         _arity("Splitter.SplitTextByDelimiter (applied)", inner_args, 1)
         text = _require_str(inner_args[0])
-        if quote_style == "QuoteStyle.Csv":
+        if quote_style == _QUOTE_CSV:
             return _split_delimiter_csv_style(text, delimiter, csv_style)
         return text.split(delimiter)
 
@@ -583,13 +579,9 @@ def _splitter_split_text_by_each_delimiter(args: list[Any], ctx: _Ctx) -> Any:
             raise EvalError(
                 "Splitter.SplitTextByEachDelimiter: delimiters must not be empty"
             )
-    quote_style = (
-        args[1] if len(args) >= 2 and args[1] is not None else "QuoteStyle.None"
+    quote_style = _resolve_quote_style(
+        args[1] if len(args) >= 2 else None, "Splitter.SplitTextByEachDelimiter"
     )
-    if quote_style not in ("QuoteStyle.None", "QuoteStyle.Csv"):
-        raise UnsupportedError(
-            f"Splitter.SplitTextByEachDelimiter: quoteStyle {quote_style!r}"
-        )
     start_at_end = args[2] if len(args) == 3 else False
     if not isinstance(start_at_end, bool):
         raise EvalError("Splitter.SplitTextByEachDelimiter: startAtEnd must be logical")
@@ -1023,9 +1015,7 @@ def _table_from_list(args: list[Any], ctx: _Ctx) -> Any:
     splitter = args[1] if len(args) >= 2 else None
     columns_spec = args[2] if len(args) >= 3 else None
     default = args[3] if len(args) >= 4 else None
-    extra = args[4] if len(args) >= 5 and args[4] is not None else "ExtraValues.Ignore"
-    if extra not in ("ExtraValues.Ignore", "ExtraValues.Error", "ExtraValues.List"):
-        raise UnsupportedError(f"Table.FromList: extraValues {extra!r}")
+    extra = _resolve_extra_values(args[4] if len(args) >= 5 else None, "Table.FromList")
 
     def default_splitter(item: Any) -> Any:
         if not isinstance(item, str):
@@ -1352,20 +1342,8 @@ BUILTINS: dict[str, Any] = {
     "Table.ExpandListColumn": _table_expand_list_column,
     "Table.SelectRowsWithErrors": _table_select_rows_with_errors,
     "Table.ReplaceErrorValues": _table_replace_error_values,
-    # Enum-like bare identifiers - see the module docstring's "Enum-like
-    # bare identifiers" note for why these are registered directly here
-    # (enum resolution now lives in _enums.py - see its docstring)
-    "QuoteStyle.Csv": "QuoteStyle.Csv",
-    "QuoteStyle.None": "QuoteStyle.None",
-    # CsvStyle.Type - the two member NAMES are verified (Csv.Document and
-    # Lines.FromText both spell them out and state what each does); their
-    # NUMBERING is not, so they are registered as opaque self-naming values
-    # the way QuoteStyle.* is, rather than as invented integers.
-    "CsvStyle.QuoteAfterDelimiter": "CsvStyle.QuoteAfterDelimiter",
-    "CsvStyle.QuoteAlways": "CsvStyle.QuoteAlways",
-    "ExtraValues.Ignore": "ExtraValues.Ignore",
-    "ExtraValues.Error": "ExtraValues.Error",
-    "ExtraValues.List": "ExtraValues.List",
+    # QuoteStyle / ExtraValues / CsvStyle now live in _enums.py with the
+    # numbers their own `*-type` pages document.
 }
 
 

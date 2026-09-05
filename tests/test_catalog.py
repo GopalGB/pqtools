@@ -66,12 +66,10 @@ ENUM_AND_TYPE_VALUES = {
     # Csv.Document / Text options.
     "QuoteStyle.Csv",
     "QuoteStyle.None",
-    # CsvStyle.Type has no reference page of its own, but Csv.Document and
-    # Lines.FromText both name these two members verbatim and state what
-    # each does ("CsvStyle.QuoteAfterDelimiter (default): Quotes in a field
-    # are only significant immediately following the delimiter."). They are
-    # registered as opaque self-naming values rather than integers, because
-    # only the names are confirmed - not the numbering.
+    # CsvStyle.Type DOES have its own page (`csvstyle-type`), which was
+    # simply never fetched. It carries the usual Name/Value table, so these
+    # are registered as the numbers 0 and 1 like every other verified enum -
+    # see tests/test_documented_enum_values.py.
     "CsvStyle.QuoteAfterDelimiter",
     "CsvStyle.QuoteAlways",
     "RelativePosition.FromStart",

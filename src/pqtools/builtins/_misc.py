@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Any
 from ..core import _IDENTIFIER, _RESERVED
 from ._connectors import _CODE_PAGES, _DEFAULT_ENCODING, _decode
 from ._shared import (
+    _QUOTE_CSV,
+    _QUOTE_NONE,
     EvalError,
     UnsupportedError,
     _arity,
@@ -39,6 +41,7 @@ from ._shared import (
     _require_number,
     _require_record,
     _require_str,
+    _resolve_quote_style,
     _type_name,
 )
 from ._type import _MType
@@ -159,9 +162,7 @@ def _lines_split(text: str, quote_style: Any, include_separators: bool) -> list[
     """
     if isinstance(quote_style, dict):
         raise UnsupportedError("quoteStyle as an options record")
-    style = "QuoteStyle.None" if quote_style is None else quote_style
-    if style not in ("QuoteStyle.None", "QuoteStyle.Csv"):
-        raise UnsupportedError(f"quoteStyle {quote_style!r}")
+    style = _resolve_quote_style(quote_style, "Lines.FromText")
 
     lines: list[str] = []
     size = len(text)
@@ -170,7 +171,7 @@ def _lines_split(text: str, quote_style: Any, include_separators: bool) -> list[
     in_quotes = False
     while i < size:
         ch = text[i]
-        if style == "QuoteStyle.Csv" and ch == '"':
+        if style == _QUOTE_CSV and ch == '"':
             if in_quotes and i + 1 < size and text[i + 1] == '"':
                 i += 2
                 continue
@@ -609,8 +610,8 @@ def _splitter_split_text_by_ranges(args: list[Any], ctx: _Ctx) -> Any:
     return _split
 
 
-def _split_on_whitespace(text: str, quote_style: str) -> list[str]:
-    if quote_style == "QuoteStyle.None":
+def _split_on_whitespace(text: str, quote_style: int) -> list[str]:
+    if quote_style == _QUOTE_NONE:
         return text.split()
     # QuoteStyle.Csv: the same toggle-on-unescaped-`"`, `""`-is-an-escaped-
     # quote algorithm this file's own `_lines_split` already uses - a
@@ -689,7 +690,7 @@ def _splitter_split_text_by_any_delimiter(args: list[Any], ctx: _Ctx) -> Any:
         i, size = 0, len(text)
         while i < size:
             ch = text[i]
-            if quote_style == "QuoteStyle.Csv" and ch == '"':
+            if quote_style == _QUOTE_CSV and ch == '"':
                 if in_quotes and i + 1 < size and text[i + 1] == '"':
                     current.append('"')
                     i += 2
@@ -741,11 +742,8 @@ def _csv_quote_field(value: str, delimiters: list[str]) -> str:
     return value
 
 
-def _resolve_quote_style(quote_style: Any, fn_name: str) -> str:
-    style = "QuoteStyle.None" if quote_style is None else quote_style
-    if style not in ("QuoteStyle.None", "QuoteStyle.Csv"):
-        raise UnsupportedError(f"{fn_name}: quoteStyle {quote_style!r}")
-    return style
+def _resolve_quote_style_local(quote_style: Any, fn_name: str) -> int:
+    return _resolve_quote_style(quote_style, fn_name)
 
 
 def _combiner_combine_text_by_delimiter(args: list[Any], ctx: _Ctx) -> Any:
@@ -760,7 +758,7 @@ def _combiner_combine_text_by_delimiter(args: list[Any], ctx: _Ctx) -> Any:
     def _combine(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
         _arity("Combiner.CombineTextByDelimiter (applied)", inner_args, 1)
         values = [_require_str(v) for v in _require_list(inner_args[0])]
-        if quote_style == "QuoteStyle.Csv":
+        if quote_style == _QUOTE_CSV:
             values = [_csv_quote_field(v, [delimiter]) for v in values]
         return delimiter.join(values)
 
@@ -789,7 +787,7 @@ def _combiner_combine_text_by_each_delimiter(args: list[Any], ctx: _Ctx) -> Any:
                 f"{gaps} delimiter(s) needed between {len(values)} value(s), "
                 f"only {len(delimiters)} given"
             )
-        if quote_style == "QuoteStyle.Csv":
+        if quote_style == _QUOTE_CSV:
             values = [_csv_quote_field(v, delimiters) for v in values]
         if not values:
             return ""

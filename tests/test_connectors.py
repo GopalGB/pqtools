@@ -65,7 +65,7 @@ def test_csv_document_extra_values_ignore_drops_them() -> None:
     rows = _call(
         "Csv.Document",
         "a,b\r\n1,2,3",
-        {"Columns": 2, "ExtraValues": "ExtraValues.Ignore"},
+        {"Columns": 2, "ExtraValues": BUILTINS["ExtraValues.Ignore"]},
     )
     assert rows == [{"Column1": "a", "Column2": "b"}, {"Column1": "1", "Column2": "2"}]
 
@@ -91,7 +91,7 @@ def test_csv_document_quotestyle_none_ends_the_row_at_a_newline() -> None:
     rows = _call(
         "Csv.Document",
         '1|Barb|"Smith\r\n2|Cal|Fisher',
-        {"Delimiter": "|", "Columns": 3, "QuoteStyle": "QuoteStyle.None"},
+        {"Delimiter": "|", "Columns": 3, "QuoteStyle": BUILTINS["QuoteStyle.None"]},
     )
     assert rows == [
         {"Column1": "1", "Column2": "Barb", "Column3": "Smith"},

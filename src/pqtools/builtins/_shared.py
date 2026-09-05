@@ -335,6 +335,63 @@ def _check_invariant_culture(name: str, culture: Any, detail: str) -> None:
 _CULTURE_SCOPE = "(pqtools only implements invariant/en-US)"
 
 
+# QuoteStyle / ExtraValues / CsvStyle, as the NUMBERS their `*-type` pages
+# document. They were self-naming strings until those pages were fetched, so
+# `Splitter.SplitTextByDelimiter(",", 1)` - the same call spelled with the
+# literal M value instead of the name - was refused.
+_QUOTE_NONE = 0
+_QUOTE_CSV = 1
+_EXTRA_LIST = 0
+_EXTRA_ERROR = 1
+_EXTRA_IGNORE = 2
+_CSV_QUOTE_AFTER_DELIMITER = 0
+_CSV_QUOTE_ALWAYS = 1
+
+_QUOTE_STYLE_NAMES = {_QUOTE_NONE: "QuoteStyle.None", _QUOTE_CSV: "QuoteStyle.Csv"}
+
+
+def _resolve_enum(value: Any, allowed: dict[int, str], what: str, label: str) -> int:
+    """Validate an optional enum argument that is a documented NUMBER."""
+    if value is None:
+        return min(allowed)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise UnsupportedError(f"{what}: {label} {value!r}")
+    if value not in allowed:
+        raise UnsupportedError(f"{what}: {label} {value!r}")
+    return value
+
+
+def _resolve_quote_style(value: Any, what: str) -> int:
+    return _resolve_enum(value, _QUOTE_STYLE_NAMES, what, "quoteStyle")
+
+
+def _resolve_csv_style(value: Any, what: str) -> int:
+    return _resolve_enum(
+        value,
+        {
+            _CSV_QUOTE_AFTER_DELIMITER: "CsvStyle.QuoteAfterDelimiter",
+            _CSV_QUOTE_ALWAYS: "CsvStyle.QuoteAlways",
+        },
+        what,
+        "csvStyle",
+    )
+
+
+def _resolve_extra_values(value: Any, what: str) -> int:
+    if value is None:
+        return _EXTRA_IGNORE
+    return _resolve_enum(
+        value,
+        {
+            _EXTRA_LIST: "ExtraValues.List",
+            _EXTRA_ERROR: "ExtraValues.Error",
+            _EXTRA_IGNORE: "ExtraValues.Ignore",
+        },
+        what,
+        "extraValues",
+    )
+
+
 def _null_propagates(args: list[Any]) -> bool:
     """`f(null)` is `null` wherever the page declares parameter one nullable.
 

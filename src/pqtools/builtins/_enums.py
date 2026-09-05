@@ -18,16 +18,21 @@ Number.Round now takes a rounding mode. They were found missing by running
 Microsoft's own worked examples, which is the only place a real query's
 vocabulary shows up.
 
-CsvStyle.* is the third mechanism this rule allows. Its member NAMES are
-confirmed (Csv.Document and Lines.FromText spell both out and say what each
-does) while its numbering is not, so - like QuoteStyle.* and ExtraValues.* -
-it is registered next to its consumer in _table_shape.py as an OPAQUE
-self-naming value. Nothing does arithmetic on it, so nothing can be silently
-wrong. Use that shape whenever the name is verified and the number is not;
-this module is for the cases where the number itself is verified.
+QuoteStyle.*, ExtraValues.* and CsvStyle.* used to be registered next to
+their consumer in _table_shape.py as OPAQUE self-naming strings, on the
+stated grounds that their numbering was unconfirmed. It was not unconfirmed -
+it was unfetched. `quotestyle-type`, `extravalues-type` and `csvstyle-type`
+are all real pages carrying the usual Name/Value table, and they were missing
+from the offline cache only because nothing had ever asked for them. The cost
+of the guess was real: `QuoteStyle.Csv` IS the number 1 in M, so
+`Splitter.SplitTextByDelimiter(",", 1)` is a legal call that this refused.
 
-Still deliberately absent: WebMethod.* - numbering unconfirmed and nothing
-consumes it.
+The lesson generalises - "the number is unverifiable" is a claim that itself
+needs verifying. `tests/test_documented_enum_values.py` now checks every
+number here against its own `*-type` page.
+
+Still deliberately absent: WebMethod.*, BufferMode.* - no `*-type` page
+exists for either (both 404), and nothing consumes them.
 """
 
 from __future__ import annotations
@@ -106,6 +111,25 @@ _TEXT_ENCODING = {
     "TextEncoding.Utf8": 65001,
 }
 
+# QuoteStyle.Type / ExtraValues.Type / CsvStyle.Type - verified against their
+# own pages, which is how they stopped being self-naming strings. Note that
+# ExtraValues is NOT in menu order: List is 0, Error is 1, Ignore is 2.
+_QUOTE_STYLE = {
+    "QuoteStyle.None": 0,
+    "QuoteStyle.Csv": 1,
+}
+
+_EXTRA_VALUES = {
+    "ExtraValues.List": 0,
+    "ExtraValues.Error": 1,
+    "ExtraValues.Ignore": 2,
+}
+
+_CSV_STYLE = {
+    "CsvStyle.QuoteAfterDelimiter": 0,
+    "CsvStyle.QuoteAlways": 1,
+}
+
 BUILTINS: dict[str, Any] = {
     **_OCCURRENCE,
     **_ORDER,
@@ -114,4 +138,7 @@ BUILTINS: dict[str, Any] = {
     **_ROUNDING_MODE,
     **_PERCENTILE_MODE,
     **_TEXT_ENCODING,
+    **_QUOTE_STYLE,
+    **_EXTRA_VALUES,
+    **_CSV_STYLE,
 }

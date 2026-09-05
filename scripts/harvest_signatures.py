@@ -124,6 +124,54 @@ def signature(name: str) -> dict[str, object] | None:
     }
 
 
+ENUM_FIXTURE = ROOT / "tests" / "fixtures" / "m-enum-values.json"
+
+# A row of the Name/Value/Description table on a `<family>-type` page. The
+# cells wrap the name in <code> on some pages and <strong> on others (and
+# nothing at all on a third), so the tags are stripped rather than matched -
+# the first parser matched only <code> and silently lost RelativePosition.
+_ROW = re.compile(r"<tr>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
+_CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL | re.IGNORECASE)
+_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9]*\.[A-Za-z0-9]+$")
+
+
+def enum_values(family: str) -> dict[str, int]:
+    """The Name/Value table on a `<family>-type` page.
+
+    These pages were absent from the offline cache for a long time, and their
+    absence was recorded in `_enums.py` as "numbering unconfirmed" - a claim
+    about the world that was really a claim about the cache. `QuoteStyle.Csv`
+    is 1, and refusing to believe it made a legal M call fail.
+    """
+    page = CACHE / f"{family.lower()}-type.html"
+    if not page.exists():
+        return {}
+    raw = page.read_text(encoding="utf-8", errors="replace")
+    found: dict[str, int] = {}
+    for row in _ROW.findall(raw):
+        cells = [
+            html.unescape(re.sub(r"<[^>]+>", "", cell)).strip()
+            for cell in _CELL.findall(row)
+        ]
+        if len(cells) < 2 or not _NAME.match(cells[0]):
+            continue
+        try:
+            found[cells[0]] = int(cells[1])
+        except ValueError:
+            continue
+    return found
+
+
+def harvest_enums() -> dict[str, int]:
+    families = sorted(
+        {name.split(".")[0] for name in BUILTINS if "." in name and not callable(BUILTINS[name])}
+    )
+    found: dict[str, int] = {}
+    for family in families:
+        found.update(enum_values(family))
+    return found
+
+
 def main() -> int:
     if not CACHE.is_dir():
         print(f"doc cache absent ({CACHE}); fixture left untouched")
@@ -137,6 +185,11 @@ def main() -> int:
         json.dumps(harvested, indent=1, sort_keys=True) + "\n", encoding="utf-8"
     )
     print(f"{len(harvested)} signatures -> {FIXTURE.relative_to(ROOT)}")
+    enums = harvest_enums()
+    ENUM_FIXTURE.write_text(
+        json.dumps(enums, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(f"{len(enums)} enum values -> {ENUM_FIXTURE.relative_to(ROOT)}")
     return 0
 
 

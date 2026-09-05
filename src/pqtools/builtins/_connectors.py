@@ -32,6 +32,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._shared import (
+    _CSV_QUOTE_ALWAYS,
+    _EXTRA_IGNORE,
+    _QUOTE_NONE,
     EvalError,
     UnsupportedError,
     _arity,
@@ -266,10 +269,10 @@ def _csv_document(args: list[Any], ctx: _Ctx) -> Any:
         extra_values = options.get("ExtraValues")
         encoding = options.get("Encoding")
         quote_style = options.get("QuoteStyle")
-        if quote_style == "QuoteStyle.None":
+        if quote_style == _QUOTE_NONE:
             quoted_newlines = False
         csv_style = options.get("CsvStyle")
-        if csv_style == "CsvStyle.QuoteAlways":
+        if csv_style == _CSV_QUOTE_ALWAYS:
             quote_always = True
 
     code_page = None if encoding is None else _require_int(encoding)
@@ -291,7 +294,7 @@ def _csv_document(args: list[Any], ctx: _Ctx) -> Any:
 
     names = _column_names(columns, len(raw_rows[0]) if raw_rows else 0)
     width = len(names)
-    ignore_extra = extra_values == "ExtraValues.Ignore"
+    ignore_extra = extra_values == _EXTRA_IGNORE
 
     table: list[dict[str, Any]] = []
     for index, fields in enumerate(raw_rows):

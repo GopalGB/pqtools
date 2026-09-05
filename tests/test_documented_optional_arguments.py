@@ -232,5 +232,12 @@ def test_csv_style_decides_which_quotes_are_significant() -> None:
 def test_csv_style_values_resolve_as_identifiers() -> None:
     # They were consumed by Csv.Document's options record already, but had
     # never been registered, so writing one was "unknown identifier".
-    assert evaluate("CsvStyle.QuoteAlways") == "CsvStyle.QuoteAlways"
-    assert evaluate("CsvStyle.QuoteAfterDelimiter") == "CsvStyle.QuoteAfterDelimiter"
+    # They resolve to the NUMBERS csvstyle-type documents. This test used to
+    # assert the self-naming string, which is what the defect looked like
+    # from the inside: registered, resolvable, and the wrong kind of value.
+    assert evaluate("CsvStyle.QuoteAfterDelimiter") == 0
+    assert evaluate("CsvStyle.QuoteAlways") == 1
+    # the literal M number is equally valid and must reach the same splitter
+    assert evaluate('Splitter.SplitTextByDelimiter(",", 1, 1)("x""a,b""")') == [
+        'x"a,b"'
+    ]
