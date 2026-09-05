@@ -200,3 +200,111 @@ def test_paging_is_still_blocked_entirely_without_allow_net(feed: Any) -> None:
     feed.pages["/odata"] = _page([{"Id": 1}])
     with pytest.raises(IOBlockedError, match="--allow-net"):
         evaluate(_feed_call(feed.base))
+
+
+# --------------------------------------------------------------------------
+# Found by the claude-opus-5 review of the paging fix itself. Following a link
+# the SERVER chooses introduced two ways to be wrong that one fetch could not
+# have had.
+# --------------------------------------------------------------------------
+
+
+class _Recorder:
+    """A second origin, so "same host" and "another host" are distinguishable."""
+
+    def __init__(self) -> None:
+        self.headers: list[dict[str, str]] = []
+
+
+@pytest.fixture
+def other_origin() -> Any:
+    state = _Recorder()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            state.headers.append(dict(self.headers))
+            body = json.dumps({"value": [{"id": 2}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    state.base = f"http://127.0.0.1:{httpd.server_port}"  # type: ignore[attr-defined]
+    yield state
+    httpd.shutdown()
+    thread.join(timeout=5)
+
+
+def test_a_next_link_to_another_origin_does_not_carry_the_callers_headers(
+    feed: Any, other_origin: Any
+) -> None:
+    """The credential-exfiltration hop.
+
+    The next URL is chosen by the remote server. Carrying the caller's
+    `Authorization` there hands their token to a host they never named - one
+    hostile or compromised feed, one hop, token gone. Under plain
+    `--allow-net` with no host allowlist the policy permits the request, so
+    the policy is not what stops this.
+    """
+    elsewhere = f"{other_origin.base}/stolen"
+    feed.pages["/odata"] = _page([{"id": 1}], elsewhere)
+    rows = evaluate(
+        f'OData.Feed("{feed.base}/odata", [Authorization = "Bearer dummy-token"])',
+        io=NET,
+    )
+    assert rows == [{"id": 1}, {"id": 2}]
+    assert other_origin.headers, "the second origin was never reached"
+    leaked = [h for h in other_origin.headers if "Authorization" in h]
+    assert leaked == [], (
+        "OData.Feed sent the caller's Authorization header to an origin the "
+        "feed chose, not one the caller named"
+    )
+    # It still asks for JSON, or the far side may answer with something else.
+    assert other_origin.headers[0].get("Accept") == "application/json"
+
+
+def test_a_next_link_on_the_same_origin_still_carries_them(feed: Any) -> None:
+    # The fix must not break authenticated paging within one service, which
+    # is the ordinary case.
+    feed.pages["/odata"] = _page([{"id": 1}], f"{feed.base}/odata?page=2")
+    feed.pages["/odata?page=2"] = _page([{"id": 2}])
+    captured: list[dict[str, str]] = []
+    feed.capture = captured  # type: ignore[attr-defined]
+    rows = evaluate(
+        f'OData.Feed("{feed.base}/odata", [Authorization = "Bearer dummy-token"])',
+        io=NET,
+    )
+    assert rows == [{"id": 1}, {"id": 2}]
+    assert feed.hits == ["/odata", "/odata?page=2"]
+
+
+def test_the_response_cap_bounds_the_whole_feed_not_each_page(
+    feed: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cap was per-response, and paging multiplied it by the page ceiling.
+
+    Before paging, a feed was one response and genuinely bounded. Following
+    up to _MAX_ODATA_PAGES of them turned a hard limit into a limit times
+    200, which is not a limit.
+    """
+    from pqtools.builtins import _sources
+
+    monkeypatch.setattr(_sources, "_MAX_RESPONSE_BYTES", 400)
+    # Each page is comfortably under 400 bytes; three of them are not.
+    filler = "x" * 100
+    for index in range(6):
+        nxt = f"{feed.base}/odata?page={index + 1}"
+        feed.pages[f"/odata?page={index}" if index else "/odata"] = _page(
+            [{"id": index, "pad": filler}], nxt
+        )
+    with pytest.raises(EvalError, match="bytes across"):
+        evaluate(f'OData.Feed("{feed.base}/odata")', io=NET)
+    # It stopped early rather than reading all six.
+    assert len(feed.hits) < 6

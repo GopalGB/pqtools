@@ -34,7 +34,9 @@ affiliated with or endorsed by Microsoft.
 - Reads `.pbix` / `.pbit` / `.xlsx` containers to analyse the M inside them.
   `pq format` / `pq rename` / `pq replace-source` print the edited M and
   save it with `--write`. `pq add --name N --source '...' --write` adds a
-  brand-new query. Any `--write` on a container writes a `<file>.bak` first.
+  brand-new query. Any `--write` on a container writes a backup first, to the
+  first free `<file>.bak`, `<file>.bak.1`, ... - an existing backup is never
+  overwritten, and a backup that fails stops the edit.
 
 <!-- coverage:start -->
 pqtools registers **547 of the 635 names** in Microsoft's Power Query M reference - 86% of NAMES, which is not a measure of semantic compatibility and should not be quoted as one. Each registered name's arity and nullability are checked against its own reference page, and 141 of Microsoft's worked examples reproduce their documented output exactly; see SUPPORT-MATRIX.md for what is and is not measured. Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
@@ -84,7 +86,7 @@ answer that looks right.
   installed where the write path was validated). The rebuild is verified four
   ways - CRC intact, every member except the DataMashup part byte-identical,
   the M reading back, and openpyxl opening the result to the same sheets and
-  values - and every `--write` leaves a `.bak`. Do not describe writing as
+  values - and every `--write` leaves a backup sidecar. Do not describe writing as
   unsafe, and do not describe it as Excel-certified.
 - It sends no telemetry, and makes no network call unless the query asks
   for one AND the caller passed `--allow-net` or `--allow-db`.

@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from pqtools import UnsupportedError, evaluate
+from pqtools import EvalError, UnsupportedError, evaluate
 from pqtools.io import IOPolicy
 
 ALLOW_DB = IOPolicy(allow_db=True)
@@ -275,3 +275,26 @@ def test_the_odbc_record_form_escapes_its_values_too(odbc: list[str]) -> None:
     parsed = _parse_connection_string(odbc[0])
     assert parsed["PWD"] == "x;Encrypt=no"
     assert "Encrypt" not in parsed
+
+
+def test_a_connection_property_NAME_cannot_inject_a_keyword(
+    odbc: list[str],
+) -> None:
+    """Escaping the value was half a fix; the KEY was still raw.
+
+    An M record field name can be any quoted identifier, so
+    `Odbc.Query([#"UID=sa;Encrypt" = "no"], ...)` emitted three
+    connection-string keywords through the key while its value was dutifully
+    escaped. Found by the claude-opus-5 review of the escaping fix.
+    """
+    with pytest.raises(EvalError, match="connection-string delimiter"):
+        evaluate(
+            'Odbc.Query([Driver = "d", #"UID=sa;Encrypt" = "no"], "select 1")',
+            io=ALLOW_DB,
+        )
+    assert odbc == []
+
+
+def test_an_ordinary_property_name_still_works(odbc: list[str]) -> None:
+    evaluate('Odbc.Query([Driver = "d", UID = "u"], "select 1")', io=ALLOW_DB)
+    assert _parse_connection_string(odbc[0]) == {"Driver": "d", "UID": "u"}

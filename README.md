@@ -763,9 +763,13 @@ pq add  book.xlsx --name "Top Colors" \
 
 **Writing back:** `pq format`, `pq rename`, `pq replace-source` and `pq add`
 print the result by default and save it with `--write`. A `--write` on a
-container copies the original to `<file>.bak` first, because this is the one
-command here that can destroy its input and the damage would surface in Excel
-rather than in this process.
+container copies the original to the first free `<file>.bak`, `<file>.bak.1`,
+... first, because this is the one command here that can destroy its input and
+the damage would surface in Excel rather than in this process. **An existing
+backup is never overwritten** - it holds a state the current run cannot
+reconstruct - and the command names the file it actually wrote. A backup that
+cannot be created stops the edit, so the container is never modified without
+one behind it.
 
 The rebuild changes only the M source: every other zip member and all three
 opaque DataMashup segments are carried through byte-for-byte, and the result
@@ -779,7 +783,7 @@ agreeing with itself.
 **Residual risk, stated plainly:** Excel itself has not opened a rewritten
 workbook, because Excel was not installed where this was validated. The checks
 above are the strongest available substitute, not a replacement - hence the
-`.bak`.
+backup sidecar.
 
 `pqtools` is not a Power BI or Excel client: `pq eval` runs a query's own
 transformation chain against data you supply (see [Running M](#running-m)) -

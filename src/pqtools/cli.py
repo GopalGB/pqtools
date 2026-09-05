@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import containers
+from .builtins._shared import _DeferredRows
 from .containers import ContainerError
 from .core import (
     MQueryError,
@@ -44,9 +45,32 @@ def _is_container(path: Path) -> bool:
     return path.suffix.lower() in _CONTAINER_SUFFIXES or path.is_dir()
 
 
+def _unprintable(item: Any) -> Any:
+    """`json.dumps` fallback: convert what we can, refuse what we must not print.
+
+    A `Sql.Database` navigation row's `Data` is a lazy `_DeferredRows` - it
+    is not read until a query selects that table, which is the whole point of
+    it. Printing the navigation table used to reach this fallback, find no
+    `as_dict`, and hand the caller a raw `AttributeError` traceback; the CSV
+    path was worse, writing a placeholder into a data cell as though it were
+    a value. Forcing it here would be wrong too: that is exactly the "read
+    every table in the catalog" behaviour the deferral exists to prevent.
+
+    So it refuses, in the typed way, and says which step to write instead.
+    """
+    if isinstance(item, _DeferredRows):
+        raise MQueryError(
+            "this result contains a table that has not been read "
+            f"({item!r}). Printing it would run a query per table in the "
+            "catalog. Select the one you want first, for example "
+            'Source{[Schema="dbo", Item="Orders"]}[Data]'
+        )
+    return item.as_dict()
+
+
 def _print(value: Any, as_json: bool) -> None:
     if as_json or not isinstance(value, str):
-        print(json.dumps(value, sort_keys=True, default=lambda item: item.as_dict()))
+        print(json.dumps(value, sort_keys=True, default=_unprintable))
     else:
         print(value, end="" if value.endswith("\n") else "\n")
 
@@ -156,6 +180,18 @@ def _load_binding(path: Path) -> Any:
 
 
 def _print_csv(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        for column, cell in row.items():
+            # csv.DictWriter would str() this into a data cell, so a table
+            # nobody read would be indistinguishable from a value somebody
+            # measured. Same refusal as the JSON path.
+            if isinstance(cell, _DeferredRows):
+                raise MQueryError(
+                    f"column {column!r} holds a table that has not been read "
+                    f"({cell!r}); --format csv cannot represent it. Select "
+                    "the one you want first, for example "
+                    'Source{[Schema="dbo", Item="Orders"]}[Data]'
+                )
     fieldnames: list[str] = list(rows[0].keys()) if rows else []
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()

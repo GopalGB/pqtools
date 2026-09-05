@@ -36,6 +36,7 @@ from __future__ import annotations
 import datetime as _dt
 import io as _io
 import json
+import math
 import os
 import urllib.error
 import urllib.parse
@@ -239,6 +240,10 @@ def _web_contents(args: list[Any], ctx: _Ctx) -> Any:
 # far past any query a person is waiting on.
 _MAX_ODATA_PAGES = 200
 
+# What a cross-origin page request is allowed to carry. Never the caller's
+# Authorization, cookies, or API-key headers.
+_SAFE_HEADERS = {"Accept": "application/json"}
+
 
 def _odata_document(raw: bytes, url: str) -> Any:
     """Decode and parse one OData response, with typed errors throughout.
@@ -268,6 +273,12 @@ def _odata_document(raw: bytes, url: str) -> Any:
             f"OData.Feed: {url} did not return valid JSON ({error.msg} at "
             f"line {error.lineno} column {error.colno})"
         ) from error
+
+
+def _origin(url: str) -> tuple[str, str]:
+    """(scheme, netloc), lowercased - what "the same site" means for headers."""
+    parts = urllib.parse.urlsplit(url)
+    return (parts.scheme.lower(), parts.netloc.lower())
 
 
 def _odata_next_link(document: Any, current: str) -> str | None:
@@ -324,10 +335,13 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
 
     rows: list[Any] = []
     seen: set[str] = set()
+    total_bytes = 0
     current = url
+    origin = _origin(url)
     # Page one carries the caller's options; later pages get an ABSOLUTE URL
     # from the server, so RelativePath/Query must not be applied again -
-    # only the headers (which may carry auth) and the timeout travel on.
+    # only the headers and the timeout travel on, and the headers only while
+    # the origin has not changed (see below).
     page_options = dict(options)
     for _ in range(_MAX_ODATA_PAGES):
         if current in seen:
@@ -337,9 +351,22 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
             )
         seen.add(current)
         ctx.budget.tick()
-        document = _odata_document(
-            _http_fetch(current, dict(page_options), ctx, "OData.Feed"), current
-        )
+        raw = _http_fetch(current, dict(page_options), ctx, "OData.Feed")
+
+        # `_http_fetch` caps ONE response. Following up to _MAX_ODATA_PAGES of
+        # them turned that into a per-page cap, so the total a feed could hand
+        # back was the cap times the page ceiling. Before paging existed the
+        # whole feed was one response and genuinely bounded; this keeps that
+        # true by bounding the sum.
+        total_bytes += len(raw)
+        if total_bytes > _MAX_RESPONSE_BYTES:
+            raise EvalError(
+                f"OData.Feed: {url} has returned more than "
+                f"{_MAX_RESPONSE_BYTES} bytes across {len(seen)} page(s); "
+                "reading the rest would be unbounded, so this refuses rather "
+                "than filling memory"
+            )
+        document = _odata_document(raw, current)
 
         if isinstance(document, dict) and "value" in document:
             page = document["value"]
@@ -361,7 +388,15 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
         if nxt is None:
             return rows
         current = nxt
-        page_options = {"Headers": headers}
+        # The next URL is chosen by the REMOTE SERVER and can name any host.
+        # Carrying the caller's headers there hands whatever `Authorization`
+        # they set to a host they never named - a token exfiltrated in one
+        # hop by a hostile or compromised feed. Cross-origin, only the
+        # Accept header travels, which is what a browser does with
+        # credentials on a cross-origin redirect. A 401 from the far side is
+        # a typed error naming the URL, so the caller is not left guessing.
+        page_headers = headers if _origin(current) == origin else _SAFE_HEADERS
+        page_options = {"Headers": dict(page_headers)}
         if "Timeout" in options:
             page_options["Timeout"] = options["Timeout"]
 
@@ -630,7 +665,7 @@ def _deferred_query(
         connection = _odbc_connect(driver, connection_string, connect_timeout)
         try:
             if command_timeout is not None:
-                connection.timeout = int(command_timeout)
+                connection.timeout = _timeout_int(command_timeout)
             return _run_query(connection, sql)
         finally:
             connection.close()
@@ -696,7 +731,7 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
     connection = _odbc_connect(pyodbc, str(connection_string), connect_timeout)
     try:
         if command_timeout is not None:
-            connection.timeout = int(command_timeout)
+            connection.timeout = _timeout_int(command_timeout)
         if query is not None:
             return _run_query(connection, _require_str(query))
         catalog = _run_query(
@@ -863,6 +898,17 @@ def _odbc_connection_string(value: Any, what: str) -> str:
                     f"{what}: connection property {key!r} must be text or a "
                     f"number, got {_type_name(item)}"
                 )
+            # Escaping only the VALUE was half a fix. An M record field name
+            # can be any quoted identifier, so
+            # `Odbc.Query([#"UID=sa;Encrypt" = "no"], ...)` put three keywords
+            # into the string through the KEY. A real connection-string
+            # keyword cannot contain these, so this refuses rather than
+            # quoting something that was never a valid key.
+            if any(character in str(key) for character in ";={}"):
+                raise EvalError(
+                    f"{what}: connection property name {key!r} contains a "
+                    "connection-string delimiter (one of ; = { })"
+                )
             parts.append(f"{key}={_odbc_escape(str(item))}")
         return ";".join(parts)
     return _require_str(value)
@@ -906,12 +952,24 @@ def _odbc_options(
     )
 
 
+def _timeout_int(seconds: float) -> int:
+    """Whole seconds for a driver, never rounding a real bound down to zero.
+
+    pyodbc reads `timeout = 0` as NO TIMEOUT. `int(0.5)` is 0, so asking for
+    a TIGHTER bound than one second removed the bound entirely - a caller who
+    wrote `#duration(0,0,0,0.5)` got an unbounded query where they had asked
+    for a half-second one. Rounding up is the only direction that cannot turn
+    a limit into its absence.
+    """
+    return max(1, math.ceil(seconds))
+
+
 def _odbc_connect(
     pyodbc: Any, connection_string: str, connect_timeout: float | None
 ) -> Any:
     if connect_timeout is None:
         return pyodbc.connect(connection_string)
-    return pyodbc.connect(connection_string, timeout=int(connect_timeout))
+    return pyodbc.connect(connection_string, timeout=_timeout_int(connect_timeout))
 
 
 def _odbc_query(args: list[Any], ctx: _Ctx) -> Any:
@@ -929,7 +987,7 @@ def _odbc_query(args: list[Any], ctx: _Ctx) -> Any:
     connection = _odbc_connect(pyodbc, connection_string, connect_timeout)
     try:
         if command_timeout is not None:
-            connection.timeout = int(command_timeout)
+            connection.timeout = _timeout_int(command_timeout)
         return _run_query(connection, query)
     finally:
         connection.close()
@@ -948,7 +1006,7 @@ def _odbc_datasource(args: list[Any], ctx: _Ctx) -> Any:
     pyodbc = _require_driver("pyodbc", "sql", "Odbc.DataSource")
     connection = _odbc_connect(pyodbc, connection_string, connect_timeout)
     if command_timeout is not None:
-        connection.timeout = int(command_timeout)
+        connection.timeout = _timeout_int(command_timeout)
     try:
         if query is not None:
             return _run_query(connection, _require_str(query))

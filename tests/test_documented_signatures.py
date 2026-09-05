@@ -77,12 +77,23 @@ _HASH_LITERALS = frozenset(
 # got past the arity check.
 # --------------------------------------------------------------------------
 
+
 # Permissive on purpose: a policy refusal fires BEFORE `_arity` in the
 # connectors, and would make every arity look accepted. Nothing reaches a
 # network or a database regardless, because the placeholder argument fails
 # every `_require_*` long before a connection is built.
+class _Budget:
+    """Enough of an evaluation budget that touching it is not a probe failure."""
+
+    def tick(self) -> None:
+        return None
+
+
 _PROBE_CTX = types.SimpleNamespace(
-    io=IOPolicy(allow_net=True, allow_db=True, allow_private=True)
+    io=IOPolicy(allow_net=True, allow_db=True, allow_private=True),
+    budget=_Budget(),
+    bindings={},
+    depth=0,
 )
 
 
@@ -94,19 +105,38 @@ class _Placeholder:
 
 
 def _accepts(name: str, count: int) -> bool:
+    """True when `count` arguments got PAST the arity check.
+
+    `Exception`, not `BaseException`: swallowing KeyboardInterrupt and
+    SystemExit at import time would make this module uninterruptible, and a
+    `SystemExit` from a builtin is a defect worth seeing rather than reading
+    as "that arity is fine".
+    """
     refusal = f"{name} with {count} argument(s)"
     try:
         BUILTINS[name]([_Placeholder() for _ in range(count)], _PROBE_CTX)
     except UnsupportedError as error:
         return str(error) != refusal
-    except BaseException:  # noqa: BLE001 - any other failure got past _arity
+    except Exception:  # noqa: BLE001 - any other failure got past _arity
         return True
     return True
 
 
 def _probe_arity(name: str, ceiling: int) -> tuple[int, int] | None:
-    accepted = [k for k in range(ceiling + 3) if _accepts(name, k)]
-    return (accepted[0], accepted[-1]) if accepted else None
+    """The accepted range, or None when the probe could not tell.
+
+    "Every count was accepted" is the signature of a builtin that fails
+    before `_arity` ever runs - a policy check, a missing ctx attribute -
+    rather than of one that really takes any number of arguments. Reporting
+    a range there would be a guess, and a guess in a gate is worse than a
+    gap, so it returns None and `test_no_documented_builtin_escapes_both_
+    arity_checks` names it instead.
+    """
+    counts = range(ceiling + 3)
+    accepted = [k for k in counts if _accepts(name, k)]
+    if not accepted or len(accepted) == len(counts):
+        return None
+    return (accepted[0], accepted[-1])
 
 
 def _probed_arities() -> dict[str, tuple[int, int]]:

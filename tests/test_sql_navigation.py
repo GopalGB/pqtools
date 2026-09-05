@@ -208,3 +208,65 @@ def test_the_db_gate_still_applies_before_any_connection(
     with pytest.raises(IOBlockedError, match="--allow-db"):
         evaluate(_select("Wanted"))
     assert odbc["opened"] == 0
+
+
+# --------------------------------------------------------------------------
+# From the claude-opus-5 review of the deferral itself. Making the value lazy
+# moved the problem to whoever prints it.
+# --------------------------------------------------------------------------
+
+
+def _cli(argv: list[str], tmp_path: Any, source: str) -> tuple[int, str, str]:
+    import contextlib
+    import io as _io
+
+    from pqtools.cli import main
+
+    query = tmp_path / "nav.pq"
+    query.write_text(source, encoding="utf-8")
+    out, err = _io.StringIO(), _io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main([*argv, str(query)])
+    return code, out.getvalue(), err.getvalue()
+
+
+@pytest.mark.parametrize("fmt", [[], ["--format", "csv"]])
+def test_printing_an_unread_navigation_table_refuses_in_the_typed_way(
+    odbc: dict[str, Any], tmp_path: Any, fmt: list[str]
+) -> None:
+    """`pq eval 'Sql.Database(...)'` used to end in a Python traceback.
+
+    `_print`'s json fallback called `.as_dict()` on the deferred value and
+    got `AttributeError` - a bare traceback out of the CLI, which is the
+    failure shape this package exists to prevent. `--format csv` was worse:
+    `csv.DictWriter` would `str()` the placeholder into a data cell, so a
+    table nobody read printed as though it were a measured value.
+
+    Forcing it here would be wrong too - that is the read-every-table
+    behaviour the deferral removed. So it refuses and names the next step.
+    """
+    code, out, err = _cli(
+        ["eval", "--allow-db", *fmt], tmp_path, 'Sql.Database("srv", "db")'
+    )
+    assert code != 0
+    assert "Traceback" not in err and "AttributeError" not in err
+    assert "has not been read" in err
+    assert "Item=" in err or "Item =" in err
+    # Nothing that looks like data was printed.
+    assert "deferred" not in out
+    # And no table was read to produce the refusal.
+    assert _table_reads(odbc) == []
+
+
+def test_selecting_an_item_through_the_cli_still_prints_its_rows(
+    odbc: dict[str, Any], tmp_path: Any
+) -> None:
+    # The refusal must be specific to the unread field, not to the connector.
+    code, out, err = _cli(
+        ["eval", "--allow-db"],
+        tmp_path,
+        'let S = Sql.Database("srv", "db"), '
+        'T = S{[Schema="dbo", Item="Wanted"]}[Data] in T',
+    )
+    assert code == 0, err
+    assert '"Note": "keep"' in out

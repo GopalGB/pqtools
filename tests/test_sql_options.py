@@ -269,3 +269,38 @@ def test_the_other_families_name_the_option_they_cannot_honour(call: str) -> Non
     with pytest.raises(UnsupportedError) as caught:
         evaluate(call, io=ALLOW_DB)
     assert "option(s)" in str(caught.value)
+
+
+# --------------------------------------------------------------------------
+# From the claude-opus-5 review of the options fix. Both are the same defect
+# class the fix was written to remove, one layer down.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("option", ["CommandTimeout", "ConnectionTimeout"])
+def test_a_sub_second_timeout_does_not_become_no_timeout(
+    odbc: dict[str, Any], option: str
+) -> None:
+    """`int(0.5)` is 0, and pyodbc reads 0 as NO timeout.
+
+    So a caller asking for a TIGHTER bound than one second got no bound at
+    all - silently, and in the opposite direction from what they asked for.
+    Rounding up is the only direction that cannot turn a limit into its
+    absence.
+    """
+    _run(f"{option} = #duration(0, 0, 0, 0.5)")
+    connection = odbc["connections"][0]
+    observed = (
+        connection.timeout
+        if option == "CommandTimeout"
+        else connection.connect_kwargs.get("timeout")
+    )
+    assert observed == 1, (
+        f"a half-second {option} became {observed!r}; 0 means no timeout"
+    )
+
+
+def test_a_whole_second_timeout_is_unchanged(odbc: dict[str, Any]) -> None:
+    # Rounding up must not inflate an ordinary value.
+    _run("CommandTimeout = #duration(0, 0, 1, 30)")
+    assert odbc["connections"][0].timeout == 90
