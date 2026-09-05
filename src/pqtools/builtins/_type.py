@@ -874,7 +874,7 @@ def _value_nullable_equals(args: list[Any], ctx: _Ctx) -> Any:
 
 def _make_value_arithmetic(
     name: str, apply: Callable[[int | float, int | float], int | float]
-) -> Callable[[list[Any], "_Ctx"], Any]:
+) -> Callable[[list[Any], _Ctx], Any]:
     # Value.Add/Subtract/Multiply/Divide all accept an optional `precision`
     # (Precision.Double by default, per each function's own docs). pqtools
     # has one numeric representation (Python int/float - see

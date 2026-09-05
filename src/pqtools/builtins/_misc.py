@@ -27,6 +27,7 @@ import math
 import re
 from typing import TYPE_CHECKING, Any
 
+from ..core import _IDENTIFIER, _RESERVED
 from ._connectors import _CODE_PAGES, _DEFAULT_ENCODING, _decode
 from ._shared import (
     EvalError,
@@ -34,6 +35,7 @@ from ._shared import (
     _arity,
     _require_int,
     _require_list,
+    _require_record,
     _require_str,
     _type_name,
 )
@@ -370,6 +372,112 @@ def _guid_from(args: list[Any], ctx: _Ctx) -> Any:
 
 
 # --------------------------------------------------------------------------
+# Expression.Identifier / Expression.Constant / Expression.Evaluate
+# --------------------------------------------------------------------------
+
+
+def _expression_identifier(args: list[Any], ctx: _Ctx) -> Any:
+    # Expression.Identifier(name) as text - the M SOURCE representation of
+    # an identifier. Verified against both docs examples: a bare-syntax
+    # name round-trips unchanged ("MyIdentifier" -> "MyIdentifier"), while
+    # anything that is not valid bare-identifier syntax gets M's
+    # #"..."-quoted form, doubling any embedded quote
+    # ("My Identifier" -> `#"My Identifier"`). `_IDENTIFIER`/`_RESERVED`
+    # are the SAME regex/keyword-set `pqtools.core.rename` already uses to
+    # answer this exact question for the rename feature - reused rather
+    # than re-typed, so the two can't silently drift apart.
+    _arity("Expression.Identifier", args, 1)
+    name = _require_str(args[0])
+    if _IDENTIFIER.fullmatch(name) and name.lower() not in _RESERVED:
+        return name
+    return '#"' + name.replace('"', '""') + '"'
+
+
+def _expression_constant(args: list[Any], ctx: _Ctx) -> Any:
+    # Expression.Constant(value) as text - the M SOURCE representation of a
+    # constant. Implemented for exactly the shapes the docs' own worked
+    # examples prove (number, text, date); every other shape (datetime/
+    # datetimezone/time/duration/binary/list/record/type/function) has no
+    # worked example pinning its exact literal syntax (padding? fractional-
+    # second digits? offset format?), so it is refused rather than guessed.
+    _arity("Expression.Constant", args, 1)
+    value = args[0]
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        if isinstance(value, float):
+            if math.isnan(value):
+                return "#nan"
+            if math.isinf(value):
+                return "-#infinity" if value < 0 else "#infinity"
+        # _format_number is not reused here: it renders NaN/Infinity as the
+        # WORDS "NaN"/"Infinity" for display purposes elsewhere in this
+        # package, which are not valid M source - only the finite-number
+        # path (verified against Example 1: `Expression.Constant(123)` ->
+        # `"123"`) is shared with it implicitly by producing the same
+        # plain-digit text.
+        return str(int(value)) if float(value).is_integer() else str(value)
+    if isinstance(value, str):
+        return '"' + value.replace('"', '""') + '"'
+    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+        # Verified against Example 2: #date(2035, 01, 02) -> "#date(2035, 1, 2)"
+        # - unpadded decimal, no leading zeros.
+        return f"#date({value.year}, {value.month}, {value.day})"
+    raise UnsupportedError(
+        f"Expression.Constant for a {_type_name(value)} value (only null, "
+        "logical, number, text and date are covered by a worked docs "
+        "example; the exact literal syntax for anything else was not "
+        "verified)"
+    )
+
+
+def _expression_evaluate(args: list[Any], ctx: _Ctx) -> Any:
+    # Expression.Evaluate(document, optional environment) as any.
+    #
+    # SECURITY: `document` is arbitrary M source, often authored by someone
+    # other than the caller (a workbook someone emailed you). The only
+    # thing that keeps this from being a capability-widening hole is that
+    # the nested evaluation reuses the CALLER's own `ctx.io` IOPolicy
+    # object unchanged - the exact same deny-by-default gate a
+    # `Web.Contents(...)` call already has to pass in this same query. It
+    # cannot be relaxed from inside `document`: IOPolicy is immutable
+    # (frozen dataclass) and is never itself an M-reachable value, so no
+    # amount of `environment` shadowing can hand `document` a more
+    # permissive policy than the query that invoked it already had.
+    # `tests/test_values_0_10.py::test_expression_evaluate_still_blocks_web_contents`
+    # proves this holds for a real Web.Contents call inside `document`.
+    #
+    # The nested call goes through the exact same pinned-parser + AST-walk
+    # path as the outer query (evaluate.py's own module docstring: no
+    # eval/exec/dynamic-import anywhere), so `document` gains no more
+    # machine access than any other M text this evaluator already runs.
+    #
+    # `max_steps` is bounded to what remains of the CALLER's own step
+    # budget rather than a fresh full budget, so an evaluate-of-evaluate
+    # chain cannot multiply its ceiling arbitrarily - though, since each
+    # nested call gets its own independent counter, several SIBLING calls
+    # can each spend up to that remaining amount; this is a best-effort
+    # bound, not an exactly-shared counter.
+    _arity("Expression.Evaluate", args, 1, 2)
+    document = _require_str(args[0])
+    environment = args[1] if len(args) == 2 else None
+    bindings = {} if environment is None else _require_record(environment)
+    remaining = ctx.budget.remaining
+    # Deferred (function-local) import: builtins/__init__.py is imported BY
+    # evaluate.py, so a MODULE-LEVEL import here would be circular. By the
+    # time this function is ever called, evaluate.py has already finished
+    # importing - evaluate() is how every entry point reaches BUILTINS in
+    # the first place - so the deferred import is safe at call time.
+    from ..evaluate import evaluate as _evaluate_document
+
+    return _evaluate_document(
+        document, bindings=bindings, max_steps=remaining, io=ctx.io
+    )
+
+
+# --------------------------------------------------------------------------
 # Splitter.SplitTextByLengths
 # --------------------------------------------------------------------------
 
@@ -404,6 +512,206 @@ def _splitter_split_text_by_lengths(args: list[Any], ctx: _Ctx) -> Any:
         for n in lengths:
             pieces.append(source[cursor : cursor + n])
             cursor += n
+        if start_at_end:
+            pieces = [piece[::-1] for piece in reversed(pieces)]
+        return pieces
+
+    return _split
+
+
+def _splitter_split_by_nothing(args: list[Any], ctx: _Ctx) -> Any:
+    _arity("Splitter.SplitByNothing", args, 0)
+
+    def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
+        _arity("Splitter.SplitByNothing (applied)", inner_args, 1)
+        return [_require_str(inner_args[0])]
+
+    return _split
+
+
+def _splitter_split_text_by_repeated_lengths(args: list[Any], ctx: _Ctx) -> Any:
+    # Splitter.SplitTextByRepeatedLengths(length, optional startAtEnd) -
+    # Splitter.SplitTextByLengths with one length applied over and over
+    # until the input runs out (the final chunk may be shorter). Verified
+    # against both docs examples: "12345678" split by 3 -> {"123","456",
+    # "78"}; the same input reversed by startAtEnd -> {"87","654","321"},
+    # reproduced exactly by the same reverse/chunk/un-reverse trick already
+    # used above for SplitTextByLengths.
+    _arity("Splitter.SplitTextByRepeatedLengths", args, 1, 2)
+    length = _require_int(args[0])
+    if length <= 0:
+        raise EvalError("Splitter.SplitTextByRepeatedLengths: length must be positive")
+    start_at_end = args[1] if len(args) == 2 and args[1] is not None else False
+    if not isinstance(start_at_end, bool):
+        raise EvalError(
+            "Splitter.SplitTextByRepeatedLengths: startAtEnd must be logical"
+        )
+
+    def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
+        _arity("Splitter.SplitTextByRepeatedLengths (applied)", inner_args, 1)
+        text = _require_str(inner_args[0])
+        source = text[::-1] if start_at_end else text
+        pieces = [source[i : i + length] for i in range(0, len(source), length)]
+        if start_at_end:
+            pieces = [piece[::-1] for piece in reversed(pieces)]
+        return pieces
+
+    return _split
+
+
+def _parse_ranges(raw: Any, fn_name: str) -> list[tuple[int, int | None]]:
+    """``{offset, length}`` pairs shared by SplitTextByRanges/CombineTextByRanges.
+
+    A null length means "everything else" for both functions (docs,
+    verbatim, on each page).
+    """
+    ranges: list[tuple[int, int | None]] = []
+    for item in _require_list(raw):
+        pair = _require_list(item)
+        if len(pair) != 2:
+            raise EvalError(f"{fn_name}: each range must be {{offset, length}}")
+        offset = _require_int(pair[0])
+        length = None if pair[1] is None else _require_int(pair[1])
+        if offset < 0 or (length is not None and length < 0):
+            raise EvalError(f"{fn_name}: offset/length must not be negative")
+        ranges.append((offset, length))
+    return ranges
+
+
+def _splitter_split_text_by_ranges(args: list[Any], ctx: _Ctx) -> Any:
+    # Splitter.SplitTextByRanges(ranges, optional startAtEnd) - each range
+    # is an independent {offset, length} slice (ranges MAY overlap, per the
+    # docs' own Example 1). Verified against all three docs examples,
+    # including startAtEnd (Example 2), which applies the SAME reverse/
+    # slice/un-reverse trick as SplitTextByLengths above - traced by hand
+    # against "RedmondWA?98052" and confirmed to reproduce {"WA","98052"}
+    # exactly.
+    _arity("Splitter.SplitTextByRanges", args, 1, 2)
+    ranges = _parse_ranges(args[0], "Splitter.SplitTextByRanges")
+    start_at_end = args[1] if len(args) == 2 and args[1] is not None else False
+    if not isinstance(start_at_end, bool):
+        raise EvalError("Splitter.SplitTextByRanges: startAtEnd must be logical")
+
+    def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
+        _arity("Splitter.SplitTextByRanges (applied)", inner_args, 1)
+        text = _require_str(inner_args[0])
+        source = text[::-1] if start_at_end else text
+        pieces = [
+            source[offset:] if length is None else source[offset : offset + length]
+            for offset, length in ranges
+        ]
+        if start_at_end:
+            pieces = [piece[::-1] for piece in reversed(pieces)]
+        return pieces
+
+    return _split
+
+
+def _split_on_whitespace(text: str, quote_style: str) -> list[str]:
+    if quote_style == "QuoteStyle.None":
+        return text.split()
+    # QuoteStyle.Csv: the same toggle-on-unescaped-`"`, `""`-is-an-escaped-
+    # quote algorithm this file's own `_lines_split` already uses - a
+    # quoted span is not split even if it contains whitespace.
+    tokens: list[str] = []
+    current: list[str] = []
+    in_quotes = False
+    i, size = 0, len(text)
+    while i < size:
+        ch = text[i]
+        if ch == '"':
+            if in_quotes and i + 1 < size and text[i + 1] == '"':
+                current.append('"')
+                i += 2
+                continue
+            in_quotes = not in_quotes
+            i += 1
+            continue
+        if not in_quotes and ch.isspace():
+            if current:
+                tokens.append("".join(current))
+                current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
+def _splitter_split_text_by_whitespace(args: list[Any], ctx: _Ctx) -> Any:
+    # Verified against the docs' own example: QuoteStyle.None over
+    # "a b#(tab)c" (a literal tab between "b" and "c") -> {"a","b","c"}.
+    _arity("Splitter.SplitTextByWhitespace", args, 0, 1)
+    style = _resolve_quote_style(
+        args[0] if len(args) == 1 else None, "Splitter.SplitTextByWhitespace"
+    )
+
+    def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
+        _arity("Splitter.SplitTextByWhitespace (applied)", inner_args, 1)
+        return _split_on_whitespace(_require_str(inner_args[0]), style)
+
+    return _split
+
+
+def _splitter_split_text_by_any_delimiter(args: list[Any], ctx: _Ctx) -> Any:
+    # Splitter.SplitTextByAnyDelimiter(delimiters, optional quoteStyle,
+    # optional startAtEnd) - like _table_shape.py's SplitTextByEachDelimiter
+    # but every position may match ANY of the given delimiters (not one per
+    # gap in sequence). Verified against both docs examples by hand,
+    # including startAtEnd, which applies the reverse/scan/un-reverse trick
+    # used throughout this file - traced character-by-character against
+    # "a,\"b;c,d" and confirmed to reproduce {"a,b","c","d"} exactly.
+    # Longer delimiters are tried before shorter ones at each position so a
+    # delimiter that is a prefix of another can't shadow it.
+    _arity("Splitter.SplitTextByAnyDelimiter", args, 1, 3)
+    delimiters = sorted(
+        (_require_str(d) for d in _require_list(args[0])), key=len, reverse=True
+    )
+    if not delimiters or any(d == "" for d in delimiters):
+        raise EvalError(
+            "Splitter.SplitTextByAnyDelimiter: delimiters must be non-empty text"
+        )
+    quote_style = _resolve_quote_style(
+        args[1] if len(args) >= 2 else None, "Splitter.SplitTextByAnyDelimiter"
+    )
+    start_at_end = args[2] if len(args) == 3 and args[2] is not None else False
+    if not isinstance(start_at_end, bool):
+        raise EvalError("Splitter.SplitTextByAnyDelimiter: startAtEnd must be logical")
+
+    def _scan(text: str) -> list[str]:
+        fields: list[str] = []
+        current: list[str] = []
+        in_quotes = False
+        i, size = 0, len(text)
+        while i < size:
+            ch = text[i]
+            if quote_style == "QuoteStyle.Csv" and ch == '"':
+                if in_quotes and i + 1 < size and text[i + 1] == '"':
+                    current.append('"')
+                    i += 2
+                    continue
+                in_quotes = not in_quotes
+                i += 1
+                continue
+            if not in_quotes:
+                matched = next((d for d in delimiters if text.startswith(d, i)), None)
+                if matched is not None:
+                    fields.append("".join(current))
+                    current = []
+                    i += len(matched)
+                    continue
+            current.append(ch)
+            i += 1
+        fields.append("".join(current))
+        return fields
+
+    def _split(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
+        _arity("Splitter.SplitTextByAnyDelimiter (applied)", inner_args, 1)
+        text = _require_str(inner_args[0])
+        source = text[::-1] if start_at_end else text
+        pieces = _scan(source)
         if start_at_end:
             pieces = [piece[::-1] for piece in reversed(pieces)]
         return pieces
@@ -575,6 +883,56 @@ def _combiner_combine_text_by_lengths(args: list[Any], ctx: _Ctx) -> Any:
     return _combine
 
 
+def _combiner_combine_text_by_ranges(args: list[Any], ctx: _Ctx) -> Any:
+    # Combiner.CombineTextByRanges(ranges, optional template) - each range
+    # is {position, length}; a null length writes the ENTIRE value at that
+    # position (unlike CombineTextByLengths, where every length is
+    # explicit). Verified against the docs' own example: ranges
+    # {{0,1},{3,2},{6,null}} over {"abc","def","ghijkl"} -> "a  de ghijkl"
+    # - traced by hand (only "a" of "abc", only "de" of "def", and all of
+    # "ghijkl" get written; the untouched gaps default to spaces, the same
+    # convention CombineTextByPositions already uses).
+    _arity("Combiner.CombineTextByRanges", args, 1, 2)
+    ranges = _parse_ranges(args[0], "Combiner.CombineTextByRanges")
+    template = args[1] if len(args) == 2 and args[1] is not None else None
+    if template is not None:
+        template = _require_str(template)
+
+    def _combine(inner_args: list[Any], inner_ctx: _Ctx) -> Any:
+        _arity("Combiner.CombineTextByRanges (applied)", inner_args, 1)
+        values = [_require_str(v) for v in _require_list(inner_args[0])]
+        if len(values) != len(ranges):
+            raise EvalError(
+                "Combiner.CombineTextByRanges: expected "
+                f"{len(ranges)} value(s), got {len(values)}"
+            )
+        pieces = [
+            value if length is None else value[:length]
+            for value, (_, length) in zip(values, ranges, strict=True)
+        ]
+        needed = max(
+            (
+                position + len(piece)
+                for (position, _), piece in zip(ranges, pieces, strict=True)
+            ),
+            default=0,
+        )
+        if template is None:
+            buffer = [" "] * needed
+        else:
+            if needed > len(template):
+                raise EvalError(
+                    "Combiner.CombineTextByRanges: template is too short "
+                    "for the combined output"
+                )
+            buffer = list(template)
+        for (position, _), piece in zip(ranges, pieces, strict=True):
+            buffer[position : position + len(piece)] = piece
+        return "".join(buffer)
+
+    return _combine
+
+
 # The M-visible names this module owns. builtins/__init__.py merges every
 # module's BUILTINS into one registry, so a new function is added HERE and
 # nowhere else - no central file to edit, and no merge conflict when several
@@ -597,9 +955,18 @@ BUILTINS: dict[str, Any] = {
     "Character.FromNumber": _character_from_number,
     "Character.ToNumber": _character_to_number,
     "Guid.From": _guid_from,
+    "Expression.Identifier": _expression_identifier,
+    "Expression.Constant": _expression_constant,
+    "Expression.Evaluate": _expression_evaluate,
     "Splitter.SplitTextByLengths": _splitter_split_text_by_lengths,
+    "Splitter.SplitByNothing": _splitter_split_by_nothing,
+    "Splitter.SplitTextByRepeatedLengths": _splitter_split_text_by_repeated_lengths,
+    "Splitter.SplitTextByRanges": _splitter_split_text_by_ranges,
+    "Splitter.SplitTextByWhitespace": _splitter_split_text_by_whitespace,
+    "Splitter.SplitTextByAnyDelimiter": _splitter_split_text_by_any_delimiter,
     "Combiner.CombineTextByDelimiter": _combiner_combine_text_by_delimiter,
     "Combiner.CombineTextByEachDelimiter": _combiner_combine_text_by_each_delimiter,
     "Combiner.CombineTextByPositions": _combiner_combine_text_by_positions,
     "Combiner.CombineTextByLengths": _combiner_combine_text_by_lengths,
+    "Combiner.CombineTextByRanges": _combiner_combine_text_by_ranges,
 }

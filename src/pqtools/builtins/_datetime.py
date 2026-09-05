@@ -95,7 +95,41 @@ Consequences of that choice (traced through, not assumed):
    both simply return a fresh ``datetime.datetime.now()`` reading. Documented
    gap, not a silent one; tests never assert on the wall-clock value they
    return (only that they return a ``datetime`` close to "now"), per the
-   task brief's trap #3.
+   task brief's trap #3. The same applies to
+   ``DateTimeZone.LocalNow``/``FixedLocalNow``/``UtcNow``/``FixedUtcNow``.
+8. **A handful of functions are HOST-dependent by specification, not by
+   shortcut.** ``DateTimeZone.From`` (for a date/datetime/time/number
+   argument), ``DateTimeZone.ToLocal``, ``DateTime.FromFileTime`` and
+   ``DateTimeZone.FromFileTime`` are all documented to resolve "the local
+   time zone" - Microsoft's own ``DateTimeZone.From`` page says the answer
+   "is different when running this function locally as opposed to running
+   it online". These use Python's ``datetime.astimezone()``, which asks the
+   HOST's real timezone database (via the OS) for the correct offset at
+   that exact instant, DST included - a real lookup, never a guessed
+   offset, so it is not the fabricated-timezone-data case this module
+   refuses. It is still machine-dependent output, so no test asserts an
+   exact wall-clock value for them; they are cross-checked against an
+   independent same-host recomputation instead.
+9. **End-of-period values land on 23:59:59.999999, and keep their zone.**
+   ``Date.EndOfDay``/``EndOfWeek``/``EndOfMonth``/``EndOfQuarter``/
+   ``EndOfYear`` and ``Time.EndOfHour`` return the last instant of the
+   period for a datetime/datetimezone argument (a plain ``date`` argument
+   still returns a plain ``date``). Real Power Query shows
+   ``23:59:59.9999999`` - one 100-nanosecond tick before the boundary -
+   but ``datetime`` only carries microseconds, so 999999 is the closest
+   value this representation holds; see ``_end_like``. This CHANGED
+   ``Date.EndOfMonth``/``EndOfYear``/``EndOfWeek``, which previously
+   returned MIDNIGHT of the correct day (contradicting the documented
+   examples) and silently dropped ``tzinfo`` from a datetimezone argument;
+   ``Date.StartOf*`` kept its midnight semantics but stopped dropping
+   ``tzinfo``.
+10. **The DateTimeZone.* family is strictly typed, deliberately.** Every
+   ``DateTimeZone.*`` function except ``From``/``FromText``/``FromFileTime``
+   declares its parameter as ``datetimezone`` (not ``any``) in the docs,
+   unlike the whole ``Date.*``/``DateTime.*`` accessor family - so those
+   take an already-aware value only, and a naive ``datetime`` is a type
+   error rather than a value with a guessed zone. ``ToLocal``/``ToUtc`` are
+   the two exceptions whose own docs say what a zone-less value does.
 """
 
 from __future__ import annotations
@@ -962,11 +996,29 @@ def _time_period_offset(unit: str, value_dt: datetime, now_dt: datetime) -> int:
     return round((v - n).total_seconds() / denom)
 
 
+def _now_local() -> datetime:
+    """The single system-clock read behind every relative-period predicate.
+
+    Called by GLOBAL NAME from the closures below (never captured as a
+    parameter) so that a test can freeze it with monkeypatch. Without that
+    seam the second/minute-granularity predicates would be genuinely
+    flaky: a test that builds "now + 1 second" and asserts
+    DateTime.IsInNextSecond is racing the evaluator's own clock read, and
+    loses whenever the boundary falls between the two reads.
+    """
+    return datetime.now()
+
+
+def _period_now(kind: str) -> Any:
+    now = _now_local()
+    return now.date() if kind == "date" else now
+
+
 def _make_is_in(
     name: str,
     resolve: Any,
-    now: Any,
-    offset_of: Any,
+    kind: str,
+    unit: str,
     lo: int,
     hi: int,
 ) -> Any:
@@ -977,15 +1029,15 @@ def _make_is_in(
         anchor = resolve(name, args[0])
         if anchor is None:
             return None
-        offset = offset_of(anchor, now())
+        offset = _offset_for(kind, unit, anchor, _period_now(kind))
         return lo <= offset <= hi
 
     run.__name__ = f"_{name.replace('.', '_').lower()}"
     return run
 
 
-def _make_is_in_n(name: str, resolve: Any, now: Any, offset_of: Any, sign: int) -> Any:
-    """IsInNextNX (sign=+1): 0 < offset <= n. IsInPreviousNX (sign=-1): -n <= offset < 0."""
+def _make_is_in_n(name: str, resolve: Any, kind: str, unit: str, sign: int) -> Any:
+    """IsInNextNX (sign=+1): 0 < offset <= n. IsInPreviousNX: -n <= offset < 0."""
 
     def run(args: list[Any], ctx: _Ctx) -> Any:
         _arity(name, args, 2)
@@ -993,7 +1045,7 @@ def _make_is_in_n(name: str, resolve: Any, now: Any, offset_of: Any, sign: int) 
         n = _require_int(args[1])
         if anchor is None:
             return None
-        offset = offset_of(anchor, now())
+        offset = _offset_for(kind, unit, anchor, _period_now(kind))
         if sign > 0:
             return 0 < offset <= n
         return -n <= offset < 0
@@ -1002,22 +1054,10 @@ def _make_is_in_n(name: str, resolve: Any, now: Any, offset_of: Any, sign: int) 
     return run
 
 
-def _date_offset_of(unit: str) -> Any:
-    def offset_of(value_date: date, now_date: date) -> int:
-        return _date_period_offset(unit, value_date, now_date)
-
-    return offset_of
-
-
-def _time_offset_of(unit: str) -> Any:
-    def offset_of(value_dt: datetime, now_dt: datetime) -> int:
-        return _time_period_offset(unit, value_dt, now_dt)
-
-    return offset_of
-
-
-def _today_local() -> date:
-    return datetime.now().date()
+def _offset_for(kind: str, unit: str, anchor: Any, now: Any) -> int:
+    if kind == "date":
+        return _date_period_offset(unit, anchor, now)
+    return _time_period_offset(unit, anchor, now)
 
 
 # --------------------------------------------------------------------------
@@ -1404,14 +1444,14 @@ def _date_is_in_year_to_date(args: list[Any], ctx: _Ctx) -> Any:
     anchor = _period_anchor_date("Date.IsInYearToDate", args[0])
     if anchor is None:
         return None
-    today = _today_local()
+    today = _now_local().date()
     return anchor.year == today.year and anchor <= today
 
 
 # Date.IsIn{Current,Next,Previous}{Day,Week,Month,Quarter,Year}[N] - see the
 # "Relative-period predicates" engine above. Month/Year "Current" already
 # exist (pre-existing, untouched); Day/Week/Quarter "Current" are new.
-_DATE_ISIN_UNITS: tuple[tuple[str, str], ...] = (
+_DATE_ISIN_CURRENT_UNITS: tuple[tuple[str, str], ...] = (
     ("Day", "day"),
     ("Week", "week"),
     ("Quarter", "quarter"),
@@ -1424,27 +1464,27 @@ _DATE_ISIN_ALL_UNITS: tuple[tuple[str, str], ...] = (
     ("Year", "year"),
 )
 _DATE_ISIN_BUILTINS: dict[str, Any] = {}
-for _label, _unit in _DATE_ISIN_UNITS:
+for _label, _unit in _DATE_ISIN_CURRENT_UNITS:
     _name = f"Date.IsInCurrent{_label}"
     _DATE_ISIN_BUILTINS[_name] = _make_is_in(
-        _name, _period_anchor_date, _today_local, _date_offset_of(_unit), 0, 0
+        _name, _period_anchor_date, "date", _unit, 0, 0
     )
 for _label, _unit in _DATE_ISIN_ALL_UNITS:
     _next_name = f"Date.IsInNext{_label}"
     _DATE_ISIN_BUILTINS[_next_name] = _make_is_in(
-        _next_name, _period_anchor_date, _today_local, _date_offset_of(_unit), 1, 1
+        _next_name, _period_anchor_date, "date", _unit, 1, 1
     )
     _nextn_name = f"Date.IsInNextN{_label}s"
     _DATE_ISIN_BUILTINS[_nextn_name] = _make_is_in_n(
-        _nextn_name, _period_anchor_date, _today_local, _date_offset_of(_unit), 1
+        _nextn_name, _period_anchor_date, "date", _unit, 1
     )
     _prev_name = f"Date.IsInPrevious{_label}"
     _DATE_ISIN_BUILTINS[_prev_name] = _make_is_in(
-        _prev_name, _period_anchor_date, _today_local, _date_offset_of(_unit), -1, -1
+        _prev_name, _period_anchor_date, "date", _unit, -1, -1
     )
     _prevn_name = f"Date.IsInPreviousN{_label}s"
     _DATE_ISIN_BUILTINS[_prevn_name] = _make_is_in_n(
-        _prevn_name, _period_anchor_date, _today_local, _date_offset_of(_unit), -1
+        _prevn_name, _period_anchor_date, "date", _unit, -1
     )
 del _label, _unit, _name, _next_name, _nextn_name, _prev_name, _prevn_name
 
@@ -1594,28 +1634,23 @@ _TIME_ISIN_BUILTINS: dict[str, Any] = {}
 for _label, _unit in _TIME_ISIN_UNITS:
     _cur_name = f"DateTime.IsInCurrent{_label}"
     _TIME_ISIN_BUILTINS[_cur_name] = _make_is_in(
-        _cur_name, _period_anchor_datetime, datetime.now, _time_offset_of(_unit), 0, 0
+        _cur_name, _period_anchor_datetime, "datetime", _unit, 0, 0
     )
     _next_name = f"DateTime.IsInNext{_label}"
     _TIME_ISIN_BUILTINS[_next_name] = _make_is_in(
-        _next_name, _period_anchor_datetime, datetime.now, _time_offset_of(_unit), 1, 1
+        _next_name, _period_anchor_datetime, "datetime", _unit, 1, 1
     )
     _nextn_name = f"DateTime.IsInNextN{_label}s"
     _TIME_ISIN_BUILTINS[_nextn_name] = _make_is_in_n(
-        _nextn_name, _period_anchor_datetime, datetime.now, _time_offset_of(_unit), 1
+        _nextn_name, _period_anchor_datetime, "datetime", _unit, 1
     )
     _prev_name = f"DateTime.IsInPrevious{_label}"
     _TIME_ISIN_BUILTINS[_prev_name] = _make_is_in(
-        _prev_name,
-        _period_anchor_datetime,
-        datetime.now,
-        _time_offset_of(_unit),
-        -1,
-        -1,
+        _prev_name, _period_anchor_datetime, "datetime", _unit, -1, -1
     )
     _prevn_name = f"DateTime.IsInPreviousN{_label}s"
     _TIME_ISIN_BUILTINS[_prevn_name] = _make_is_in_n(
-        _prevn_name, _period_anchor_datetime, datetime.now, _time_offset_of(_unit), -1
+        _prevn_name, _period_anchor_datetime, "datetime", _unit, -1
     )
 del _label, _unit, _cur_name, _next_name, _nextn_name, _prev_name, _prevn_name
 

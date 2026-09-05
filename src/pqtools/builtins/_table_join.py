@@ -730,7 +730,9 @@ def _table_position_of_any(args: list[Any], ctx: _Ctx) -> Any:
     return positions[0] if occurrence == 0 else positions[-1]
 
 
-def _row_replacement_pairs(value: Any, what: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+def _row_replacement_pairs(
+    value: Any, what: str
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """``{{old1, new1}, {old2, new2}, ...}`` - a list of ``{old, new}``
     record pairs, exactly Microsoft's own (only) worked example's shape.
     No bare single-pair shorthand is documented anywhere for this
@@ -868,9 +870,7 @@ def _table_add_rank_column(args: list[Any], ctx: _Ctx) -> Any:
                     "RankKind.Dense, or RankKind.Ordinal"
                 )
         if options:
-            raise UnsupportedError(
-                f"Table.AddRankColumn: option(s) {sorted(options)}"
-            )
+            raise UnsupportedError(f"Table.AddRankColumn: option(s) {sorted(options)}")
 
     ranked = list(table)
     try:
@@ -896,9 +896,7 @@ def _table_add_rank_column(args: list[Any], ctx: _Ctx) -> Any:
     return result
 
 
-def _table_max_n_or_min_n(
-    args: list[Any], ctx: _Ctx, want_max: bool, what: str
-) -> Any:
+def _table_max_n_or_min_n(args: list[Any], ctx: _Ctx, want_max: bool, what: str) -> Any:
     _arity(what, args, 3)
     table = _require_table(args[0])
     keys = _parse_rank_criteria(args[1], what)

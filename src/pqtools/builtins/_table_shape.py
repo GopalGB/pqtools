@@ -1570,9 +1570,7 @@ def _table_combine_columns_to_record(args: list[Any], ctx: _Ctx) -> Any:
                 f"Table.CombineColumnsToRecord: option(s) {sorted(remaining)}"
             )
     if not source_columns:
-        raise EvalError(
-            "Table.CombineColumnsToRecord: sourceColumns must not be empty"
-        )
+        raise EvalError("Table.CombineColumnsToRecord: sourceColumns must not be empty")
     header = _column_order(table)
     for name in source_columns:
         if table and name not in header:
@@ -1769,8 +1767,7 @@ def _table_from_partitions(args: list[Any], ctx: _Ctx) -> Any:
         pair = _require_list(entry)
         if len(pair) != 2:
             raise EvalError(
-                "Table.FromPartitions: each partition must be a "
-                "{value, table} pair"
+                "Table.FromPartitions: each partition must be a {value, table} pair"
             )
         value, subtable = pair
         for row in _require_table(subtable):
