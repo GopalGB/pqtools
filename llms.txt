@@ -37,7 +37,7 @@ affiliated with or endorsed by Microsoft.
   brand-new query. Any `--write` on a container writes a `<file>.bak` first.
 
 <!-- coverage:start -->
-pqtools implements **547 of the 635** functions in Microsoft's Power Query M reference (86%). Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+pqtools registers **547 of the 635 names** in Microsoft's Power Query M reference - 86% of NAMES, which is not a measure of semantic compatibility and should not be quoted as one. Each registered name's arity and nullability are checked against its own reference page, and 141 of Microsoft's worked examples reproduce their documented output exactly; see SUPPORT-MATRIX.md for what is and is not measured. Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
 
 ## What it deliberately does NOT do

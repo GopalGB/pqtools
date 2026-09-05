@@ -1,5 +1,18 @@
 # STATUS - mquery-toolkit 0.1.0
 
+> **HISTORICAL RECORD - not the current state of this package.**
+>
+> This file describes **0.1.0**, released under the package's former name
+> `mquery-toolkit`, and its gate rows are from 2026-09-03. The package is now
+> **pqtools 0.10.0**; the test count below (60) is roughly one-sixtieth of the
+> current suite, and several statements here were already self-contradictory
+> when written ("PUBLISHED" and "Not yet on PyPI" in the same paragraph).
+>
+> It is kept for provenance - the gate evidence it cites is real and the
+> `evidence/` logs it names still exist. **For what pqtools supports today,
+> read [SUPPORT-MATRIX.md](../SUPPORT-MATRIX.md).** Nothing below should be
+> quoted as current.
+
 Last verified: 2026-09-03 11:05 IST by the Opus 5 session (gate rows update as the runs land). Every number below was produced by a command run tonight; logs are in `evidence/`.
 
 ## One-line state

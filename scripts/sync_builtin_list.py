@@ -157,13 +157,22 @@ def main() -> int:
     # because its capability prose was updated by hand and the hand forgot.
     documented = len(DOCUMENTED)
     covered = sum(1 for name in DOCUMENTED if name in BUILTINS)
+    # The wording matters as much as the number. "implements 547 of 635
+    # (86%)" was read, reasonably, as 86% compatibility - it is 86% of
+    # NAMES, the cheapest of the three things a caller depends on. An
+    # assistant quoting this file will repeat whatever framing it finds.
     coverage = (
-        f"pqtools implements **{covered} of the {documented}** functions in "
-        f"Microsoft's Power Query M reference ({100 * covered // documented}%). "
-        f"Every one of the remaining {documented - covered} is recognised by "
-        "name and refuses with a typed error saying which outside system it "
-        "would need - never a wrong answer, and never the bare "
-        '"unknown identifier" that a typo produces.'
+        f"pqtools registers **{covered} of the {documented} names** in "
+        f"Microsoft's Power Query M reference - "
+        f"{100 * covered // documented}% of NAMES, which is not a measure of "
+        "semantic compatibility and should not be quoted as one. Each "
+        "registered name's arity and nullability are checked against its own "
+        "reference page, and 141 of Microsoft's worked examples reproduce "
+        "their documented output exactly; see SUPPORT-MATRIX.md for what is "
+        f"and is not measured. Every one of the remaining {documented - covered} "
+        "is recognised by name and refuses with a typed error saying which "
+        "outside system it would need - never a wrong answer, and never the "
+        'bare "unknown identifier" that a typo produces.'
     )
     for path in (readme, llms):
         body = path.read_text(encoding="utf-8")

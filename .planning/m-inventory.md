@@ -1,5 +1,17 @@
 # Power Query M standard library inventory
 
+> **HISTORICAL RECORD - a snapshot, not the current registry.**
+>
+> This inventory was built on 2026-09-05 against a working copy at the old
+> `app-development/projects/mquery-toolkit` path, which no longer exists. The
+> registry has changed since, and the command quoted below will not run as
+> written.
+>
+> It is kept because the fetch provenance it records is useful. **For the
+> current counts and what they do and do not mean, read
+> [SUPPORT-MATRIX.md](../SUPPORT-MATRIX.md)**, which is enforced by
+> `tests/test_support_matrix.py` rather than being prose.
+
 Grounded inventory built by fetching each Microsoft Learn category page listed below with
 WebFetch (fetched 2026-09-05) and cross-referencing against the live `BUILTINS` registry:
 

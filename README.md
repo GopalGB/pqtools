@@ -17,7 +17,7 @@ pq check  report.pq                     # lint it in CI
 ```
 
 <!-- coverage:start -->
-pqtools implements **547 of the 635** functions in Microsoft's Power Query M reference (86%). Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
+pqtools registers **547 of the 635 names** in Microsoft's Power Query M reference - 86% of NAMES, which is not a measure of semantic compatibility and should not be quoted as one. Each registered name's arity and nullability are checked against its own reference page, and 141 of Microsoft's worked examples reproduce their documented output exactly; see SUPPORT-MATRIX.md for what is and is not measured. Every one of the remaining 88 is recognised by name and refuses with a typed error saying which outside system it would need - never a wrong answer, and never the bare "unknown identifier" that a typo produces.
 <!-- coverage:end -->
 
 What it is for, in one line each:
@@ -139,12 +139,20 @@ dependencies. A query copied verbatim out of Power Query's Advanced Editor -
 `Source` step included - evaluates without any help, as long as its file path
 exists on this machine.
 
-**Engine-backed sources do not, and will not.** `Sql.Database`, `Web.Contents`,
-`SharePoint.*`, `Odbc.*` and friends need credentials, a network identity,
-driver-specific type mapping, or query folding into a remote engine. Those are
-Microsoft's Mashup Engine, this project does not reimplement it, and each one
-raises a typed error naming itself. For those - and for any query carrying the
-authoring machine's `C:\Users\...` path - supply the source table yourself:
+**Network and database sources run, behind a flag.** `Web.Contents` and
+`OData.Feed` need `--allow-net`; `Sql.Database`, `Odbc.*`,
+`PostgreSQL.Database`, `MySQL.Database` and `Oracle.Database` need `--allow-db`
+and their driver extra. Both are off by default.
+
+What is *not* implemented is **query folding** - a later `Table.SelectRows`
+filters locally rather than becoming a `WHERE` clause - and the sources that
+need a vendor identity or Microsoft's Mashup Engine itself (`SharePoint.*`,
+`Web.Headers`), which raise a typed error naming themselves. This package does
+not reimplement the Mashup Engine and does not claim compatibility with it.
+[SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) is the authoritative list.
+
+For a refused source - or any query carrying the authoring machine's
+`C:\Users\...` path - supply the source table yourself:
 
 ```bash
 pq eval report.pq --bind Source=data.csv
@@ -431,18 +439,13 @@ and order by value, so date filters and date ranges behave.
 
 **Everything else raises a typed `UnsupportedError` (`M_EVAL_UNSUPPORTED`)
 naming the exact construct** - never approximated, never guessed at. That
-includes: any engine-backed connector (`Web.Contents`, `Sql.Database`,
-`Excel.Workbook`, `SharePoint.*`, `Odbc.*`, `Folder.*` - the error
-names the construct and says it needs Fabric or PQTest, the two hosts that can
-actually run it; `Csv.Document` and `File.Contents` are *not* in this list, they
-run natively);
-`#shared`; `meta`; `??`; field projection (`r[[a],[b]]`); culture-aware date and
-number parsing (a supplied culture is refused by name rather than silently
-parsed as en-US); `RoundingMode.*`, `TextEncoding.*` and `BinaryEncoding.*`
-(deliberately unregistered - their numeric values could not be verified, and a
-wrong enum number would silently do the wrong thing rather than fail); any
-identifier this evaluator does not know; and any builtin call with an argument
-shape not listed above. A wrong number would be worse than a refusal, so `pqtools` never
+includes: `#shared`; `meta`; culture-aware date and number parsing (a supplied
+culture is refused by name rather than silently parsed as en-US); the sources
+that need a vendor identity or the Mashup Engine itself (`SharePoint.*`,
+`Web.Headers`); the 88 documented function names that refuse with a stated
+reason, each listed in [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md); any identifier
+this evaluator does not know; and any builtin call with an argument shape not
+listed above. A wrong number would be worse than a refusal, so `pqtools` never
 approximates a connector's result or a builtin's documented behaviour - it
 either runs the real, documented semantics or it stops and tells you exactly
 where. `max_steps` (default 1,000,000, an `evaluate()` keyword argument) bounds
@@ -457,18 +460,22 @@ says so, rather than guessing at what that engine would have returned.
 
 A query's `Source` step names where the data comes from. pqtools runs those
 steps rather than making you replace them.
+[SUPPORT-MATRIX.md](SUPPORT-MATRIX.md) is the authoritative version of this
+table, and carries the per-option detail (which `Sql.Database` options are
+honoured, which refuse by name) and the credential rules.
 
 | Source | Status | Needs |
 |---|---|---|
 | `Csv.Document`, `File.Contents`, `Json.Document`, `Lines.*` | works | nothing |
 | `Folder.Files`, `Folder.Contents` | works | nothing |
 | `Excel.Workbook` | works | `pip install 'pqtools[excel]'` |
-| `Web.Contents`, `OData.Feed` | works | `--allow-net` |
+| `Web.Contents` | works | `--allow-net` |
+| `OData.Feed` | works, follows `@odata.nextLink` | `--allow-net` |
 | `Sql.Database`, `Odbc.Query`, `Odbc.DataSource` | works | `--allow-db` + `pqtools[sql]` |
 | `PostgreSQL.Database` | works | `--allow-db` + `pqtools[postgres]` |
 | `MySQL.Database` | works | `--allow-db` + `pqtools[mysql]` |
 | `Oracle.Database` | works | `--allow-db` + `pqtools[oracle]` |
-| `SharePoint.*` | refuses, by name | - |
+| `SharePoint.*`, `Web.Headers` | refuses, by name | - |
 
 Drivers are optional extras, the way pandas keeps psycopg and SQLAlchemy
 optional. `pip install 'pqtools[all]'` gets the lot.
@@ -697,9 +704,14 @@ safety-critical code in the package, so it is not being rushed into a release.
 - Input and output are capped at **10 MiB**.
 - The Node subprocess is bounded to a **30 second** timeout.
 - Supported extensions: `.pq`, `.m`, `.pqm`, and any `*.query.pq` file.
-- `rename` scope: exactly **one unquoted top-level `let` binding**. It refuses
-  quoted identifiers (`#"..."`), record literals, lambda expressions, and
-  non-ASCII source.
+- `rename` scope: exactly **one unquoted top-level `let` binding**. The guard
+  is **textual and whole-file**, which is stricter than it sounds: a `#"`
+  quoted identifier, a `[` (record literal *or* field access), a `=>`, or any
+  non-ASCII character **anywhere in the source - including inside a string
+  literal or a comment** - refuses the entire rename, as does a nested `let`.
+  The over-refusal is deliberate: a rename that is right most of the time
+  fails by silently altering a query. Narrowing it needs binding-aware
+  analysis of the parse tree, not a shorter list of forbidden characters.
 - `Retry-After` on the Fabric adapter must be whole seconds; HTTP-date values
   are rejected.
 - **Windows:** two guarantees are weaker there and the code says so rather than pretending.

@@ -254,7 +254,19 @@ def test_the_stated_coverage_is_the_real_coverage(document: str) -> None:
 
     covered = sum(1 for name in DOCUMENTED if name in BUILTINS)
     text = (Path(__file__).parent.parent / document).read_text(encoding="utf-8")
-    assert f"**{covered} of the {len(DOCUMENTED)}**" in text, (
+    assert f"**{covered} of the {len(DOCUMENTED)} names**" in text, (
         f"{document} states a stale coverage figure; the registry now covers "
         f"{covered} of {len(DOCUMENTED)}. Run scripts/sync_builtin_list.py."
+    )
+    # The number was never the whole problem. "implements 547 of 635 (86%)"
+    # reads as 86% COMPATIBILITY, and that is how it was quoted. The
+    # qualifier is load-bearing, so it is asserted rather than trusted.
+    assert "% of NAMES" in text, (
+        f"{document} states the coverage percentage without saying it counts "
+        "NAMES. Detached from that word it reads as a compatibility figure, "
+        "which is a claim this package cannot support."
+    )
+    assert "not a measure of semantic compatibility" in text, (
+        f"{document} must say outright that the figure is not semantic "
+        "compatibility. Run scripts/sync_builtin_list.py."
     )

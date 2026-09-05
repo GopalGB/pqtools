@@ -31,6 +31,19 @@ remote `GopalGB/pqtools`. This folder IS the git repo.
 - **Push, tag and PyPI publish are G's explicit call.** They are outbound and
   irreversible; everything else here is internal and reversible, so just do it.
 
+## What is true right now
+
+`SUPPORT-MATRIX.md` is the authoritative statement of what this package
+supports - counts, connectors, per-option behaviour, credential rules, rename
+scope. `tests/test_support_matrix.py` checks its numbers and its connector
+table against the live registry, so it cannot drift the way the README's
+prose did. `ops/STATUS.md` and `.planning/m-inventory.md` are HISTORICAL and
+say so at the top; do not quote them as current.
+
+**86% is a count of NAMES**, not semantic compatibility. Registered names,
+verified signatures, and semantic behaviour are three different numbers - keep
+them apart in anything you write.
+
 ## Layout
 
     src/pqtools/builtins/   the M standard library, split by family
