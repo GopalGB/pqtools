@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import json
 import re
+import types
 from pathlib import Path
 
 import pytest
 
+from pqtools.builtins._shared import UnsupportedError
 from pqtools.evaluate import BUILTINS
+from pqtools.io import IOPolicy
 
 _ROOT = Path(__file__).resolve().parent.parent
 _FIXTURE = _ROOT / "tests" / "fixtures" / "m-signatures.json"
@@ -50,6 +53,80 @@ def _implemented_arities() -> dict[str, tuple[int, int]]:
 
 IMPLEMENTED = _implemented_arities()
 
+# The M hash-literals are language SYNTAX, not library functions: they have no
+# entry in the function reference and so no Syntax block to harvest. They are
+# not unverified - the worked-example corpus exercises them 367 times.
+_HASH_LITERALS = frozenset(
+    {"#binary", "#date", "#datetime", "#datetimezone", "#duration", "#table", "#time"}
+)
+
+# --------------------------------------------------------------------------
+# The static scan above reads only a LITERAL `_arity("Name", args, ...)`.
+# A builtin registered through a helper writes `_arity(name, args, ...)` with
+# `name` as a VARIABLE, so it produced no match, fell out of the comparison,
+# and nothing ever checked it. That was not a rare case: 82 of the 554
+# callable builtins were invisible this way, including PostgreSQL.Database
+# and MySQL.Database, which accepted one argument where both their pages
+# require two and then connected with `database=""` - a different database,
+# silently, on a call the signature forbids.
+#
+# So the ones the text cannot describe are asked directly. Arity is the one
+# property a builtin will answer about itself: call it with k arguments and
+# see whether `_arity` is what refuses. Any other outcome - a type error on
+# the placeholder, a driver that is not installed, a real result - means k
+# got past the arity check.
+# --------------------------------------------------------------------------
+
+# Permissive on purpose: a policy refusal fires BEFORE `_arity` in the
+# connectors, and would make every arity look accepted. Nothing reaches a
+# network or a database regardless, because the placeholder argument fails
+# every `_require_*` long before a connection is built.
+_PROBE_CTX = types.SimpleNamespace(
+    io=IOPolicy(allow_net=True, allow_db=True, allow_private=True)
+)
+
+
+class _Placeholder:
+    """A value no builtin can mistake for data of any M type."""
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "<arity probe>"
+
+
+def _accepts(name: str, count: int) -> bool:
+    refusal = f"{name} with {count} argument(s)"
+    try:
+        BUILTINS[name]([_Placeholder() for _ in range(count)], _PROBE_CTX)
+    except UnsupportedError as error:
+        return str(error) != refusal
+    except BaseException:  # noqa: BLE001 - any other failure got past _arity
+        return True
+    return True
+
+
+def _probe_arity(name: str, ceiling: int) -> tuple[int, int] | None:
+    accepted = [k for k in range(ceiling + 3) if _accepts(name, k)]
+    return (accepted[0], accepted[-1]) if accepted else None
+
+
+def _probed_arities() -> dict[str, tuple[int, int]]:
+    found: dict[str, tuple[int, int]] = {}
+    for name, value in sorted(BUILTINS.items()):
+        if not callable(value) or name in IMPLEMENTED or name in _HASH_LITERALS:
+            continue
+        if name not in SIGNATURES:
+            continue
+        probed = _probe_arity(name, SIGNATURES[name]["arity"][1])
+        if probed is not None:
+            found[name] = probed
+    return found
+
+
+PROBED = _probed_arities()
+
+# Every builtin whose arity is known by either route.
+ARITY: dict[str, tuple[int, int]] = {**IMPLEMENTED, **PROBED}
+
 # Names whose implemented arity deliberately differs from the page, each with
 # the reason. A name may only sit here because the DOCUMENT is the thing that
 # cannot be honoured - never because the code has not caught up.
@@ -58,15 +135,7 @@ _DELIBERATE: dict[str, str] = {}
 _COMPARABLE = sorted(
     name
     for name in BUILTINS
-    if name in SIGNATURES and name in IMPLEMENTED and name not in _DELIBERATE
-)
-
-
-# The M hash-literals are language SYNTAX, not library functions: they have no
-# entry in the function reference and so no Syntax block to harvest. They are
-# not unverified - the worked-example corpus exercises them 367 times.
-_HASH_LITERALS = frozenset(
-    {"#binary", "#date", "#datetime", "#datetimezone", "#duration", "#table", "#time"}
+    if name in SIGNATURES and name in ARITY and name not in _DELIBERATE
 )
 
 
@@ -91,6 +160,50 @@ def test_every_callable_builtin_has_a_harvested_signature() -> None:
     )
 
 
+def test_no_documented_builtin_escapes_both_arity_checks() -> None:
+    """The blind spot that hid 82 builtins, closed from the other side.
+
+    `_implemented_arities` reads only a literal `_arity("Name", ...)`. A
+    builtin registered through a helper - `_generic_database(name, ...)`
+    writes `_arity(name, args, 2, 3)` - produced no match and dropped out of
+    `_COMPARABLE` in silence, so the suite went green having asked nothing
+    about it. PostgreSQL.Database and MySQL.Database sat in that gap while
+    accepting a one-argument call both pages forbid.
+
+    A name is now covered by the text scan OR by the runtime probe. If it is
+    covered by neither, that is the silent skip returning, and it fails here
+    instead of being invisible.
+    """
+    unchecked = sorted(
+        name
+        for name, value in BUILTINS.items()
+        if callable(value)
+        and name in SIGNATURES
+        and name not in ARITY
+        and name not in _HASH_LITERALS
+    )
+    assert unchecked == [], (
+        f"{len(unchecked)} documented builtin(s) have their arity checked by "
+        f"neither the source scan nor the runtime probe: {unchecked}. They "
+        "would pass this module without being asked anything."
+    )
+
+
+def test_the_runtime_probe_is_actually_reaching_builtins() -> None:
+    # If the probe silently classified everything as unreachable it would
+    # contribute nothing while the completeness test above still passed via
+    # some other route. It must be doing real work.
+    assert PROBED, (
+        "the runtime arity probe matched no builtin at all; either every "
+        "registration became a literal _arity call or the probe is broken"
+    )
+    overlap = sorted(set(PROBED) & set(IMPLEMENTED))
+    assert overlap == [], (
+        f"these names are measured twice, and the two answers may disagree "
+        f"without anything noticing: {overlap}"
+    )
+
+
 def test_the_fixture_covers_most_of_the_registry() -> None:
     # A harvester that silently stopped parsing would turn this whole module
     # into a no-op that still passes - the failure mode a gate must not have.
@@ -103,8 +216,8 @@ def test_the_fixture_covers_most_of_the_registry() -> None:
 @pytest.mark.parametrize("name", _COMPARABLE)
 def test_arity_matches_the_documented_signature(name: str) -> None:
     documented = tuple(SIGNATURES[name]["arity"])
-    assert IMPLEMENTED[name] == documented, (
-        f"{name} accepts {IMPLEMENTED[name][0]}..{IMPLEMENTED[name][1]} "
+    assert ARITY[name] == documented, (
+        f"{name} accepts {ARITY[name][0]}..{ARITY[name][1]} "
         f"arguments but the documented signature is "
         f"{documented[0]}..{documented[1]}: "
         f"{name}({', '.join(_render(p) for p in SIGNATURES[name]['parameters'])})"

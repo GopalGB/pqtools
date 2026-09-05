@@ -88,6 +88,82 @@ KNOWN_DIVERGENCES: dict[tuple[str, int], str] = {
 }
 
 
+# --------------------------------------------------------------------------
+# Examples whose printed Output cannot be COMPARED, and why.
+#
+# The output test used to `return` when the usage did not evaluate, and again
+# when the Output was not evaluable M. Both were silent. 21 examples took one
+# of those exits, so a regression that turned a matching example into an
+# honest-looking refusal changed nothing anyone could see - the case simply
+# stopped being checked, and the only thing that would have noticed was a
+# match floor set 31 below the real count.
+#
+# Each exit is now a recorded fact with a reason. A case that recovers fails
+# here asking to be removed, so the list can only shrink.
+# --------------------------------------------------------------------------
+
+_CULTURE = (
+    "the example pins a non-invariant culture. pqtools implements the "
+    "invariant/en-US culture only and refuses the rest BY NAME, because a "
+    "wrong separator turns 1.234 into 1234 - a silently wrong number, not a "
+    "cosmetic difference."
+)
+_MASHUP = (
+    "the function is evaluated by Power Query's Mashup Engine itself, not by "
+    "the M standard library. There is nothing here to run it with, and this "
+    "package does not claim Mashup Engine compatibility."
+)
+_FUZZY = (
+    "approximate matching. Microsoft does not document the similarity "
+    "algorithm precisely enough to reproduce, and a plausible-looking "
+    "approximation is exactly the answer a user cannot check."
+)
+_NOT_IMPLEMENTED = (
+    "not implemented. The refusal is typed and names the function, but this "
+    "is a genuine gap in coverage, not a defect in the page."
+)
+
+NO_OUTPUT_COMPARISON: dict[tuple[str, int], str] = {
+    ("Date.From", 2): _CULTURE,
+    ("Date.FromText", 3): _CULTURE,
+    ("Excel.Workbook", 0): (
+        "the example reads C:\\Book1.xlsx, a file on the machine that wrote "
+        "the page. Nothing here can supply it."
+    ),
+    ("Function.ScalarVector", 1): (
+        "the example's Table.TransformColumnTypes target is `type record`, a "
+        "structured target this build does not convert to."
+    ),
+    ("ItemExpression.From", 0): _MASHUP,
+    ("Json.Document", 0): (
+        "the page's printed Output is pretty-printed for reading and is not "
+        "parseable M, so there is no value to compare against. The usage "
+        "itself runs."
+    ),
+    ("List.MaxN", 2): _CULTURE,
+    ("RowExpression.Column", 0): _MASHUP,
+    ("RowExpression.From", 0): _MASHUP,
+    ("Table.AddFuzzyClusterColumn", 0): _FUZZY,
+    ("Table.FuzzyGroup", 0): _FUZZY,
+    ("Table.FuzzyJoin", 0): _FUZZY,
+    ("Table.FuzzyNestedJoin", 0): _FUZZY,
+    ("Table.RemoveRowsWithErrors", 0): _NOT_IMPLEMENTED,
+    ("Table.ReplaceErrorValues", 0): _NOT_IMPLEMENTED,
+    ("Table.ReplaceErrorValues", 1): _NOT_IMPLEMENTED,
+    ("Table.TransformColumnTypes", 1): _CULTURE,
+    ("Table.TransformColumnTypes", 2): (
+        "the page's M has an unbalanced parenthesis; see UNRUNNABLE above. "
+        "A typo in the source, not a parser gap."
+    ),
+    ("Table.TransformColumnTypes", 3): _CULTURE,
+    ("Text.From", 4): _CULTURE,
+    ("Web.Headers", 0): (
+        "a data-source connector needing vendor credentials or a proprietary "
+        "driver. It refuses by name rather than pretending."
+    ),
+}
+
+
 def _corpus() -> list[tuple[str, int, dict[str, str]]]:
     data = json.loads(CORPUS.read_text(encoding="utf-8"))["functions"]
     return [
@@ -170,11 +246,26 @@ def test_a_documented_example_produces_its_documented_output(
 ) -> None:
     """Where the page prints an answer, that answer is the assertion."""
     ran, got = _run(example["usage"])
-    if not ran:
-        return  # covered by the test above
     printed, want = _run(example["output"])
-    if not printed:
-        return  # the Output is prose, or M this evaluator cannot run
+    exempt = NO_OUTPUT_COMPARISON.get((name, index))
+    if exempt is not None:
+        assert not (ran and printed), (
+            f"{name} example {index} now evaluates AND its Output parses, so "
+            f"it can be compared - but it is still exempt as: {exempt}\n"
+            "Delete the NO_OUTPUT_COMPARISON entry; the case is checked now."
+        )
+        return
+    assert ran, (
+        f"{name} example {index} no longer evaluates: {got}\n"
+        "It used to be compared against its documented output. Fix the "
+        "regression, or - only if the example genuinely cannot be run here - "
+        "add it to NO_OUTPUT_COMPARISON with the reason."
+    )
+    assert printed, (
+        f"{name} example {index}: its documented Output no longer parses as "
+        f"M: {want}\nAdd it to NO_OUTPUT_COMPARISON with the reason if the "
+        "page's Output is genuinely not a value."
+    )
     divergence = KNOWN_DIVERGENCES.get((name, index))
     if divergence is not None:
         assert got != want, (
@@ -206,7 +297,10 @@ def test_enough_examples_actually_match_to_mean_something() -> None:
         printed, want = _run(example["output"])
         if ran and printed and got == want:
             matched += 1
-    assert matched >= 110, (
+    # 141 is the measured count, not a margin. The old floor was 110, so 31
+    # examples could have stopped matching without this failing - which was
+    # the whole point of the check.
+    assert matched >= 141, (
         f"only {matched} documented examples reproduce their printed output; "
         "that number has only ever gone up"
     )

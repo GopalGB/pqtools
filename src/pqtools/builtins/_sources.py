@@ -792,9 +792,15 @@ def _generic_database(
 
     def connector(args: list[Any], ctx: _Ctx) -> Any:
         _policy(ctx).check_db(what=name)
-        _arity(name, args, 1, 3)
+        # `(server as text, database as text, optional options as nullable
+        # record)` - both pages, verbatim. `database` is NOT optional. A
+        # one-argument call used to be accepted and connected with
+        # `database=""`, which PostgreSQL resolves to the user's default
+        # database: a different database, silently, on a call the signature
+        # does not permit.
+        _arity(name, args, 2, 3)
         server = _require_str(args[0])
-        database = _require_str(args[1]) if len(args) >= 2 else ""
+        database = _require_str(args[1])
         options = _optional_record(args[2] if len(args) == 3 else None, name)
 
         query = options.pop("Query", None)
