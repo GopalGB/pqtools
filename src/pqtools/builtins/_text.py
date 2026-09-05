@@ -233,10 +233,17 @@ def _text_length(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _text_combine(args: list[Any], ctx: _Ctx) -> Any:
+    # "Note that the null is ignored" - text-combine, example 3, whose
+    # stated output for `{"Seattle", null, "WA"}` with ", " is
+    # "Seattle, WA" and not "Seattle, , WA". This raised "expected text,
+    # got null", which mattered well beyond that one call: example 4 is the
+    # ordinary first/middle/last name join, and a missing middle initial is
+    # exactly the row a real table has. Dropping the value rather than
+    # rendering it empty is what keeps the separator out of the result.
     _arity("Text.Combine", args, 1, 2)
     texts = _require_list(args[0])
     separator = _require_str(args[1]) if len(args) == 2 else ""
-    return separator.join(_require_str(item) for item in texts)
+    return separator.join(_require_str(item) for item in texts if item is not None)
 
 
 def _text_contains(args: list[Any], ctx: _Ctx) -> Any:
@@ -286,12 +293,25 @@ def _text_end(args: list[Any], ctx: _Ctx) -> Any:
     return text[len(text) - count :] if count else ""
 
 
+def _trim_characters(args: list[Any], index: int, fn_name: str) -> str | None:
+    """The optional `trim` argument: text, or a LIST of characters.
+
+    `Text.Trim("<div/>", {"<", ">", "/"})` is example 3 on the page and it
+    raised "expected text, got list" - the list shape was simply missing,
+    though `_char_set` had been resolving exactly these two shapes for
+    Text.Select/Text.Remove all along. Returns None for "no argument", so
+    a caller can tell that from an empty character set.
+    """
+    if len(args) <= index or args[index] is None:
+        return None
+    return "".join(sorted(_char_set(args[index], fn_name)))
+
+
 def _text_trim(args: list[Any], ctx: _Ctx) -> Any:
     _arity("Text.Trim", args, 1, 2)
     text = _require_str(args[0])
-    if len(args) == 2:
-        return text.strip(_require_str(args[1]))
-    return text.strip()
+    chars = _trim_characters(args, 1, "Text.Trim")
+    return text.strip() if chars is None else text.strip(chars)
 
 
 def _char_set(value: Any, fn_name: str) -> set[str]:
@@ -917,9 +937,8 @@ def _text_trim_start(args: list[Any], ctx: _Ctx) -> Any:
     if text is None:
         return None
     text = _require_str(text)
-    if len(args) == 2 and args[1] is not None:
-        return text.lstrip(_require_str(args[1]))
-    return text.lstrip()
+    chars = _trim_characters(args, 1, "Text.TrimStart")
+    return text.lstrip() if chars is None else text.lstrip(chars)
 
 
 def _text_trim_end(args: list[Any], ctx: _Ctx) -> Any:
@@ -928,9 +947,8 @@ def _text_trim_end(args: list[Any], ctx: _Ctx) -> Any:
     if text is None:
         return None
     text = _require_str(text)
-    if len(args) == 2 and args[1] is not None:
-        return text.rstrip(_require_str(args[1]))
-    return text.rstrip()
+    chars = _trim_characters(args, 1, "Text.TrimEnd")
+    return text.rstrip() if chars is None else text.rstrip(chars)
 
 
 def _text_to_list(args: list[Any], ctx: _Ctx) -> Any:

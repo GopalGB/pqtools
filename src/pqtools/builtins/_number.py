@@ -54,18 +54,17 @@ _PRECISION_DECIMAL = 1
 # in _number_to_text naming the format verbatim.
 _STANDARD_FORMAT_RE = re.compile(r"^([A-Za-z])(\d*)$")
 
-# Letters whose OUTPUT does not depend on input case in real .NET (no
-# case-sensitive character appears anywhere in the rendered string), so
-# both cases are accepted and mapped onto the one implementation below.
-# E, G and X are deliberately excluded: .NET's E/X let the input case pick
-# the case of the exponent/hex-digit letters in the output, and G's case
-# only matters when it happens to fall back to scientific notation - a
-# second, unverified rendering path this module does not implement, so
-# lowercase e/g/x stay refused rather than silently rendering with the
-# wrong (or inconsistently-right) case. (This also keeps
-# Number.ToText(4, "e") a refusal, matching the pre-existing pinned test
-# in tests/test_builtins_scalar.py, which this task does not own.)
+# In real .NET the case of a standard format specifier changes exactly one
+# thing and only for E, G and X: which case the exponent letter (or the
+# hex digits) is rendered in. Everything else about the rendering is
+# identical. This module used to refuse the lowercase e/g/x outright,
+# calling the difference "a second, unverified rendering path" - but
+# Number.ToText's own example 2 states `Number.ToText(4, "e")` is
+# "4.000000e+000", the "E" output with one character lowered, so the
+# refusal was rejecting a documented call. The case is now carried through
+# to the three renderers that can emit a letter.
 _CASE_INSENSITIVE_FORMAT_LETTERS = frozenset("CDFNP")
+_CASE_SENSITIVE_FORMAT_LETTERS = frozenset("EGX")
 
 
 def _consume_budget(ctx: _Ctx, count: int) -> None:
@@ -105,6 +104,31 @@ def _ole_serial_from_naive_datetime(name: str, dt: datetime.datetime) -> float:
     return whole_days + fractional_seconds / 86400
 
 
+def _number_from_text_value(text: str) -> Any:
+    """`Number.From("4")`, and `Number.From("12.3%")` -> 0.123.
+
+    The percent form is example 3 on the page, with that stated output. It
+    raised "not a number" here, which is a conversion a real column of
+    scraped or pasted percentages hits immediately.
+    """
+    stripped = text.strip()
+    percent = stripped.endswith("%")
+    if percent:
+        stripped = stripped[:-1].rstrip()
+    try:
+        number = _parse_numeric_literal(stripped)
+    except ValueError as error:
+        raise EvalError(f"Number.From: not a number: {text!r}") from error
+    if not percent:
+        return number
+    # Shift the decimal point in DECIMAL, not by dividing the binary
+    # double: `12.3 / 100` is 0.12300000000000001, while the page states
+    # 0.123. The two are different doubles, and the one the docs name is
+    # the one a reader gets from typing 0.123 - so the digits are moved
+    # before the value ever becomes a float.
+    return float(decimal.Decimal(str(number)).scaleb(-2))
+
+
 def _number_from(args: list[Any], ctx: _Ctx) -> Any:
     # Number.From(value as any, optional culture as nullable text) as
     # nullable number. The temporal branches below are grounded in
@@ -126,10 +150,7 @@ def _number_from(args: list[Any], ctx: _Ctx) -> Any:
     if isinstance(value, (int, float)):
         return value
     if isinstance(value, str):
-        try:
-            return _parse_numeric_literal(value.strip())
-        except ValueError as error:
-            raise EvalError(f"Number.From: not a number: {value!r}") from error
+        return _number_from_text_value(value)
     if isinstance(value, datetime.datetime):
         # datetime/datetimezone - checked before `datetime.date` below
         # because datetime.datetime IS a datetime.date subclass (the
@@ -514,7 +535,9 @@ def _render_grouped_format(value: int | float, precision: int | None) -> str:
     return f"{value:,.{2 if precision is None else precision}f}"
 
 
-def _render_scientific_format(value: int | float, precision: int | None) -> str:
+def _render_scientific_format(
+    value: int | float, precision: int | None, upper: bool = True
+) -> str:
     # .NET's "E" always uses a MINIMUM of 3 exponent digits (verified
     # against the docs' own worked example: 1052.0329112756 ("E", en-US)
     # -> "1.052033E+003"). Python's own `E` presentation type only pads to
@@ -523,7 +546,7 @@ def _render_scientific_format(value: int | float, precision: int | None) -> str:
     text = f"{float(value):.{p}E}"
     mantissa, exp_part = text.split("E")
     sign, digits = exp_part[0], exp_part[1:]
-    return f"{mantissa}E{sign}{digits.zfill(3)}"
+    return f"{mantissa}{'E' if upper else 'e'}{sign}{digits.zfill(3)}"
 
 
 def _render_percent_format(value: int | float, precision: int | None) -> str:
@@ -541,7 +564,9 @@ def _render_currency_format(value: int | float, precision: int | None) -> str:
     return f"({body})" if negative else body
 
 
-def _render_hex_format(name: str, value: int | float, precision: int | None) -> str:
+def _render_hex_format(
+    name: str, value: int | float, precision: int | None, upper: bool = True
+) -> str:
     n = _require_whole_number(name, "X", value)
     if n < 0:
         # Real .NET two's-complements a negative integral value to its
@@ -553,7 +578,7 @@ def _render_hex_format(name: str, value: int | float, precision: int | None) -> 
             f"{name}: format 'X' on a negative number (the two's-complement "
             "bit width is ambiguous for pqtools' arbitrary-precision numbers)"
         )
-    digits = format(n, "X")
+    digits = format(n, "X" if upper else "x")
     if precision is not None and len(digits) < precision:
         digits = digits.zfill(precision)
     return digits
@@ -587,7 +612,9 @@ def _general_digits_and_exponent(
     return "".join(str(d) for d in digits), len(digits) - 1 + exponent
 
 
-def _render_general_format(value: int | float, precision: int | None) -> str:
+def _render_general_format(
+    value: int | float, precision: int | None, upper: bool = True
+) -> str:
     # General ("G") format specifier - see the docs section quoted in the
     # module notes: fixed-point when the scientific exponent is in
     # (-5, precision), otherwise scientific with a MINIMUM of 2 exponent
@@ -612,7 +639,8 @@ def _render_general_format(value: int | float, precision: int | None) -> str:
             digit_str if len(digit_str) == 1 else f"{digit_str[0]}.{digit_str[1:]}"
         )
         sign = "+" if exponent >= 0 else "-"
-        text = f"{mantissa}E{sign}{str(abs(exponent)).zfill(2)}"
+        letter = "E" if upper else "e"
+        text = f"{mantissa}{letter}{sign}{str(abs(exponent)).zfill(2)}"
     return f"-{text}" if negative else text
 
 
@@ -644,30 +672,31 @@ def _number_to_text(args: list[Any], ctx: _Ctx) -> Any:
         raise UnsupportedError(f"Number.ToText: format {fmt!r}")
     letter, digit_text = match.groups()
     precision = int(digit_text) if digit_text else None
-    upper = letter.upper()
-    if letter != upper and upper not in _CASE_INSENSITIVE_FORMAT_LETTERS:
-        # E/G/X: case picks a genuinely different (unverified) rendering
-        # path in real .NET - see _CASE_INSENSITIVE_FORMAT_LETTERS.
-        raise UnsupportedError(f"Number.ToText: format {fmt!r}")
-    if upper == "D":
+    specifier = letter.upper()
+    # The one thing the input case decides - see the note beside
+    # _CASE_SENSITIVE_FORMAT_LETTERS.
+    uppercase = letter.isupper()
+    if specifier == "D":
         return _render_decimal_format("Number.ToText", value, precision)
-    if upper == "F":
+    if specifier == "F":
         return _render_fixed_format(value, precision)
-    if upper == "N":
+    if specifier == "N":
         return _render_grouped_format(value, precision)
-    if upper == "E":
-        return _render_scientific_format(value, precision)
-    if upper == "P":
+    if specifier == "E":
+        return _render_scientific_format(value, precision, uppercase)
+    if specifier == "P":
         return _render_percent_format(value, precision)
-    if upper == "C":
+    if specifier == "C":
         return _render_currency_format(value, precision)
-    if upper == "X":
-        return _render_hex_format("Number.ToText", value, precision)
-    if upper == "G":
+    if specifier == "X":
+        return _render_hex_format("Number.ToText", value, precision, uppercase)
+    if specifier == "G":
         # "the precision specifier is omitted OR ZERO" both mean default -
         # unlike every other format above, where an explicit 0 is a real,
         # honoured precision (e.g. "F0" really does mean zero decimals).
-        return _render_general_format(value, None if precision == 0 else precision)
+        return _render_general_format(
+            value, None if precision == 0 else precision, uppercase
+        )
     raise UnsupportedError(f"Number.ToText: format {fmt!r}")
 
 

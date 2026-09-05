@@ -12,7 +12,6 @@ from ._shared import (
     _MISSING_FIELD_ERROR,
     _MISSING_FIELD_USE_NULL,
     EvalError,
-    UnsupportedError,
     _arity,
     _field_name_list,
     _missing_field_mode,
@@ -20,6 +19,7 @@ from ._shared import (
     _require_record,
     _require_str,
     _require_table,
+    _type_name,
 )
 
 if TYPE_CHECKING:
@@ -87,24 +87,44 @@ def _record_field_values(args: list[Any], ctx: _Ctx) -> Any:
 
 
 def _record_from_list(args: list[Any], ctx: _Ctx) -> Any:
-    # Record.FromList(list, fields) - `fields` can be a list of names or a
-    # record type. Record types parse as `TypePrimaryType`/`PrimitiveType`
-    # nodes, which the evaluator does not implement at all outside type
-    # ascription (see PRD-0.5.0-builtins.md's P0 type-system item, owned by
-    # another module for this task) - a query passing a type value here
-    # already fails before this function runs, so only the list-of-names
-    # shape is reachable and implemented.
+    # Record.FromList(list, fields) - `fields` is a list of names OR a
+    # record type. The record-type shape used to refuse by name, on the
+    # grounds that a `type [...]` expression did not evaluate at all here;
+    # it does now, so the refusal outlived its reason and was rejecting
+    # example 2 on the function's own page.
+    #
+    # The declared field TYPES are read for their names and then ignored,
+    # which is not an oversight: that same example passes "123-4567" for a
+    # field declared `Phone = number` and states the record it builds. M
+    # takes the names from the type and does not check the values against
+    # it, so neither does this.
     _arity("Record.FromList", args, 2)
     values = _require_list(args[0])
     fields_arg = args[1]
-    if not isinstance(fields_arg, list):
-        raise UnsupportedError("Record.FromList: fields as a record type")
-    names = [_require_str(name) for name in fields_arg]
+    names = _record_type_field_names(fields_arg)
+    if names is None:
+        if not isinstance(fields_arg, list):
+            raise EvalError(
+                "Record.FromList: fields must be a list of names or a record "
+                f"type, got {_type_name(fields_arg)}"
+            )
+        names = [_require_str(name) for name in fields_arg]
     if len(names) != len(values):
         raise EvalError("Record.FromList: field count does not match value count")
     if len(set(names)) != len(names):
         raise EvalError("Record.FromList: field names must be unique")
     return dict(zip(names, values, strict=True))
+
+
+def _record_type_field_names(value: Any) -> list[str] | None:
+    """The declared field names of a record type, or None if not one."""
+    from ._type import _MType  # noqa: PLC0415 - _type imports this module
+
+    if not isinstance(value, _MType):
+        return None
+    if value.kind != "record" or value.field_names is None:
+        raise EvalError(f"Record.FromList: expected a record type, got {value.display}")
+    return list(value.field_names)
 
 
 def _record_combine(args: list[Any], ctx: _Ctx) -> Any:

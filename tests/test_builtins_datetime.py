@@ -692,12 +692,18 @@ def test_duration_from_rejects_logical():
 
 
 def test_date_from_rejects_bad_text():
-    with pytest.raises(EvalError, match="ISO date"):
+    # The message no longer says "ISO", because ISO is no longer the only
+    # shape accepted: the en-US patterns are tried after it, so that
+    # `Date.From("4/8/2022")` - which two reference pages use with a stated
+    # output - reads as April 8 2022 instead of failing. Text that matches
+    # none of them still fails, and now says so without naming a standard
+    # it was only ever one of.
+    with pytest.raises(EvalError, match="not a recognisable date"):
         evaluate('Date.From("not a date")')
 
 
 def test_datetime_from_rejects_bad_text():
-    with pytest.raises(EvalError, match="ISO datetime"):
+    with pytest.raises(EvalError, match="not a recognisable datetime"):
         evaluate('DateTime.From("not a datetime")')
 
 

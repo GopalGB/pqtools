@@ -1026,17 +1026,26 @@ def _scalarvector_param_names(function_type: Any, arity: int) -> list[str]:
     """Column names for the one-row table handed to ``vectorFunction``.
 
     Real M reads these off ``scalarFunctionType``'s own
-    ``type function (name as T, ...) as R`` parameter list - see the
-    module comment above for why pqtools cannot evaluate that literal at
-    all. ``_MType`` (builtins/_type.py) already carries a ``field_names``
-    tuple for ``type table [...]``; duck-typing onto that same attribute
-    here, rather than inventing a second name for the same idea, means the
-    day function-type support is added there this starts reading the real
-    parameter names with no change in this file.
+    ``type function (name as T, ...) as R`` parameter list, and that
+    literal now evaluates (``evaluate._function_type_value``), so the real
+    names are available. They were not when this was written, and the
+    fallback it shipped with - ``Column1``, ``Column2`` - is what both of
+    the function's own worked examples died on: their vectorFunction bodies
+    say ``[left]`` and ``[right]``, so a one-row table with invented column
+    names failed with "field not found: left". A positional guess that
+    LOOKS like a table is the worst shape to hand a caller who is about to
+    index it by name.
+
+    ``field_names`` is still read first: ``Type.ForRecord``-built types
+    carry the names there, and a caller who assembled the type that way
+    means the same thing by it.
     """
     names = getattr(function_type, "field_names", None)
     if isinstance(names, tuple) and len(names) == arity:
         return list(names)
+    parameters = getattr(function_type, "parameters", None)
+    if isinstance(parameters, tuple) and len(parameters) >= arity:
+        return [name for name, _ in parameters[:arity]]
     return [f"Column{i + 1}" for i in range(arity)]
 
 

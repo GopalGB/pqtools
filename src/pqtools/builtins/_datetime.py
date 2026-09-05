@@ -239,6 +239,65 @@ def _time_from_day_fraction(serial: int | float) -> time:
 # --------------------------------------------------------------------------
 
 
+# Text that a bare `X.From` / `X.FromText` accepts with NO Format argument.
+#
+# Real .NET parses with the CULTURE'S PATTERNS, not with ISO alone, and
+# Microsoft's own examples lean on that: `Date.From("4/8/2022")` and
+# `Date.From("Apr 8, 2022")` both name April 8 2022 in a stated output
+# (list-contains and list-containsany, example 4 of each), and
+# `Time.FromText("10:12:31am")` is example 1 of its own page. All three
+# raised "not a valid ISO ..." here, because ISO was the only shape this
+# module could read - which is the narrowest possible reading of "the
+# invariant culture" and not what it means.
+#
+# ISO is still tried FIRST, so an unambiguous ISO date can never be
+# re-read month-first. These are the en-US patterns only, in the spelling
+# `_compile_format` already understands - the culture check upstream has
+# already refused anything else.
+_FALLBACK_DATE_PATTERNS = (
+    "M/d/yyyy",
+    "M/d/yy",
+    "M-d-yyyy",
+    "dddd, MMMM d, yyyy",
+    "MMMM d, yyyy",
+    "MMM d, yyyy",
+    "MMMM d yyyy",
+    "MMM d yyyy",
+    "d MMMM yyyy",
+    "d MMM yyyy",
+)
+# Both spacings of the AM/PM designator: time-fromtext's own example 1 is
+# "10:12:31am", with no space before it.
+_FALLBACK_TIME_PATTERNS = (
+    "h:mm:ss tt",
+    "h:mm:sstt",
+    "h:mm tt",
+    "h:mmtt",
+    "h tt",
+    "htt",
+    "HH:mm:ss",
+    "HH:mm",
+)
+
+
+# A datetime is a date pattern, optionally followed by a time one. The
+# cross product is built once here rather than being guessed at by
+# splitting the text, so the same tokenizer decides both halves.
+_FALLBACK_DATETIME_PATTERNS = _FALLBACK_DATE_PATTERNS + tuple(
+    f"{d} {t}" for d in _FALLBACK_DATE_PATTERNS for t in _FALLBACK_TIME_PATTERNS
+)
+
+
+def _try_patterns(name: str, text: str, patterns: tuple[str, ...]) -> Any:
+    """First pattern that reads `text`, or None if none of them does."""
+    for pattern in patterns:
+        try:
+            return _parse_with_format(name, text, pattern)
+        except (EvalError, UnsupportedError):
+            continue
+    return None
+
+
 def _parse_iso_date(name: str, text: str) -> date:
     stripped = text.strip()
     try:
@@ -247,8 +306,12 @@ def _parse_iso_date(name: str, text: str) -> date:
         pass
     try:
         return datetime.fromisoformat(stripped).date()
-    except ValueError as error:
-        raise EvalError(f"{name}: not a valid ISO date: {text!r}") from error
+    except ValueError:
+        pass
+    parsed = _try_patterns(name, stripped, _FALLBACK_DATE_PATTERNS)
+    if parsed is not None:
+        return parsed if isinstance(parsed, date) else parsed.date()
+    raise EvalError(f"{name}: not a recognisable date: {text!r}")
 
 
 def _parse_iso_datetime(name: str, text: str) -> datetime:
@@ -259,15 +322,24 @@ def _parse_iso_datetime(name: str, text: str) -> datetime:
         pass
     try:
         return datetime.combine(date.fromisoformat(stripped), time())
-    except ValueError as error:
-        raise EvalError(f"{name}: not a valid ISO datetime: {text!r}") from error
+    except ValueError:
+        pass
+    parsed = _try_patterns(name, stripped, _FALLBACK_DATETIME_PATTERNS)
+    if isinstance(parsed, datetime):
+        return parsed
+    raise EvalError(f"{name}: not a recognisable datetime: {text!r}")
 
 
 def _parse_iso_time(name: str, text: str) -> time:
+    stripped = text.strip()
     try:
-        return time.fromisoformat(text.strip())
-    except ValueError as error:
-        raise EvalError(f"{name}: not a valid ISO time: {text!r}") from error
+        return time.fromisoformat(stripped)
+    except ValueError:
+        pass
+    parsed = _try_patterns(name, stripped, _FALLBACK_TIME_PATTERNS)
+    if isinstance(parsed, time):
+        return parsed
+    raise EvalError(f"{name}: not a recognisable time: {text!r}")
 
 
 # The grammar Duration.FromText documents, both alternatives:
@@ -1775,7 +1847,16 @@ def _datetime_from(args: list[Any], ctx: _Ctx) -> Any:
     _arity("DateTime.From", args, 1, 2)
     if len(args) == 2:
         _check_invariant_culture("DateTime.From", args[1])
-    return _coerce_datetime_like("DateTime.From", args[0])
+    value = args[0]
+    if isinstance(value, time):
+        # datetime-from, example 1: DateTime.From(#time(06, 45, 12)) is
+        # #datetime(1899, 12, 30, 06, 45, 12) - the OLE Automation Date
+        # epoch, exactly as DateTimeZone.From already did for a bare time.
+        # This raised "expected a datetime, got time"; the coercion helper
+        # is left alone so that DateTime.Date/DateTime.Time keep refusing
+        # a time, which is what real Power Query does with them.
+        return datetime.combine(_OLE_EPOCH, value)
+    return _coerce_datetime_like("DateTime.From", value)
 
 
 def _datetime_date(args: list[Any], ctx: _Ctx) -> Any:

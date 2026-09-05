@@ -160,24 +160,27 @@ def test_number_to_text_rejects_other_culture_naming_which_are_supported():
 
 # --------------------------------------------------------------------------
 # Number.ToText - deliberately kept refusal: lowercase standard-format
-# letters other than the pre-existing "f" (case controls the exponent/hex-
-# digit case in real .NET for E/G/X, a second rendering path this module
-# does not implement - see the report). This also happens to be the exact
-# pre-existing pinned case in tests/test_builtins_scalar.py, a file this
-# task does not own.
+# letters. E/G/X were refused in lowercase on the theory that the case
+# selected "a second rendering path"; it does not - in .NET the specifier's
+# case decides exactly one thing, which letter case the exponent (or the
+# hex digits) comes out in. Number.ToText's own example 2 states
+# `Number.ToText(4, "e")` is "4.000000e+000", so the refusal was rejecting
+# a documented call.
 # --------------------------------------------------------------------------
 
 
-def test_number_to_text_lowercase_e_stays_unsupported():
-    with pytest.raises(UnsupportedError, match="format"):
-        evaluate('Number.ToText(4, "e")')
+def test_number_to_text_lowercase_e_lowers_the_exponent_letter():
+    assert evaluate('Number.ToText(4, "e")') == "4.000000e+000"
+    assert evaluate('Number.ToText(4, "E")') == "4.000000E+000"
 
 
-def test_number_to_text_lowercase_x_and_g_stay_unsupported():
-    with pytest.raises(UnsupportedError):
-        evaluate('Number.ToText(255, "x")')
-    with pytest.raises(UnsupportedError):
-        evaluate('Number.ToText(4.5, "g")')
+def test_number_to_text_lowercase_x_and_g_lower_their_letters() -> None:
+    assert evaluate('Number.ToText(255, "x")') == "ff"
+    assert evaluate('Number.ToText(255, "X")') == "FF"
+    # "g"/"G" only differ where general format falls back to scientific.
+    assert evaluate('Number.ToText(0.0000001, "g")') == "1e-07"
+    assert evaluate('Number.ToText(0.0000001, "G")') == "1E-07"
+    assert evaluate('Number.ToText(4.5, "g")') == "4.5"
 
 
 def test_number_to_text_lowercase_c_d_n_p_are_accepted():

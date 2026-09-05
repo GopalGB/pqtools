@@ -539,8 +539,23 @@ def test_number_to_text_default_and_fixed_format():
 
 
 def test_number_to_text_unsupported_format_raises():
+    # A custom picture format really is out of scope and still refuses.
     with pytest.raises(UnsupportedError, match="format"):
-        evaluate('Number.ToText(4, "e")')
+        evaluate('Number.ToText(4, "#,##0.00")')
+
+
+def test_number_to_text_lowercase_specifier_lowers_one_letter():
+    """`Number.ToText(4, "e")` was pinned here as a refusal. It is example 2.
+
+    Its stated output is "4.000000e+000" - the "E" rendering with a single
+    character lowered, which is all .NET's specifier case ever changes. The
+    refusal was rejecting a documented call on the theory that lowercase
+    selected "a second, unverified rendering path"; it does not.
+    """
+    assert evaluate('Number.ToText(4, "e")') == "4.000000e+000"
+    assert evaluate('Number.ToText(4, "E")') == "4.000000E+000"
+    assert evaluate('Number.ToText(255, "x")') == "ff"
+    assert evaluate('Number.ToText(255, "X")') == "FF"
 
 
 def test_number_is_nan():
