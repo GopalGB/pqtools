@@ -33,7 +33,11 @@ What it is for, in one line each:
 - **Test a transformation without opening Power BI.** Swap the real data source
   for a fixture with `--bind` and assert on the result from `pytest`.
 - **Refactor safely.** `pq rename` renames a `let` binding across a query without
-  a find-and-replace touching a string literal that happens to match.
+  a find-and-replace touching a string literal that happens to match. Its scope
+  is deliberately narrow and it refuses rather than guessing - including on
+  most real queries, because a record literal or a field access (`each [a] > 1`)
+  anywhere in the file is enough to stop it. See
+  [SUPPORT-MATRIX.md](SUPPORT-MATRIX.md#refactoring-scope) before relying on it.
 - **Work with the queries inside a .pbix or .xlsx.** `pq list` names them,
   `pq eval --member` runs one, `pq check` lints them, and `pq format` /
   `pq rename` print the edited M, and `--write` saves it back into the file.
