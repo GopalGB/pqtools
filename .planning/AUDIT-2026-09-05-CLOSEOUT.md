@@ -413,6 +413,48 @@ The `_origin` control is the one worth keeping: a normalisation that made
 the test carries 4 cases that must stay green - including `https://host:80`,
 which is a real port change and not a default.
 
+## Requirement check - each clause of the stated requirement, with its evidence
+
+The requirement, verbatim: *"a reliable Python/CLI toolkit for Power Query M
+that parses, formats, lints, safely edits queries, and runs supported
+real-world transformations and connectors without Power BI. Unsupported
+behavior must produce an explicit typed refusal, never silently return
+incomplete or incorrect data. Do not claim full Microsoft Mashup Engine
+compatibility."*
+
+| Clause | Where it is met | Evidence |
+|---|---|---|
+| parses | `pq parse`, `pqtools.core.parse` - Microsoft's own pinned parser through the Node bridge | `npm test` 23/23; no bundle drift; every M in the 786-example corpus parses or is a recorded exemption |
+| formats | `pq format`, `format_source` - Microsoft's pinned formatter | installed-wheel quick-start, `pq format --write` round trip |
+| lints | `pq check`, exit 2 on error-severity, 0 on warnings | CLI tests; `pq check` in the quick-start |
+| safely edits | `pq rename` refuses with `M_RENAME_REFUSED` unless binding-aware analysis proves it safe; every container `--write` backs up first to a fresh sidecar (O_CREAT\|O_EXCL\|O_NOFOLLOW), and a failed backup stops the edit; `_atomic_write` refuses with `M_SAFE_WRITE_REFUSED` on concurrent change | `tests/test_container_backup_safety.py` (11), rename scope in SUPPORT-MATRIX.md; guards untouched, not loosened |
+| runs supported transformations | 640 registered builtins, arity and nullability checked per builtin against its reference page, 141 worked examples reproducing exactly | `test_documented_signatures.py` (659), `test_doc_examples.py` (953), `DOCUMENTED_MATCHES` asserted for equality |
+| connectors without Power BI | Csv, File, Folder, Web, OData (full paging, bounded), Excel, Sql, PostgreSQL, MySQL, Oracle, Odbc - off by default, credentials environment-only, SQL navigation lazy | `test_odata_pagination.py` (27), `test_sql_navigation.py` (19), `test_sql_options.py` (28), `test_sql_credentials.py` (19) - all offline with mocks and fixtures |
+| explicit typed refusal, never silent | `M_EVAL_UNSUPPORTED` names the outside system; `DeferredTable` raises on every consumption path but `read()`; both CLI print paths refuse an unread table; OData caps raise instead of truncating; SQL options are applied or refused by name; the 21 unevaluable doc examples are recorded exemptions, not silent returns | release gate step 6 is a positive control on the refusal machinery; every gate in this closeout was positive-controlled |
+| no full-Mashup claim | README, llms.txt and SUPPORT-MATRIX.md say "86% of NAMES ... not a measure of semantic compatibility"; llms.txt says "not a Power Query replacement and does not reimplement the Mashup Engine" | `test_catalog.py` asserts the qualifier in both documents; `test_support_matrix.py` (30) ties the numbers to the registry |
+
+What this table does NOT claim, restated so it cannot be read past: no live
+database, no Fabric, no Windows PQTest, no native Excel or Power BI refresh
+was exercised. Those are named in "Scope limits" and stay open.
+
+## Discoverability - what an AI agent finds, and what it can act on
+
+The ask was that agents should be able to find and use this. The surfaces an
+agent actually reads, and what changed on each:
+
+| Surface | State before | Change |
+|---|---|---|
+| PyPI metadata (`pyproject.toml`) | 19 keywords, 18 classifiers, `Typing :: Typed`, five project URLs | none needed |
+| `llms.txt` | what it does, what it refuses, correct usage, coverage sentence - all already gated | added the **error-code table** (every code the code can raise, what it means, what an agent should do) and the **credential rule**; both now test-enforced by `tests/test_llms_txt.py` - a code added without documenting it, or documented without existing, fails |
+| `README.md` | no pointer to llms.txt | one paragraph pointing agents at `llms.txt` and `AGENTS.md` |
+| `AGENTS.md` | absent | symlink to `CLAUDE.md`, so Codex, Cursor and any agents.md-reading tool get the same build/test/gate instructions with zero drift |
+
+**Staged for G - outbound, not done:** GitHub repository description and
+topics are set through the GitHub API or UI, which is outbound. Suggested,
+mirroring the PyPI keywords: `power-query`, `power-query-m`, `m-language`,
+`power-bi`, `pbix`, `fabric`, `linter`, `formatter`, `python`, `etl`.
+Description: the `pyproject.toml` `description` field, verbatim.
+
 ## Scope limits - what was NOT verified
 
 Local completion is reported separately from live verification on purpose.
