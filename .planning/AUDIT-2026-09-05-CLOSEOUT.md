@@ -532,6 +532,53 @@ it.
 | `seen.add(landed)` | delete the line | the new redirect-cycle test red (1 failed, 27 passed); green on restore |
 | `logs/` untracked and ignored | build an sdist, list it | 0 `logs/` entries among the 107 files in the sdist |
 
+## Round 6 - the review of the round-5 fixes
+
+The full-range review of `c7ffc5f..a2250f5` was killed twice by the harness
+for low memory - this session's own `claude` process plus the review's, on
+an 8 GB machine with other sessions resident. Rather than launch the same
+thing a third time, the range was narrowed to what the four full-range
+rounds had not yet seen: `ee04185..eb2c7fd`, the round-5 fixes plus the
+closeout text, 12 files, +163/-32. The exact `claude-opus-5` wrapper on that
+range. **Verdict: FIX-FIRST. 1 HIGH, 1 MEDIUM, 4 LOW.** All six taken.
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | `seen.add(landed)` overloaded the cycle set that `elif rows or len(seen) > 1` also read as a page counter, so a 302 on page one to a single-entity response raised "reached as a next page but is not a collection" instead of returning the entity | FIXED - **mine, a regression from the round-5 LOW fix**; a `pages` counter, `seen` left to cycle detection; regression test with a redirect to `{"Id": 99}` |
+| MEDIUM | the arity-before-policy reorder was enforced by no test for the four literal-arity connectors - the closeout's own control had shown `Sql.Database` staying green | FIXED - `tests/test_connector_arity_before_policy.py`: a zero-argument call under the default deny-all policy must raise the arity `UnsupportedError`, for all six DB connectors |
+| LOW | the byte-cap message counted `len(seen)`, two entries per redirected page | FIXED by the same counter |
+| LOW | the probe's new comment said "the comparison below fails"; it is `_probe_arity` returning `None` and the escape test that catches it | FIXED - names the test, and the file that pins the literal-arity four |
+| LOW | `logs/` in `.gitignore` was unanchored | FIXED - `/logs/` |
+| LOW | the generator read the matches fixture with a bare `json.loads(...)[key]` | FIXED - a wrapped error saying what the file is and who asserts it |
+
+### The HIGH, plainly
+
+The round-5 LOW was "one redundant fetch after a redirect". The one-line fix
+for it - record the landed URL in `seen` - broke the single-entity path for
+any feed whose first request redirects, because one line below, `seen` was
+doing a second job. I read the function far enough to add the line and not
+far enough to see the second reader. The regression test asserts the entity
+comes back and that exactly two requests were made. Reproduced red before
+the fix: `1 failed`, with the reviewer's exact message, "was reached as a next page but is not a collection response".
+
+### Positive controls run in this round
+
+| Fix | Control | Result |
+|---|---|---|
+| `pages` counter | put `len(seen) > 1` back in the branch | the regression test red (1 failed, 28 passed); 29 green on restore |
+| literal-arity connectors pinned | revert `Sql.Database` to policy-first | `Sql.Database` red (1 failed, 5 passed); 6 green on restore |
+
+### A note on the commit history of this round
+
+The estate runs an autocommit sweep in this checkout. It captured the
+round-5 files seconds before my own `git commit` (message amended onto it,
+tree unchanged), and it captured the round-6 files while a positive control
+had the broken `len(seen) > 1` branch temporarily back in place - so for a
+few minutes HEAD held the regression next to the test that catches it. That
+sweep was amended to the verified tree with the message above. Nothing was
+pushed at any point.
+
+
 ## Scope limits - what was NOT verified
 
 Local completion is reported separately from live verification on purpose.
