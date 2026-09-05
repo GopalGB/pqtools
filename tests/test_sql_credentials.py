@@ -187,10 +187,13 @@ def test_the_readme_names_the_variables_the_code_actually_reads() -> None:
     import pathlib
     import re
 
-    source = pathlib.Path("src/pqtools/builtins/_sources.py").read_text(
+    # Anchored on the file, not the CWD: every other test here does the same,
+    # and this one failed if pytest ran from anywhere but the repo root.
+    root = pathlib.Path(__file__).resolve().parent.parent
+    source = (root / "src" / "pqtools" / "builtins" / "_sources.py").read_text(
         encoding="utf-8"
     )
-    readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
     prefixes = set(re.findall(r'"(PQTOOLS_[A-Z]+)"', source))
     assert prefixes, "no credential prefixes found in the connector source"
     for prefix in prefixes:

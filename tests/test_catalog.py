@@ -270,3 +270,14 @@ def test_the_stated_coverage_is_the_real_coverage(document: str) -> None:
         f"{document} must say outright that the figure is not semantic "
         "compatibility. Run scripts/sync_builtin_list.py."
     )
+    # The worked-example count reaches these two documents through the same
+    # generator, and it was the one number in the sentence that nothing
+    # checked: a hand-typed `141` that no test compared to the measurement.
+    # llms.txt is the file that exists to be quoted verbatim by assistants,
+    # so a stale number here is repeated far more widely than a stale README.
+    from tests.test_doc_examples import DOCUMENTED_MATCHES
+
+    assert f"{DOCUMENTED_MATCHES} of Microsoft's worked examples" in text, (
+        f"{document} states a worked-example count that is not the measured "
+        f"{DOCUMENTED_MATCHES}. Run scripts/sync_builtin_list.py."
+    )

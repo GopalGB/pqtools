@@ -18,9 +18,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pqtools.catalog import DOCUMENTED  # noqa: E402
 from pqtools.evaluate import BUILTINS  # noqa: E402
+
+# The worked-example count is measured by the test suite, not by this script,
+# so it is imported from the module that measures it. Importing only loads
+# the JSON corpus; it evaluates nothing.
+from tests.test_doc_examples import DOCUMENTED_MATCHES  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 WIDTH = 76
@@ -167,7 +173,8 @@ def main() -> int:
         f"{100 * covered // documented}% of NAMES, which is not a measure of "
         "semantic compatibility and should not be quoted as one. Each "
         "registered name's arity and nullability are checked against its own "
-        "reference page, and 141 of Microsoft's worked examples reproduce "
+        f"reference page, and {DOCUMENTED_MATCHES} of Microsoft's worked "
+        "examples reproduce "
         "their documented output exactly; see SUPPORT-MATRIX.md for what is "
         f"and is not measured. Every one of the remaining {documented - covered} "
         "is recognised by name and refuses with a typed error saying which "

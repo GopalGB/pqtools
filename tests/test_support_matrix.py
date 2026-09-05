@@ -121,7 +121,7 @@ def test_the_worked_example_counts_are_the_real_ones() -> None:
         ),
         (
             r"\.\.\. of those, reproducing their documented value exactly",
-            _doc_example_floor(),
+            _documented_matches(),
         ),
     ):
         pattern = re.compile(r"^\|\s*" + label + r"\s*\|\s*(\d+)\s*\|", re.MULTILINE)
@@ -133,16 +133,18 @@ def test_the_worked_example_counts_are_the_real_ones() -> None:
         )
 
 
-def _doc_example_floor() -> int:
-    """The match floor test_doc_examples.py asserts, read from its source.
+def _documented_matches() -> int:
+    """The measured match count, imported from where it is measured.
 
-    Reading it keeps this file from becoming a second place the number has
-    to be remembered.
+    This used to regex out the `assert matched >= N` FLOOR, which is a
+    different number from the one the matrix states: once real matches rose
+    above the floor the matrix would understate them and both tests stayed
+    green. `DOCUMENTED_MATCHES` is asserted for equality against the real
+    run, so reading it here ties this row to the measurement.
     """
-    source = (_ROOT / "tests" / "test_doc_examples.py").read_text(encoding="utf-8")
-    match = re.search(r"assert matched >= (\d+)", source)
-    assert match is not None, "test_doc_examples.py no longer asserts a floor"
-    return int(match.group(1))
+    import tests.test_doc_examples as corpus
+
+    return int(corpus.DOCUMENTED_MATCHES)
 
 
 # --- the connector table is a claim about the code ------------------------

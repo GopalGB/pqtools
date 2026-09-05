@@ -30,6 +30,7 @@ class _Feed:
     def __init__(self) -> None:
         self.pages: dict[str, bytes] = {}
         self.hits: list[str] = []
+        self.headers: list[dict[str, str]] = []
         self.fail: set[str] = set()
 
 
@@ -40,6 +41,7 @@ def feed() -> Any:
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             state.hits.append(self.path)
+            state.headers.append(dict(self.headers))
             if self.path in state.fail:
                 self.send_error(503)
                 return
@@ -275,14 +277,53 @@ def test_a_next_link_on_the_same_origin_still_carries_them(feed: Any) -> None:
     # is the ordinary case.
     feed.pages["/odata"] = _page([{"id": 1}], f"{feed.base}/odata?page=2")
     feed.pages["/odata?page=2"] = _page([{"id": 2}])
-    captured: list[dict[str, str]] = []
-    feed.capture = captured  # type: ignore[attr-defined]
     rows = evaluate(
         f'OData.Feed("{feed.base}/odata", [Authorization = "Bearer dummy-token"])',
         io=NET,
     )
     assert rows == [{"id": 1}, {"id": 2}]
     assert feed.hits == ["/odata", "/odata?page=2"]
+    # The point of the test: the SECOND request still authenticates. Asserting
+    # only the rows and the paths would pass just as happily if same-origin
+    # paging had lost the header, which is the regression this guards.
+    assert [h.get("Authorization") for h in feed.headers] == [
+        "Bearer dummy-token",
+        "Bearer dummy-token",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "same"),
+    [
+        # The default port spelled out is the same origin as the default port
+        # left implicit. Proxies and service-generated nextLinks write it out
+        # routinely, and comparing netloc verbatim called it cross-origin -
+        # which stripped the caller's Authorization and turned authenticated
+        # paging into a 401 partway through a legitimate feed.
+        ("https://host/a", "https://host:443/b", True),
+        ("http://host/a", "http://host:80/b", True),
+        ("HTTPS://Host/a", "https://host:443/b", True),
+        # Everything that is genuinely a different origin still is. A
+        # normalisation that swallowed these would be worse than the bug.
+        ("https://host/a", "https://host:8443/b", False),
+        ("https://host/a", "https://other/b", False),
+        ("https://host/a", "http://host/b", False),
+        # :80 is NOT the default for https, so it is a real port change.
+        ("https://host/a", "https://host:80/b", False),
+    ],
+)
+def test_the_default_port_is_the_same_origin_written_out(
+    left: str, right: str, same: bool
+) -> None:
+    """A unit test because the live fixtures cannot reach :443/:80.
+
+    The feed fixtures bind an ephemeral high port, so the default-port case
+    is unreachable end to end without binding a privileged port. The origin
+    comparison is the whole mechanism, so it is asserted directly.
+    """
+    from pqtools.builtins._sources import _origin
+
+    assert (_origin(left) == _origin(right)) is same
 
 
 def test_the_response_cap_bounds_the_whole_feed_not_each_page(

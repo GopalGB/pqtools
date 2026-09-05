@@ -319,10 +319,27 @@ def _odata_document(raw: bytes, url: str) -> Any:
         ) from error
 
 
+# Distinct from `_DEFAULT_PORTS` further down, which serves Uri.Parts and
+# holds ints. Two module-level names that differ only in what they mean is
+# how a shadowed constant silently changes behaviour.
+_ORIGIN_DEFAULT_PORTS = {"http": "80", "https": "443"}
+
+
 def _origin(url: str) -> tuple[str, str]:
-    """(scheme, netloc), lowercased - what "the same site" means for headers."""
+    """(scheme, host:port), lowercased - what "the same site" means for headers.
+
+    The default port is normalised away. `https://host/a` and
+    `https://host:443/a` are one origin, and proxies routinely spell the
+    port; treating them as different would strip the caller's credentials
+    from a hop that never left the service.
+    """
     parts = urllib.parse.urlsplit(url)
-    return (parts.scheme.lower(), parts.netloc.lower())
+    scheme = parts.scheme.lower()
+    netloc = parts.netloc.lower()
+    default = _ORIGIN_DEFAULT_PORTS.get(scheme)
+    if default is not None and netloc.endswith(f":{default}"):
+        netloc = netloc[: -len(default) - 1]
+    return (scheme, netloc)
 
 
 def _odata_next_link(document: Any, current: str) -> str | None:

@@ -37,7 +37,9 @@ step "2. Test suite"
 # core, each loading the full registry, and the run dies in swap rather than in
 # a test - so PQ_GATE_PYTEST_ARGS="" runs it sequentially instead.
 # shellcheck disable=SC2086
-$PY -m pytest -q ${PQ_GATE_PYTEST_ARGS-"-n auto"} >/tmp/pq-gate-tests.log 2>&1
+# Unquoted default on purpose: "-n auto" inside the braces expands as ONE
+# word and pytest rejects it ("invalid parse_numprocesses value: ' auto'").
+$PY -m pytest -q ${PQ_GATE_PYTEST_ARGS--n auto} >/tmp/pq-gate-tests.log 2>&1
 check $? "full suite (detail: /tmp/pq-gate-tests.log)"
 tail -1 /tmp/pq-gate-tests.log
 

@@ -282,6 +282,19 @@ def test_a_documented_example_produces_its_documented_output(
     )
 
 
+# The measured number of documented examples that reproduce their printed
+# output. SUPPORT-MATRIX.md, README.md and llms.txt all state it, and all
+# three read it from here rather than repeating it - `141` was previously
+# typed into four files by hand, and nothing compared them.
+#
+# It is asserted for EQUALITY below, not as a floor. A floor cannot tell a
+# regression from an improvement: the old `>= 110` sat 31 below reality, so a
+# third of the matches could have died silently. Equality means the number
+# moving in either direction stops the build and the documents get updated in
+# the same commit.
+DOCUMENTED_MATCHES = 141
+
+
 def test_enough_examples_actually_match_to_mean_something() -> None:
     """A floor on the matches, because the two tests above are one-sided.
 
@@ -297,10 +310,10 @@ def test_enough_examples_actually_match_to_mean_something() -> None:
         printed, want = _run(example["output"])
         if ran and printed and got == want:
             matched += 1
-    # 141 is the measured count, not a margin. The old floor was 110, so 31
-    # examples could have stopped matching without this failing - which was
-    # the whole point of the check.
-    assert matched >= 141, (
-        f"only {matched} documented examples reproduce their printed output; "
-        "that number has only ever gone up"
+    assert matched == DOCUMENTED_MATCHES, (
+        f"{matched} documented examples reproduce their printed output; "
+        f"DOCUMENTED_MATCHES says {DOCUMENTED_MATCHES}. Fewer is a "
+        "regression - find it. More is progress - raise DOCUMENTED_MATCHES "
+        "and run scripts/sync_builtin_list.py so SUPPORT-MATRIX.md, README.md "
+        "and llms.txt state the new number in this same commit."
     )
