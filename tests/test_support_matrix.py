@@ -108,8 +108,10 @@ def test_the_worked_example_counts_are_the_real_ones() -> None:
     llms.txt through `scripts/sync_builtin_list.py`.
 
     Evaluating the corpus here would duplicate a two-minute run, so the
-    match count is read from the floor `tests/test_doc_examples.py` already
-    asserts and ratchets. The other two are counted directly.
+    match count is read from `DOCUMENTED_MATCHES`, which
+    `tests/test_doc_examples.py` asserts for EQUALITY against the live run -
+    not from the old ratchet floor, which could sit below reality with every
+    test green. The other two are counted directly.
     """
     import tests.test_doc_examples as corpus
 

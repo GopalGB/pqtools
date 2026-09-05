@@ -14,3 +14,7 @@ codedb.snapshot
 .mypy_cache/
 .ruff_cache/
 .samples/
+
+# Runtime logs written into the CWD by whatever tool happens to run here
+# (a google-calendar-mcp server did, and two of its files got committed).
+logs/

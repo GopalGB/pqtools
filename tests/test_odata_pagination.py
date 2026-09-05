@@ -32,6 +32,7 @@ class _Feed:
         self.hits: list[str] = []
         self.headers: list[dict[str, str]] = []
         self.fail: set[str] = set()
+        self.redirects: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -44,6 +45,12 @@ def feed() -> Any:
             state.headers.append(dict(self.headers))
             if self.path in state.fail:
                 self.send_error(503)
+                return
+            if self.path in state.redirects:
+                self.send_response(302)
+                self.send_header("Location", state.redirects[self.path])
+                self.send_header("Content-Length", "0")
+                self.end_headers()
                 return
             body = state.pages.get(self.path)
             if body is None:
@@ -160,6 +167,25 @@ def test_a_self_referencing_page_is_detected_as_a_cycle(feed: Any) -> None:
     with pytest.raises(EvalError, match="cycle"):
         evaluate(_feed_call(feed.base), io=NET)
     assert len(feed.hits) == 1
+
+
+def test_a_next_link_back_to_the_landed_url_is_a_cycle_on_the_first_hop(
+    feed: Any,
+) -> None:
+    """Page one is requested at /odata and served, after a 302, from /landed.
+
+    `seen` recorded only the REQUESTED url, so a next link naming the landed
+    one was not yet a known page: it was fetched a second time, identically,
+    and only then caught. Bounded by the page ceiling either way - but the
+    cycle check exists so that the ceiling is never what stops a loop.
+    """
+    base = feed.base
+    feed.redirects["/odata"] = "/landed"
+    feed.pages["/landed"] = _page([{"Id": 1}], f"{base}/landed")
+    with pytest.raises(EvalError, match="cycle"):
+        evaluate(_feed_call(base), io=NET)
+    # one redirect, one real page, and no second fetch of the page it landed on
+    assert feed.hits == ["/odata", "/landed"]
 
 
 def test_a_two_page_loop_is_detected_as_a_cycle(feed: Any) -> None:

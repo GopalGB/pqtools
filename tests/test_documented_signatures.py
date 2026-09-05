@@ -78,10 +78,14 @@ _HASH_LITERALS = frozenset(
 # --------------------------------------------------------------------------
 
 
-# Permissive on purpose: a policy refusal fires BEFORE `_arity` in the
-# connectors, and would make every arity look accepted. Nothing reaches a
-# network or a database regardless, because the placeholder argument fails
-# every `_require_*` long before a connection is built.
+# Deny-all, on purpose. The probe used to run with every I/O flag on, because
+# the connectors checked the policy BEFORE `_arity` and a refusal would have
+# made every arity look accepted - which meant the probe's safety rested on
+# each connector happening to reject the placeholder before touching a driver.
+# The connectors now check arity first (the order Web.Contents always used),
+# so a deny-all policy is both safe and a second check: if a connector ever
+# goes back to policy-first, its arity reads as "accepts everything" here and
+# the comparison below fails for that name.
 class _Budget:
     """Enough of an evaluation budget that touching it is not a probe failure."""
 
@@ -90,7 +94,7 @@ class _Budget:
 
 
 _PROBE_CTX = types.SimpleNamespace(
-    io=IOPolicy(allow_net=True, allow_db=True, allow_private=True),
+    io=IOPolicy(),
     budget=_Budget(),
     bindings={},
     depth=0,

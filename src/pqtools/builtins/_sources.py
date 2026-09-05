@@ -415,6 +415,11 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
         raw, landed = _http_fetch_resolved(
             current, dict(page_options), ctx, "OData.Feed"
         )
+        # A redirect means the page was served from `landed`, not `current`.
+        # Recording only the requested URL let a next link that named the
+        # landed one through for a second, identical fetch before the cycle
+        # check caught it. Bounded either way; one page late is still late.
+        seen.add(landed)
 
         # `_http_fetch` caps ONE response. Following up to _MAX_ODATA_PAGES of
         # them turned that into a per-page cap, so the total a feed could hand
@@ -750,8 +755,8 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
     No folding: later ``Table.SelectRows`` steps filter locally rather than
     becoming a WHERE clause. Same rows, more bytes over the wire.
     """
-    _policy(ctx).check_db(what="Sql.Database")
     _arity("Sql.Database", args, 2, 3)
+    _policy(ctx).check_db(what="Sql.Database")
     server = _require_str(args[0])
     database = _require_str(args[1])
     options = _optional_record(args[2] if len(args) == 3 else None, "Sql.Database")
@@ -868,8 +873,8 @@ def _oracle_database(args: list[Any], ctx: _Ctx) -> Any:
     appended - splitting it here to rebuild it would only be a chance to get
     it wrong.
     """
-    _policy(ctx).check_db(what="Oracle.Database")
     _arity("Oracle.Database", args, 1, 2)
+    _policy(ctx).check_db(what="Oracle.Database")
     server = _require_str(args[0])
     options = _optional_record(args[1] if len(args) == 2 else None, "Oracle.Database")
 
@@ -904,7 +909,6 @@ def _generic_database(
     """
 
     def connector(args: list[Any], ctx: _Ctx) -> Any:
-        _policy(ctx).check_db(what=name)
         # `(server as text, database as text, optional options as nullable
         # record)` - both pages, verbatim. `database` is NOT optional. A
         # one-argument call used to be accepted and connected with
@@ -912,6 +916,7 @@ def _generic_database(
         # database: a different database, silently, on a call the signature
         # does not permit.
         _arity(name, args, 2, 3)
+        _policy(ctx).check_db(what=name)
         server = _require_str(args[0])
         database = _require_str(args[1])
         options = _optional_record(args[2] if len(args) == 3 else None, name)
@@ -1052,11 +1057,11 @@ def _odbc_connect(
 
 def _odbc_query(args: list[Any], ctx: _Ctx) -> Any:
     """``Odbc.Query(connectionString, query, options)`` - any ODBC source."""
-    _policy(ctx).check_db(what="Odbc.Query")
     # `optional options as nullable record` was missing from the signature,
     # and connectionString is `any` (text OR a record of property pairs) -
     # both halves of the documented call failed before connecting.
     _arity("Odbc.Query", args, 2, 3)
+    _policy(ctx).check_db(what="Odbc.Query")
     connection_string = _odbc_connection_string(args[0], "Odbc.Query")
     query = _require_str(args[1])
     options = _optional_record(args[2] if len(args) == 3 else None, "Odbc.Query")
@@ -1073,8 +1078,8 @@ def _odbc_query(args: list[Any], ctx: _Ctx) -> Any:
 
 def _odbc_datasource(args: list[Any], ctx: _Ctx) -> Any:
     """``Odbc.DataSource(connectionString, options)`` - the table nav list."""
-    _policy(ctx).check_db(what="Odbc.DataSource")
     _arity("Odbc.DataSource", args, 1, 2)
+    _policy(ctx).check_db(what="Odbc.DataSource")
     # Same `connectionString as any` as Odbc.Query - the record spelling was
     # refused here too.
     connection_string = _odbc_connection_string(args[0], "Odbc.DataSource")

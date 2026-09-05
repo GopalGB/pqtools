@@ -85,6 +85,9 @@ def _run(argv: list[str], path: Path) -> int:
 # --- defect 1: a symlink at the backup path ------------------------------
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX symlink semantics; Windows needs Developer Mode"
+)
 @_WRITE
 def test_a_backup_symlink_never_overwrites_its_target(
     tmp_path: Path, argv: list[str]
@@ -104,6 +107,9 @@ def test_a_backup_symlink_never_overwrites_its_target(
     assert sidecar.read_bytes().startswith(b"PK")
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX symlink semantics; Windows needs Developer Mode"
+)
 @_WRITE
 def test_a_dangling_backup_symlink_does_not_create_its_target(
     tmp_path: Path, argv: list[str]
@@ -146,6 +152,10 @@ def test_repeated_edits_keep_every_earlier_backup(tmp_path: Path) -> None:
 # --- a failed backup must leave the container untouched ------------------
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX directory permissions; chmod 0o500 does not deny creation on Windows",
+)
 @_WRITE
 def test_a_failed_backup_leaves_the_container_unmodified(
     tmp_path: Path, argv: list[str], capsys: pytest.CaptureFixture[str]

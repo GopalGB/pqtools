@@ -13,23 +13,26 @@ Run it after adding a builtin:
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pqtools.catalog import DOCUMENTED  # noqa: E402
 from pqtools.evaluate import BUILTINS  # noqa: E402
 
-# The worked-example count is measured by the test suite, not by this script,
-# so it is imported from the module that measures it. Importing only loads
-# the JSON corpus; it evaluates nothing.
-from tests.test_doc_examples import DOCUMENTED_MATCHES  # noqa: E402
-
 ROOT = Path(__file__).resolve().parent.parent
 WIDTH = 76
+
+# The worked-example count is measured by the test suite, not by this script.
+# tests/test_doc_examples.py asserts the live count EQUALS this fixture, so
+# reading the fixture here is reading the measurement - without importing a
+# pytest module into a documentation generator.
+DOCUMENTED_MATCHES: int = json.loads(
+    (ROOT / "tests" / "fixtures" / "doc-example-matches.json").read_text("utf-8")
+)["reproducing_exactly"]
 
 # Grouped the way a reader looks things up - by M namespace, in the order the
 # families appear in a real query, with the hash-literals last because they

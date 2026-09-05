@@ -283,16 +283,20 @@ def test_a_documented_example_produces_its_documented_output(
 
 
 # The measured number of documented examples that reproduce their printed
-# output. SUPPORT-MATRIX.md, README.md and llms.txt all state it, and all
-# three read it from here rather than repeating it - `141` was previously
-# typed into four files by hand, and nothing compared them.
+# output, kept in tests/fixtures/doc-example-matches.json so that
+# scripts/sync_builtin_list.py can read it without importing a pytest module.
+# SUPPORT-MATRIX.md, README.md and llms.txt all state it, and all three read
+# it from that one file - `141` was previously typed into four files by hand,
+# and nothing compared them.
 #
 # It is asserted for EQUALITY below, not as a floor. A floor cannot tell a
 # regression from an improvement: the old `>= 110` sat 31 below reality, so a
 # third of the matches could have died silently. Equality means the number
 # moving in either direction stops the build and the documents get updated in
 # the same commit.
-DOCUMENTED_MATCHES = 141
+DOCUMENTED_MATCHES: int = json.loads(
+    (CORPUS.parent / "doc-example-matches.json").read_text(encoding="utf-8")
+)["reproducing_exactly"]
 
 
 def test_enough_examples_actually_match_to_mean_something() -> None:
@@ -313,7 +317,8 @@ def test_enough_examples_actually_match_to_mean_something() -> None:
     assert matched == DOCUMENTED_MATCHES, (
         f"{matched} documented examples reproduce their printed output; "
         f"DOCUMENTED_MATCHES says {DOCUMENTED_MATCHES}. Fewer is a "
-        "regression - find it. More is progress - raise DOCUMENTED_MATCHES "
-        "and run scripts/sync_builtin_list.py so SUPPORT-MATRIX.md, README.md "
+        "regression - find it. More is progress - raise reproducing_exactly in "
+        "tests/fixtures/doc-example-matches.json and run "
+        "scripts/sync_builtin_list.py so SUPPORT-MATRIX.md, README.md "
         "and llms.txt state the new number in this same commit."
     )
