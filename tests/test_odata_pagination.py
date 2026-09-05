@@ -308,3 +308,92 @@ def test_the_response_cap_bounds_the_whole_feed_not_each_page(
         evaluate(f'OData.Feed("{feed.base}/odata")', io=NET)
     # It stopped early rather than reading all six.
     assert len(feed.hits) < 6
+
+
+# --------------------------------------------------------------------------
+# The same leak one layer down. The review named the `@odata.nextLink` hop;
+# a plain HTTP 302 forwards the caller's headers the same way, through
+# `_http_fetch`, which every network connector shares - so this one was
+# `Web.Contents`'s too. Pre-existing, found by asking whether the sibling
+# path had the defect the reviewer found in its twin.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def redirector() -> Any:
+    """A server that answers 302 to wherever `state.target` points."""
+
+    class _State:
+        target = ""
+
+    state = _State()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path == "/same":
+                self.send_response(302)
+                self.send_header("Location", "/landed")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self.path == "/landed":
+                body = json.dumps({"value": [{"id": 9}]}).encode()
+                state.landed = dict(self.headers)  # type: ignore[attr-defined]
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.send_response(302)
+            self.send_header("Location", state.target)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args: Any) -> None:
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    state.base = f"http://127.0.0.1:{httpd.server_port}"  # type: ignore[attr-defined]
+    yield state
+    httpd.shutdown()
+    thread.join(timeout=5)
+
+
+@pytest.mark.parametrize(
+    ("header", "probe"),
+    [
+        ('Authorization = "Bearer dummy-token"', "Authorization"),
+        ('#"X-API-Key" = "dummy-key"', "X-Api-Key"),
+    ],
+)
+def test_a_cross_origin_redirect_does_not_forward_a_credential(
+    redirector: Any, other_origin: Any, header: str, probe: str
+) -> None:
+    """Permitting the hop and forwarding the secret are two decisions.
+
+    `check_net` answers "may this request be made". It does not answer "may
+    this server be told the caller's token" - and the redirect target is
+    chosen by the server answering 302, not by the caller. A custom header is
+    covered too: a credential does not have to be called `Authorization`.
+    """
+    redirector.target = f"{other_origin.base}/stolen"
+    evaluate(f'OData.Feed("{redirector.base}/start", [{header}])', io=NET)
+    assert other_origin.headers, "the redirect target was never reached"
+    assert other_origin.headers[0].get(probe) is None, (
+        f"{probe} was forwarded to a host chosen by the redirecting server"
+    )
+    assert other_origin.headers[0].get("Accept") == "application/json"
+
+
+def test_a_same_origin_redirect_still_authenticates(redirector: Any) -> None:
+    # Dropping credentials on every redirect would break ordinary
+    # authenticated services that redirect internally.
+    rows = evaluate(
+        f'OData.Feed("{redirector.base}/same", [Authorization = "Bearer dummy-token"])',
+        io=NET,
+    )
+    assert rows == [{"id": 9}]
+    assert redirector.landed.get("Authorization") == "Bearer dummy-token"

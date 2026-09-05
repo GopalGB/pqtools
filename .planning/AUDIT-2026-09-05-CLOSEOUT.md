@@ -221,3 +221,59 @@ Gates and tests: `tests/test_documented_signatures.py`, `tests/test_doc_examples
 Documentation: `SUPPORT-MATRIX.md` (new), `README.md`, `llms.txt`, `CLAUDE.md`,
 `scripts/sync_builtin_list.py`, `ops/STATUS.md`, `.planning/m-inventory.md`.
 
+## Round 2 - the exact `claude-opus-5` review of the fixes
+
+`bash ~/.codex/skills/claude-review/bin/review.sh c7ffc5f..HEAD`, with
+`ANTHROPIC_API_KEY` unset so it bills the logged-in plan. The wrapper refuses
+any model substitution. **Verdict: FIX-FIRST. 2 HIGH, 3 MEDIUM, 2 LOW.**
+
+Every finding was reproduced before being changed and positive-controlled
+after. All seven are fixed in `e1e90f3`. **Two of the HIGHs were regressions
+the audit fixes themselves introduced** - worth stating plainly, because it is
+the argument for the review step existing.
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | OData paging carried the caller's `Authorization` to a host the SERVER chose | FIXED |
+| HIGH | the 256 MiB response cap became a per-PAGE cap, so the feed total was unbounded | FIXED |
+| MEDIUM | a sub-second timeout truncated to `0`, which pyodbc reads as NO timeout | FIXED |
+| MEDIUM | the ODBC record form escaped values but not KEYS, so keys were still injectable | FIXED |
+| MEDIUM | a deferred navigation value reached the CLI as a bare `AttributeError` traceback | FIXED |
+| LOW | README and llms.txt still promised the backup is exactly `<file>.bak` | FIXED |
+| LOW | the new arity probe caught `BaseException` and guessed where it could not reach | FIXED |
+
+### The two that were mine
+
+**The credential hop.** `_odata_feed` carried `page_options` - including the
+caller's `Headers` - to every next link, and that URL comes from
+`@odata.nextLink`, which the remote server writes. Under plain `--allow-net`
+with no host allowlist, `check_net` permits it, so the network policy was not
+what stopped this; nothing was. Reproduced with two local origins: the second
+origin logged `Bearer`. My own code comment said "the headers (which may carry
+auth) and the timeout travel on" - the risk was written down and shipped
+anyway, which is the part worth remembering.
+
+Cross-origin hops now carry only `Accept`. Same-origin paging is unchanged, so
+authenticated paging inside one service still works, and both cases are
+pinned by tests.
+
+**The cap that stopped being a cap.** `_MAX_RESPONSE_BYTES` is enforced inside
+`_http_fetch`, per response. Before paging existed, a feed was one response and
+genuinely bounded at 256 MiB. Following up to 200 of them turned a hard limit
+into that limit times two hundred. The running total is now bounded by the same
+constant.
+
+### The one worth naming separately
+
+`pq eval 'Sql.Database("s","d")'` ended in a bare Python `AttributeError`
+traceback - the failure shape `CLAUDE.md` says this package exists to prevent -
+because `_print`'s JSON fallback called `.as_dict()` on the deferred value.
+`--format csv` was worse: `csv.DictWriter` would have written the placeholder
+into a data cell, where a table nobody read is indistinguishable from a value
+somebody measured. That is the silent-wrong-answer class the whole audit is
+about, introduced by the fix for finding 3.
+
+Forcing the value at the CLI was considered and rejected: that is exactly the
+read-every-table behaviour finding 3 removed. Both paths now refuse in the
+typed way and name the step to write instead.
+

@@ -138,11 +138,32 @@ class _PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
     ``IOBlockedError`` derives from ``MQueryError``, not ``URLError``, so it
     travels out of ``urlopen`` intact instead of being reported as a
     transport failure.
+
+    A redirect that CROSSES ORIGINS also drops the caller's credential
+    headers. Allowing the hop and forwarding the token are two different
+    decisions: the policy answers "may this request be made", not "may this
+    server be told the caller's secret". The destination is chosen by the
+    server answering 302, so a host that is permitted to be fetched is still
+    not a host the caller decided to authenticate to. Verified before it was
+    fixed: a feed answering 302 to a second local origin received
+    ``Authorization`` in full.
     """
 
-    def __init__(self, policy: IOPolicy, what: str) -> None:
+    #: Never forwarded across an origin boundary, whoever set them.
+    _SENSITIVE = frozenset(
+        {"authorization", "proxy-authorization", "cookie", "www-authenticate"}
+    )
+
+    def __init__(
+        self, policy: IOPolicy, what: str, caller_headers: frozenset[str] = frozenset()
+    ) -> None:
         self._policy = policy
         self._what = what
+        # Every header the QUERY supplied. A credential does not have to be
+        # called Authorization - `X-API-Key` is just as much a secret and
+        # would not match a fixed list - so anything the caller set is
+        # treated as theirs to give, not ours to forward.
+        self._caller_headers = caller_headers
 
     def redirect_request(
         self,
@@ -154,7 +175,14 @@ class _PolicyRedirectHandler(urllib.request.HTTPRedirectHandler):
         newurl: str,
     ) -> urllib.request.Request | None:
         self._policy.check_net(newurl, what=f"{self._what} (redirected to)")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        following = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if following is None or _origin(req.full_url) == _origin(newurl):
+            return following
+        drop = self._SENSITIVE | self._caller_headers
+        for store in (following.headers, following.unredirected_hdrs):
+            for name in [k for k in store if k.lower() in drop]:
+                del store[name]
+        return following
 
 
 def _request_timeout(
@@ -189,10 +217,15 @@ def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> byte
     policy.check_net(url, what=what)
 
     headers = {"User-Agent": _USER_AGENT}
+    caller_headers: set[str] = set()
     raw_headers = options.pop("Headers", None)
     if raw_headers is not None:
         for key, value in _require_record(raw_headers).items():
             headers[str(key)] = str(value)
+            caller_headers.add(str(key).lower())
+    # Accept is routinely set by the caller and carries nothing secret;
+    # keeping it means a cross-origin hop still asks for the right format.
+    caller_headers.discard("accept")
 
     content = options.pop("Content", None)
     body: bytes | None = None
@@ -212,7 +245,9 @@ def _http_fetch(url: str, options: dict[str, Any], ctx: _Ctx, what: str) -> byte
     # A private opener, not the module-level default: the handler carries
     # this evaluation's own policy, and installing it globally would leak
     # one call's permissions into the next.
-    opener = urllib.request.build_opener(_PolicyRedirectHandler(policy, what))
+    opener = urllib.request.build_opener(
+        _PolicyRedirectHandler(policy, what, frozenset(caller_headers))
+    )
     try:
         with opener.open(request, timeout=timeout) as response:  # noqa: S310
             data: bytes = response.read(_MAX_RESPONSE_BYTES + 1)
@@ -239,10 +274,6 @@ def _web_contents(args: list[Any], ctx: _Ctx) -> Any:
 # theirs. 200 pages of the documented 256 MB-per-response limit is already
 # far past any query a person is waiting on.
 _MAX_ODATA_PAGES = 200
-
-# What a cross-origin page request is allowed to carry. Never the caller's
-# Authorization, cookies, or API-key headers.
-_SAFE_HEADERS = {"Accept": "application/json"}
 
 
 def _odata_document(raw: bytes, url: str) -> Any:
@@ -395,7 +426,11 @@ def _odata_feed(args: list[Any], ctx: _Ctx) -> Any:
         # Accept header travels, which is what a browser does with
         # credentials on a cross-origin redirect. A 401 from the far side is
         # a typed error naming the URL, so the caller is not left guessing.
-        page_headers = headers if _origin(current) == origin else _SAFE_HEADERS
+        page_headers = (
+            headers
+            if _origin(current) == origin
+            else {"Accept": headers.get("Accept", "application/json")}
+        )
         page_options = {"Headers": dict(page_headers)}
         if "Timeout" in options:
             page_options["Timeout"] = options["Timeout"]
