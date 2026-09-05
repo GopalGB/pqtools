@@ -667,3 +667,23 @@ runs below were re-done one at a time.
 Coverage rose from 91% to 93% across the work; the suite grew from 3746 to
 3958 tests.
 
+## Verification on the final tree, second pass
+
+After rounds 4, 5 and 6 the tree is `86f2da3` (code at `07bf9ed`). Run
+sequentially, `PQ_GATE_PYTEST_ARGS=""`, nothing else of mine on the machine.
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 3977 tests in 11m03s, 953 worked examples; `evidence/release-gate-2026-09-06-c7ffc5f..86f2da3.log` |
+| Lint / format / types | ruff clean, format clean, mypy strict clean (inside the gate) |
+| Documented coverage computed, not remembered | README/llms.txt already current across the sync (inside the gate) |
+| No invented names; refusal positive control; real workbook query; 953 worked examples | all PASS (inside the gate) |
+| Targeted modules after the round-6 fixes | 813 passed |
+| Positive controls this pass | every fix controlled; each control turned exactly its own test red, and the one that did not (round 5, `Sql.Database`) is recorded as a wrong target - see rounds 4, 5, 6 |
+| sdist contents | 107 files, 0 under `logs/` |
+| Exact `claude-opus-5` review | round 4 on `c7ffc5f..ee04185` (full range) and round 6 on `ee04185..eb2c7fd` (delta) - together they cover `c7ffc5f..eb2c7fd`; the round-6 fixes (`07bf9ed`) are reviewed by no model pass, because the full-range rerun was killed twice for memory |
+
+Not verified, unchanged from the first pass: live database, Fabric, Windows
+PQTest, native Excel or Power BI refresh, `semgrep` (not installed). The
+three `skipif(os.name == "nt")` guards added in round 5 were verified by
+inspection against the repo's precedent, not by a Windows run.
