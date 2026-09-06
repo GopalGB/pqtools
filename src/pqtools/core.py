@@ -83,6 +83,27 @@ class _ProcessOutputLimit(Exception):
     pass
 
 
+class _ProcessWriteError(Exception):
+    """The child's stdin closed before the whole payload was delivered.
+
+    Same shape as `_ProcessReadError`, opposite direction. A short write left
+    the child parsing a truncated payload, so whatever it then said about
+    that payload was reported as the child's own misbehaviour - the bridge's
+    generic `BRIDGE_FAILURE` for a JSON document cut in half.
+    """
+
+
+class _ProcessReadError(Exception):
+    """A reader thread died before the child's output was fully drained.
+
+    The buffer it filled is a prefix of the real output, and nothing about
+    it says so. Callers that parse the output structurally (JSON, a version
+    regex) would reject the truncation by luck; `pqtest._run_bounded` returns
+    it verbatim and would not. So the read failure is raised rather than
+    swallowed, and every caller maps it to its own typed error.
+    """
+
+
 @dataclass(frozen=True)
 class Diagnostic:
     file: str = "<string>"
@@ -137,6 +158,8 @@ def _run_process_bounded(
     ) as process:
         buffers = [bytearray(), bytearray()]
         exceeded = threading.Event()
+        read_failure: list[BaseException] = []
+        write_failure: list[BaseException] = []
 
         def read(stream: Any, buffer: bytearray) -> None:
             try:
@@ -146,8 +169,12 @@ def _run_process_bounded(
                         process.kill()
                         return
                     buffer.extend(chunk)
-            except (OSError, ValueError):
-                return
+            except (OSError, ValueError) as error:
+                # `list.append` is atomic, so no lock is needed for the two
+                # reader threads. Returning here without recording would hand
+                # back a truncated buffer that looks exactly like complete
+                # output.
+                read_failure.append(error)
 
         threads = [
             threading.Thread(target=read, args=(stream, buffer), daemon=True)
@@ -162,9 +189,23 @@ def _run_process_bounded(
             def write() -> None:
                 try:
                     stdin.write(input_payload)
-                except BrokenPipeError:
-                    pass
+                except OSError as error:
+                    # EPIPE: the child closed stdin early and has only part
+                    # of the payload. EBADF: the descriptor was closed under
+                    # this thread. Either way the child did not get the
+                    # document, and `BrokenPipeError` alone let EBADF escape
+                    # to threading's excepthook unrecorded, so the call
+                    # returned a clean run of a child that had read nothing.
+                    write_failure.append(error)
                 finally:
+                    # NOT recorded, deliberately. `close()` here raises
+                    # EBADF whenever this thread was abandoned by the
+                    # timeout path below, which closes these fds by number
+                    # to unblock a stuck reader - so an error here says the
+                    # parent tore the pipe down, not that the child got a
+                    # short payload. Recording it failed a legitimate parse
+                    # in the full suite. The genuine short write is caught
+                    # above, where it is unambiguous.
                     with contextlib.suppress(OSError):
                         stdin.close()
 
@@ -183,24 +224,43 @@ def _run_process_bounded(
             if any(thread.is_alive() for thread in threads):
                 if process.poll() is None:
                     process.kill()
-                try:
-                    raw = [
-                        stream.fileno()
-                        for stream in (process.stdout, process.stderr, process.stdin)
-                        if stream is not None
-                    ]
-                except (OSError, ValueError):
-                    raw = []
-                # An abandoned thread may still hold the read lock on this
-                # pipe (e.g. a grandchild keeping it open); detach it so the
-                # context manager's close() below does not block on it.
+                # Close the two reader pipes through their raw FileIO, never
+                # by integer. `os.close(stream.fileno())` unblocked a reader
+                # stuck on a pipe a grandchild kept open, but it bypassed the
+                # BufferedReader, whose `closed` flag stayed False; when the
+                # abandoned thread finally died, the object's finaliser closed
+                # the same number a second time - by then recycled by the OS
+                # to a later, unrelated call's pipe, whose child lost its
+                # stdin or stdout mid-payload and reported the truncated
+                # document as its own error. `raw.close()` has the same
+                # unblocking effect, does not take the buffer lock the stuck
+                # `read()` holds (so it does not hang), and marks the object
+                # closed so the finaliser is a no-op. stdin is left to the
+                # writer thread, the one thread that closes its own stream:
+                # the child is killed above, a writer blocked on a full pipe
+                # gets EPIPE, and it closes stdin itself, in order.
+                readers = [
+                    stream
+                    for stream in (process.stdout, process.stderr)
+                    if stream is not None
+                ]
+                # Detach first so the context manager's close() below cannot
+                # block on a stream an abandoned thread still holds.
                 process.stdout = process.stderr = process.stdin = None
-                for fd in raw:
-                    with contextlib.suppress(OSError):
-                        os.close(fd)
+                for stream in readers:
+                    with contextlib.suppress(OSError, ValueError):
+                        getattr(stream, "raw", stream).close()
                 raise subprocess.TimeoutExpired(command, timeout)
         if exceeded.is_set():
             raise _ProcessOutputLimit
+        if read_failure:
+            raise _ProcessReadError from read_failure[0]
+        # Only when the child itself succeeded. If it exited non-zero it has
+        # its own account of what went wrong, and a broken stdin pipe is
+        # usually a consequence of that exit rather than its cause; raising
+        # here would replace the child's diagnosis with ours.
+        if write_failure and process.returncode == 0:
+            raise _ProcessWriteError from write_failure[0]
         return subprocess.CompletedProcess(
             command, process.returncode, *map(bytes, buffers)
         )
@@ -210,7 +270,13 @@ def _run_process_bounded(
 def _require_node(binary: str) -> None:
     try:
         result = _run_process_bounded([binary, "--version"], None, 5)
-    except (OSError, subprocess.SubprocessError, _ProcessOutputLimit) as error:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        _ProcessOutputLimit,
+        _ProcessReadError,
+        _ProcessWriteError,
+    ) as error:
         raise NodeError("Node.js 22 or newer is required") from error
     if result.returncode or not re.fullmatch(
         rb"v(2[2-9]|[3-9]\d|\d{3,})\.\d+\.\d+\S*\s*", result.stdout
@@ -242,6 +308,10 @@ def _bridge(source: str, kind: str, **options: str) -> dict[str, Any]:
         raise NodeError("Node subprocess timed out after 30 seconds") from error
     except _ProcessOutputLimit as error:
         raise NodeError("Node output exceeds 10 MiB") from error
+    except _ProcessReadError as error:
+        raise NodeError("Node bridge output could not be read in full") from error
+    except _ProcessWriteError as error:
+        raise NodeError("Node bridge input could not be written in full") from error
     if result.returncode:
         raise NodeError(f"Node bridge failed with exit {result.returncode}")
     try:

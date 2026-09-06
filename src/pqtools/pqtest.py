@@ -12,6 +12,8 @@ from .core import (
     MAX_BYTES,
     AdapterError,
     _ProcessOutputLimit,
+    _ProcessReadError,
+    _ProcessWriteError,
     _run_process_bounded,
 )
 
@@ -56,6 +58,10 @@ def _run_bounded(
         raise AdapterError(f"PQTest timed out after {timeout} seconds") from error
     except _ProcessOutputLimit as error:
         raise AdapterError("PQTest output exceeds 10 MiB") from error
+    except _ProcessReadError as error:
+        raise AdapterError("PQTest output could not be read in full") from error
+    except _ProcessWriteError as error:
+        raise AdapterError("PQTest input could not be written in full") from error
     except OSError as error:
         raise AdapterError("PQTest process failed") from error
     try:

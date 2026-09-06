@@ -1,10 +1,14 @@
+import ast
+import inspect
 import os
 import shutil
 import stat
 import subprocess
 import sys
+import textwrap
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,6 +21,8 @@ from pqtools.core import (
     RenameRefusal,
     SafeWriteError,
     _ProcessOutputLimit,
+    _ProcessReadError,
+    _ProcessWriteError,
     _run_process_bounded,
     check,
     dependencies,
@@ -205,6 +211,257 @@ def test_process_output_is_terminated_at_limit():
     command = [sys.executable, "-c", "import sys; sys.stdout.write('x' * 11000000)"]
     with pytest.raises(_ProcessOutputLimit):
         _run_process_bounded(command, None, 10)
+
+
+class _ReadFailsMidStream:
+    """A stdout wrapper that yields one chunk, then fails like a broken pipe."""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._calls = 0
+
+    def read(self, size):
+        self._calls += 1
+        if self._calls == 1:
+            return b'{"partial": '
+        raise OSError(5, "Input/output error")
+
+    def fileno(self):
+        return self._stream.fileno()
+
+    def close(self):
+        return self._stream.close()
+
+
+@pytest.fixture
+def failing_stdout(monkeypatch):
+    """Make the real child's stdout fail after one chunk.
+
+    Used by exactly one test. Replacing `subprocess.Popen` is global for the
+    duration, so the narrowest seam that proves a given claim is preferred
+    everywhere else in this file - three sibling tests patch the runner
+    directly instead.
+    """
+    real_popen = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = real_popen(*args, **kwargs)
+        process.stdout = _ReadFailsMidStream(process.stdout)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+
+def test_process_read_failure_is_raised_not_returned_as_short_output(failing_stdout):
+    # The buffer left behind is a valid prefix and carries no mark of the
+    # failure, so returning it would be a silent truncation.
+    command = [sys.executable, "-c", "import sys; sys.stdout.write('x' * 64)"]
+    with pytest.raises(_ProcessReadError):
+        _run_process_bounded(command, None, 10)
+
+
+def test_pqtest_refuses_a_truncated_read_rather_than_returning_it(monkeypatch):
+    # This is the path with no structural check on the output: `_run_bounded`
+    # decodes and returns it, so nothing downstream would reject a prefix.
+    # `pqtest` imported the runner by name, so the seam is in `pqtest`.
+    from pqtools import pqtest as _pqtest
+
+    def fail(*args, **kwargs):
+        raise _ProcessReadError
+
+    monkeypatch.setattr(_pqtest, "_run_process_bounded", fail)
+    with pytest.raises(_pqtest.AdapterError, match="could not be read in full"):
+        _pqtest._run_bounded(["irrelevant"], 10)
+
+
+def test_node_bridge_names_a_read_failure_rather_than_blaming_the_json(monkeypatch):
+    # Without the guard this surfaced as "invalid JSON": a local read fault
+    # reported as the child's misbehaviour. `_require_node` maps the same
+    # failure to its own message and runs first, so the bridge's mapping is
+    # driven directly.
+    def fail(*args, **kwargs):
+        raise _ProcessReadError
+
+    monkeypatch.setattr(core, "_require_node", lambda binary: None)
+    monkeypatch.setattr(core, "_run_process_bounded", fail)
+    with pytest.raises(NodeError, match="could not be read in full"):
+        parse(SOURCE)
+
+
+def test_node_version_check_refuses_a_truncated_read(monkeypatch):
+    # `_require_node` would reject a prefix by luck, because its version
+    # regex is a fullmatch. This pins the mapping instead of the luck.
+    def fail(*args, **kwargs):
+        raise _ProcessReadError
+
+    monkeypatch.setattr(core, "_run_process_bounded", fail)
+    core._require_node.cache_clear()
+    try:
+        with pytest.raises(NodeError, match="Node.js 22 or newer is required"):
+            core._require_node("/nonexistent/node")
+    finally:
+        core._require_node.cache_clear()
+
+
+def test_timeout_teardown_never_closes_a_descriptor_by_number() -> None:
+    """The abandon path closes streams through their objects, never by int.
+
+    `os.close(stream.fileno())` unblocked a reader a grandchild had pinned,
+    but it bypassed the BufferedReader: its `closed` flag stayed False, and
+    when the abandoned thread finally died the object's finaliser closed the
+    same integer a second time - by then recycled by the OS to a later,
+    unrelated call's pipe. That is how a corpus parse two test files later
+    got `BRIDGE_FAILURE` from a child whose stdin vanished mid-document.
+
+    Asserted against the source because the recycling itself is a race.
+    The runtime half of the control is the next test.
+    """
+    # Parsed, not grepped: the comment explaining the defect quotes the very
+    # call this forbids, and a text search would fail on its own explanation.
+    tree = ast.parse(textwrap.dedent(inspect.getsource(_run_process_bounded)))
+    calls = [
+        ast.unparse(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
+    ]
+    assert "os.close" not in calls, calls
+    assert not any(call.endswith(".fileno") for call in calls), calls
+    # The streams the abandon path closes: the two readers, never stdin.
+    readers = [
+        ast.unparse(node.elt) + " <- " + ast.unparse(node.generators[0].iter)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ListComp)
+        and node.generators
+        and "stream is not None" in ast.unparse(node.generators[0])
+    ]
+    assert len(readers) == 1, readers
+    assert "process.stdout" in readers[0] and "process.stderr" in readers[0]
+    assert "process.stdin" not in readers[0]
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX-only: relies on closing the raw pipe unblocking the reader",
+)
+def test_abandoned_reader_stream_is_marked_closed_so_its_finaliser_is_inert(
+    monkeypatch,
+):
+    """The runtime half: after a timeout that abandons a reader, the real
+    BufferedReader it holds must already know it is closed.
+
+    A `BufferedReader.closed` that is still False here means the parent
+    closed the integer behind its back, and the object will close that
+    integer again on finalisation - whatever it belongs to by then. With the
+    fix the object is closed through its raw FileIO, so `closed` is True and
+    the finaliser has nothing to do.
+    """
+    captured: list[Any] = []
+    real_popen = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = real_popen(*args, **kwargs)
+        captured.append((process.stdout, process.stderr))
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    command = [
+        sys.executable,
+        "-c",
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        "sys.stdout.write('parent done')",
+    ]
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_process_bounded(command, None, 2)
+    assert captured, "the child should have been spawned"
+    stdout, stderr = captured[0]
+    assert stdout.closed, "abandoned stdout reader still thinks it is open"
+    assert stderr.closed, "abandoned stderr reader still thinks it is open"
+
+
+class _WriteFailsEBADF:
+    """A stdin wrapper whose write fails the way a closed-under-us fd does."""
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, data):
+        raise OSError(9, "Bad file descriptor")
+
+    def close(self):
+        return self._stream.close()
+
+    def fileno(self):
+        return self._stream.fileno()
+
+
+def test_ebadf_on_write_is_recorded_not_lost_to_the_thread(monkeypatch):
+    """EBADF is an OSError but not a BrokenPipeError.
+
+    Catching only `BrokenPipeError` let it escape to threading's excepthook,
+    where nothing recorded it, so the call returned a clean run of a child
+    that had read nothing - which is exactly what a recycled descriptor
+    produces.
+    """
+    real_popen = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = real_popen(*args, **kwargs)
+        process.stdin = _WriteFailsEBADF(process.stdin)
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    command = [sys.executable, "-c", "pass"]
+    with pytest.raises(_ProcessWriteError):
+        _run_process_bounded(command, b"payload", 10)
+
+
+def test_short_write_is_raised_not_returned_as_a_delivered_payload():
+    """A child that exits without reading leaves stdin half-written.
+
+    No monkeypatching: the child simply exits before the 4 MiB payload can
+    be delivered, so the write really does hit a closed pipe. Before this
+    was recorded, the call returned a completed process with returncode 0
+    and the child had only part of its input - the caller could not tell
+    that from a full delivery.
+    """
+    command = [sys.executable, "-c", "pass"]
+    with pytest.raises(_ProcessWriteError):
+        _run_process_bounded(command, b"x" * (4 * 1024 * 1024), 10)
+
+
+def test_a_failing_child_keeps_its_own_diagnosis_over_the_broken_pipe():
+    """The guard on the raise: a non-zero exit is the better explanation.
+
+    The same broken pipe happens here, but it is a consequence of the child
+    exiting, not the cause. Raising on it would replace the child's exit
+    code with our account of the pipe.
+    """
+    command = [sys.executable, "-c", "raise SystemExit(3)"]
+    result = _run_process_bounded(command, b"x" * (4 * 1024 * 1024), 10)
+    assert result.returncode == 3
+
+
+def test_bridge_names_a_short_write_rather_than_blaming_the_child(monkeypatch):
+    # Undelivered input made the bridge report the child's complaint about a
+    # half-read JSON document - a generic BRIDGE_FAILURE - as the child's
+    # own fault.
+    def fail(*args, **kwargs):
+        raise _ProcessWriteError
+
+    monkeypatch.setattr(core, "_require_node", lambda binary: None)
+    monkeypatch.setattr(core, "_run_process_bounded", fail)
+    with pytest.raises(NodeError, match="input could not be written in full"):
+        parse(SOURCE)
+
+
+def test_pqtest_names_a_short_write(monkeypatch):
+    from pqtools import pqtest as _pqtest
+
+    def fail(*args, **kwargs):
+        raise _ProcessWriteError
+
+    monkeypatch.setattr(_pqtest, "_run_process_bounded", fail)
+    with pytest.raises(_pqtest.AdapterError, match="input could not be written"):
+        _pqtest._run_bounded(["irrelevant"], 10)
 
 
 def test_process_input_write_obeys_same_timeout():

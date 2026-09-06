@@ -1319,6 +1319,39 @@ def _percentage_from(args: list[Any], ctx: _Ctx) -> Any:
     return _convert_via_number_from("Percentage.From", value, ctx)
 
 
+def _is_temporal_text(stripped: str) -> bool:
+    """True when this text reads as a date, time, datetime or duration.
+
+    Detection only - it never produces the value, because which value M
+    would produce is the part its page does not document. ISO 8601 is what
+    .NET's invariant culture parses, so it is the narrowest defensible
+    reading of "recognisably a date" without inventing a format table.
+
+    Duration is not ISO 8601 and needs a grammar, but not a new one: the
+    grammar is documented and this package already owns it, in
+    `_datetime._DURATION_TEXT_RE` behind `Duration.FromText`. Imported
+    rather than copied - a second copy of a documented grammar is a second
+    thing to keep correct. The import is local because it crosses builtin
+    families; `_datetime` does not import this module, so there is no cycle.
+
+    Numbers reach `_parse_numeric_literal` first, so a bare `20241224` is
+    the number 20241224 here, and a bare `5` is 5 rather than 5 days.
+    """
+    for parse in (
+        datetime.datetime.fromisoformat,
+        datetime.date.fromisoformat,
+        datetime.time.fromisoformat,
+    ):
+        try:
+            parse(stripped)
+        except ValueError:
+            continue
+        return True
+    from ._datetime import _DURATION_TEXT_RE
+
+    return _DURATION_TEXT_RE.match(stripped) is not None
+
+
 def _value_from_text(args: list[Any], ctx: _Ctx) -> Any:
     # Value.FromText(text as any, optional culture as nullable text) as any.
     # Verified against the page's own worked examples 1 and 2 (a plain
@@ -1357,13 +1390,25 @@ def _value_from_text(args: list[Any], ctx: _Ctx) -> Any:
     if lowered == "false":
         return False
     # The page's own About text lists the return type as "number, logical,
-    # null, datetime, duration, or text" - datetime/duration detection is
-    # real, documented Value.FromText behaviour that this function does not
-    # attempt: that parsing lives in _datetime.py, a file this task does
-    # not own (see this task's report). Falling through to the "text"
-    # branch of that same documented type union is a disclosed gap, not a
-    # silent wrong answer - a genuine date string under an invariant
-    # culture stays text here instead of becoming a datetime.
+    # null, datetime, duration, or text", and Example 4 shows a datetime
+    # coming back as `#datetime(2024, 12, 24, 14, 33, 20)`. So text that is
+    # a date or time does NOT come back as text in real M.
+    #
+    # This function does not implement that branch, and it cannot be written
+    # honestly: the page documents no invariant-culture format for it - its
+    # only datetime example passes "de-DE" - so the format rules would have
+    # to come from memory, which is the one thing this package must never
+    # do. Refusing by name is the other side of that rule. Returning the
+    # text instead would be a value real M does not produce, with nothing in
+    # the result to say so, and callers cannot tell the two apart.
+    if _is_temporal_text(stripped):
+        raise UnsupportedError(
+            "Value.FromText: the text reads as a date, time or duration, "
+            "which M returns as a datetime or duration; the culture-specific "
+            "interpretation behind that result is not implemented here. Use "
+            "Date.FromText, Time.FromText, DateTime.FromText or "
+            "Duration.FromText, which each state their format."
+        )
     return text
 
 

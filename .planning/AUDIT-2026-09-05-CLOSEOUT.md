@@ -595,7 +595,9 @@ LOWs, all taken:
 | `/logs/` anchored stops ignoring a `logs/` written from a subdirectory, which is the incident class | TAKEN - round 6 said anchor, round 7 says not; on the merits (the tool writes relative to its own cwd; no `logs` package exists) it is unanchored again, with both arguments in the comment |
 
 **Static security scan.** `semgrep` is not installed here and the first
-pass said so. What is installed is ruff, whose `S` ruleset is the
+pass said so. **Corrected 2026-09-06:** it became reachable later the same
+day over MCP and was run - see round 9. The three passes below were written
+before that and their `semgrep` rows are corrected in place. What is installed is ruff, whose `S` ruleset is the
 flake8-bandit port, so it ran offline over `src/`: 45 hits.
 
 | Rule | Hits | Disposition |
@@ -718,9 +720,11 @@ exercised, and no result here should be read as evidence about any of them:
    examples reproducing their documented output is the strongest evidence
    available here, and it is not a compatibility percentage. See
    `SUPPORT-MATRIX.md`.
-6. **`semgrep` was not run** - it is not installed on this machine. `gitleaks`
-   was run over the branch range and found nothing; `pip-audit` reports no
-   known vulnerabilities.
+6. **`semgrep` code scan ran clean; its supply-chain scan did not run.**
+   semgrep 1.157.0 over all 25 modules: 0 findings, 0 errors. The
+   supply-chain scan needs a running Semgrep daemon and is unavailable
+   here, so dependency risk rests on `pip-audit` alone, which reports no
+   known vulnerabilities. `gitleaks` over the branch range found nothing.
 7. **`pq rename` remains narrow by design.** It refuses on most real Power
    Query, because a record literal or field access anywhere in the file stops
    it. The guard was documented, not loosened; narrowing it correctly needs
@@ -747,7 +751,7 @@ runs below were re-done one at a time.
 | Container read path | `pq list` / `pq eval` on `.samples/` | 3 containers enumerated, 3 typed errors for files with no DataMashup part; md5 unchanged, nothing written |
 | Secrets | `gitleaks detect --log-opts=c7ffc5f..HEAD` | no leaks |
 | Dependencies | `pip-audit` | no known vulnerabilities |
-| Static analysis | `semgrep` | **NOT RUN - not installed on this machine** |
+| Static analysis | `semgrep` | **corrected 2026-09-06: RUN, clean** - 1.157.0, all 25 modules, 0 findings, 0 errors (round 9) |
 
 Coverage rose from 91% to 93% across the work; the suite grew from 3746 to
 3958 tests.
@@ -769,7 +773,8 @@ sequentially, `PQ_GATE_PYTEST_ARGS=""`, nothing else of mine on the machine.
 | Exact `claude-opus-5` review | round 4 on `c7ffc5f..ee04185` (full range) and round 6 on `ee04185..eb2c7fd` (delta) - together they cover `c7ffc5f..eb2c7fd`; the round-6 fixes (`07bf9ed`) are reviewed by no model pass, because the full-range rerun was killed twice for memory |
 
 Not verified, unchanged from the first pass: live database, Fabric, Windows
-PQTest, native Excel or Power BI refresh, `semgrep` (not installed). The
+PQTest, native Excel or Power BI refresh. (`semgrep` was listed here as not
+installed; corrected in round 9 - it ran clean.) The
 three `skipif(os.name == "nt")` guards added in round 5 were verified by
 inspection against the repo's precedent, not by a Windows run.
 
@@ -784,9 +789,337 @@ else of mine on the machine.
 | Targeted modules through rounds 7-8 | 809, then 106, then 23 - ruff, ruff format, mypy strict clean at every step |
 | Positive controls, rounds 7-8 | catalog-identifier breakout red then green; byte-cap count red under `len(seen)` (4 reported for 3 read); eager SQL build red on the NUL-scoping test |
 | Exact `claude-opus-5` reviews | round 4 `c7ffc5f..ee04185` (full range, FIX-FIRST) · round 6 `ee04185..eb2c7fd` (FIX-FIRST) · round 7 `eb2c7fd..bdbdbbe` (**SHIP**) · round 8 `bdbdbbe..c433e33` (**SHIP**, one MEDIUM taken). Together they cover every commit from baseline to `c433e33`. **``bd95332`` - the round-8 MEDIUM fix itself - carries no model review**: the CLI hit its session limit mid-round and the remaining budget went to the gate |
-| Static security | gitleaks clean, pip-audit clean (first pass) · ruff bandit ruleset over `src/`: 45 hits, 44 recorded as noise, 1 real and fixed · `semgrep` still NOT RUN, not installed here |
+| Static security | gitleaks clean, pip-audit clean (first pass) · ruff bandit ruleset over `src/`: 45 hits, 44 recorded as noise, 1 real and fixed · `semgrep` **corrected 2026-09-06: RUN, clean** - 1.157.0, 25 modules, 0 findings, 0 errors (round 9); its supply-chain scan still unavailable, needs a daemon |
 
 Not verified, unchanged across all three passes: live database, Fabric,
 Windows PQTest, native Excel or Power BI refresh. The three
 `skipif(os.name == "nt")` guards were reasoned from the repo's own
 precedent, not run on Windows.
+
+## Round 9 - the two verification gaps, closed
+
+Rounds 7 and 8 both returned SHIP, so this round was not a review round. It
+closed the two things the three passes above had recorded as open, and one
+defect the second of them found.
+
+### `semgrep` - was NOT RUN, now run and clean
+
+The three passes all carried `semgrep` as "not installed on this machine".
+That stopped being true: its MCP server became reachable on 2026-09-06.
+Run in two batches over every module in `src/pqtools/`:
+
+| Batch | Modules | Result |
+|---|---|---|
+| security-relevant | `_sources.py`, `cli.py`, `core.py`, `io.py`, `containers.py`, `evaluate.py`, `fabric.py` | 0 findings, 0 errors |
+| remainder | 18 modules, all of `builtins/*` plus `catalog.py`, `pqtest.py` | 0 findings, 0 errors |
+
+**25 modules, 0 findings, 0 errors**, semgrep 1.157.0. The rows above are
+corrected in place rather than silently, so the record shows both what was
+claimed and when it changed.
+
+`semgrep_scan_supply_chain` still does not run - it requires an active
+Semgrep daemon, which is not available here. Dependency risk therefore rests
+on `pip-audit` alone. That is a narrower check, and it is the one gap this
+round could not close.
+
+### A swallow-site sweep against the product's own promise
+
+The requirement says unsupported behaviour must raise a typed error and
+**never silently return incomplete or incorrect data**. A `semgrep` pass is
+generic; that clause is specific, so it was checked directly. An AST walk
+over all of `src/pqtools/` enumerated every exception handler that returns
+without raising:
+
+| Shape | Count |
+|---|---|
+| bare `except:` | 0 |
+| broad `except Exception` with no re-raise | 0 |
+| handler that swallows and returns a value | 18 |
+
+Seventeen of the eighteen are correct and most carry the reasoning already:
+`try x` returning `{HasError: true}` is M's own semantics; the `math.inf` /
+`math.nan` returns in `_number.py` are documented overflow results; the
+`decode_escapes` fallback in `core.py:349` is a deliberate split between a
+*name* (list it raw so one bad query name does not refuse the whole file)
+and a *value* (strict, because passing it through would corrupt the result).
+
+### The eighteenth: a reader thread that truncated output silently
+
+`core._run_process_bounded` drains the child's stdout and stderr on two
+threads. Each caught `(OSError, ValueError)` and returned, leaving a buffer
+holding a *prefix* of the real output with nothing to say so. The function
+then returned that prefix as a completed process.
+
+Two of the three callers reject a prefix by luck: `_require_node` runs a
+version regex over it, `_bridge` runs `json.loads`. The third does not.
+`run_pqtest` -> `_run` -> `_run_bounded` decodes the bytes and **returns
+them verbatim as the PQTest result**, with no structural check anywhere on
+the path. On that path a short read is exactly the failure the requirement
+names.
+
+The fix follows the module's existing `_ProcessOutputLimit` idiom rather
+than inventing a mechanism: a `_ProcessReadError` sentinel, the failure
+recorded by the reader instead of dropped, raised after the threads join,
+and mapped by each caller to its own typed error - `NodeError` for the two
+Node paths, `AdapterError("PQTest output could not be read in full")` for
+the adapter. It is raised after the `try/finally`, so a timeout still wins:
+the abandoned readers there fail on the fds this function itself closed.
+
+`_bridge` also stopped reporting a local read fault as `"Node bridge
+returned invalid JSON"`, which blamed the child for the host's failure.
+
+**Positive control.** With the raise site removed, the two tests that gate it
+went red (`DID NOT RAISE AdapterError` on the adapter path - that is the
+silent truncation, reproduced), and the two that do not depend on it stayed
+green, as predicted:
+
+| Test | Control |
+|---|---|
+| `test_process_read_failure_is_raised_not_returned_as_short_output` | red |
+| `test_pqtest_refuses_a_truncated_read_rather_than_returning_it` | red |
+| `test_node_bridge_names_a_read_failure_rather_than_blaming_the_json` | green - drives the mapping directly, not the raise site |
+| `test_node_version_check_refuses_a_truncated_read` | green - records that the version regex rejects a prefix on its own |
+
+The last two are honest about what they do and do not prove; keeping them
+green under the control is the point, not a weakness.
+
+This defect predates the baseline `c7ffc5f`. It was not in the original
+seven findings and no review round raised it - it was found by checking the
+requirement's own wording against the code rather than by reviewing a diff.
+
+### The sweep's second finding: `Value.FromText` returned a wrong type in silence
+
+Verifying the "seventeen of eighteen are correct" claim above meant reading
+all seventeen rather than asserting it. Sixteen held. The seventeenth,
+`_number.py`'s `Value.FromText`, did not:
+
+```
+Value.FromText("2024-12-24T14:33:20")  ->  str  '2024-12-24T14:33:20'
+Value.FromText("2024-12-24")           ->  str  '2024-12-24'
+Value.FromText("14:33:20")             ->  str  '14:33:20'
+```
+
+Microsoft's page, fetched for this round rather than recalled: *"This
+function takes a text value and returns a value of type `number`, `logical`,
+`null`, `datetime`, `duration`, or `text`"*, and its Example 4 output is
+`#datetime(2024, 12, 24, 14, 33, 20)`. So real M returns a datetime for that
+text and this returned the string - a wrong type, no error, and nothing in
+the result to distinguish it from text that really is text.
+
+The gap was known. A prior round left `test_value_from_text_datetime_-
+detection_is_a_disclosed_gap`, pinning the string return and inviting "a
+future session that wires in datetime detection" to update it. Two things
+were wrong with that disposition:
+
+- **It was disclosed in a source comment and a test name, not to a user.**
+  Neither `SUPPORT-MATRIX.md` - the authoritative document - nor `llms.txt`
+  mentioned it. A caller had no way to learn it.
+- **Its stated reason had expired.** The reason given was "that parsing
+  lives in `_datetime.py`, a file this task does not own" - a scoping
+  constraint of that round, not a fact about M.
+
+**Detection was still not implemented, deliberately.** The page publishes no
+invariant-culture format for the datetime branch; its only datetime example
+passes `"de-DE"`. Writing that format table from memory is the invention
+this repo forbids. So the fix is the requirement's own remedy - an explicit
+typed refusal - not a guess:
+
+| Input | Before | After |
+|---|---|---|
+| `"2024-12-24"`, `"14:33:20"`, `"2024-12-24T14:33:20"` | the string, silently | `UnsupportedError`, naming `Date.FromText` / `Time.FromText` / `DateTime.FromText` |
+| `"12345.6789"`, `"25.4%"`, `"true"`, `""`, `"hello world"`, `"Dec 24"` | unchanged | unchanged |
+| `"€1,190", "fr-FR"` and `"24 Dez 2024 14:33:20", "de-DE"` | already refused | already refused |
+
+Detection keys on ISO 8601 alone (`datetime`/`date`/`time.fromisoformat`),
+which is what .NET's invariant culture parses - the narrowest defensible
+reading of "recognisably a date" without inventing the format table. Numbers
+reach `_parse_numeric_literal` first, so `20241224` stays the number
+20241224 and never becomes a date.
+
+**The `duration` branch was going to be left open, and then was not.** The
+first cut of this fix refused only ISO dates and times, and recorded duration
+as a live gap - M's duration text is not ISO 8601, so detecting it appeared
+to need a format invented for the purpose. It did not. `Duration.FromText`
+is implemented in this package *from its own documented grammar*
+(`_datetime._DURATION_TEXT_RE`, with the two documented alternatives written
+out above it). The grammar was already owned, grounded and tested; the gap
+was only that this function did not ask it.
+
+So the refusal covers duration too, importing that pattern rather than
+restating it - a second copy of a documented grammar is a second thing that
+can drift. Text the grammar rejects is still text, and correctly so:
+`Value.FromText("P1D")` is `"P1D"` here because `Duration.FromText("P1D")`
+is an error in this package too. ISO 8601 duration syntax is not M's.
+
+The lesson is the round's own: a gap recorded as "cannot be done without
+inventing" was worth re-testing before being written down as a limitation.
+
+**Positive control.** With the refusal removed, the three parametrised cases
+went red and both independent pins - plain text still text, duration still a
+gap - stayed green, confirming they test something else.
+
+The old pinned test was replaced, not deleted, and its replacement records
+what it used to assert and why that changed.
+
+### `M_ADAPTER_ERROR` was documented as something it is not
+
+`llms.txt` told agents this code means "The Fabric transport returned
+something malformed, empty, or over its 10 MiB limit" and to treat it as
+remote: *"Report it; nothing local is wrong."*
+
+That was already wrong before this round. `AdapterError` is also the whole
+PQTest adapter, including refusals that are entirely local - "PQTest path
+must name a user-installed regular `.exe`", "PQTest adapter is supported on
+Windows only", a wrong version. An agent following that row would report a
+local misconfiguration upstream as a remote fault. The row now names both
+adapters and tells the reader how to tell them apart. This is the code being
+right and the documentation being wrong, which is the only case where
+editing the documentation is the fix.
+
+### The same swallow, in the other direction
+
+The sweep listed `core.py:165` - `except BrokenPipeError: pass` in the thread
+that writes the child's stdin - and the first pass over the list dismissed it
+as "the write path". It is the reader defect mirrored:
+
+```
+_run_process_bounded([python, "-c", "pass"], b"x" * 4MiB, 10)
+    before ->  CompletedProcess(returncode=0, stdout=b"")
+    after  ->  _ProcessWriteError, cause BrokenPipeError [Errno 32]
+```
+
+No mock, no patch: the child exits before the payload can be delivered, the
+write hits a closed pipe, and the call used to report a clean run of a child
+that had received part of its input.
+
+The raise is guarded by `process.returncode == 0`. A child that exits non-zero
+already has its own account of what went wrong, and the broken pipe is
+usually a consequence of that exit; raising would replace the child's
+diagnosis with ours. Pinned by
+`test_a_failing_child_keeps_its_own_diagnosis_over_the_broken_pipe`.
+
+**`stdin.close()` is deliberately NOT recorded, and the attempt to record it
+was a regression.** `close()` is where a `BufferedWriter` flushes, so on the
+face of it an error there is the tail of the payload never arriving - the
+same truncation, suppressed by `contextlib.suppress(OSError)`. Recording it
+failed a legitimate parse in the full suite, and that failure is what finally
+explained the rest of this round.
+
+### The BRIDGE_FAILURE, diagnosed - and the first diagnosis was wrong
+
+While adding the reader tests, a pre-existing test began failing with
+`NodeError: BRIDGE_FAILURE` - first in a three-file subset, then in the full
+suite, on `tests/test_corpus.py::test_vendor_fixture_checksums_and_parser_-
+coverage`. It only ever failed after `tests/test_core.py`, it passed alone,
+and every instrumentation attempt made it vanish: a Python-side wrapper on
+`_run_process_bounded`, a node-side debug bundle logging every stdin payload
+(216 invocations, all intact, `main()` never threw), even one extra list
+allocation. The prefix of the suite up to that file passed on its own; the
+same prefix inside a full collection (`pytest tests/ -x`) failed in 2m31s.
+That was the reproducer that made the rest possible.
+
+**The first diagnosis, recorded here and superseded.** Once `stdin.close()`
+errors were surfaced the failure showed `OSError: [Errno 9] Bad file
+descriptor`, and this closeout concluded the writer thread was the hazard:
+the timeout path closed stdin by integer, the abandoned writer later closed
+the same integer, by then recycled. The fix removed `process.stdin` from the
+by-number close, with the reasoning that this was safe for the readers
+"because the reader threads never close their streams." **That reasoning was
+inverted, and the test kept failing.** Never closing the object is what
+guarantees its only close is the one nobody controls.
+
+**The actual mechanism.** A second, read-only pass traced it and then built
+an isolated `os.pipe()` model with no subprocess in it to prove each step:
+
+1. On timeout the parent closed the two reader pipes with
+   `os.close(stream.fileno())` - by integer. That unblocks a reader a
+   grandchild has pinned, which is why it was written that way.
+2. But it bypasses the `BufferedReader`. The object's `closed` flag stays
+   `False`; only the kernel knows the number is gone.
+3. The abandoned reader thread, now unblocked, returns. Its frame was the
+   last reference to the `BufferedReader`, so CPython finalises it at once,
+   and `BufferedReader.__del__` closes its integer **a second time**.
+4. By then the OS has handed that integer to the next pipe opened - the
+   stdin of `test_corpus`'s next `parse()`. That child reads a document cut
+   off mid-stream, `JSON.parse` throws, `_bridge.cjs` catches it and emits
+   the generic `BRIDGE_FAILURE`.
+
+The model's output, verbatim: `br.closed AFTER os.close(fd) bypass: False` ·
+`recycled? new read fd == freed fd: True` · `victim fd INVALIDATED by the
+leaked object finalizer: OSError(9, 'Bad file descriptor')`. It also showed
+why every instrumentation hid it - any change to how long the abandoned
+thread takes to die moves the finaliser relative to the next `pipe()`.
+
+**The fix.** Close the readers through their raw `FileIO` instead of by
+integer: `getattr(stream, "raw", stream).close()`. The model confirmed the
+three properties this needs: it returns in microseconds (it does not take the
+buffer lock the stuck `read()` holds, which is what makes calling
+`BufferedReader.close()` from another thread hang), it unblocks the reader
+exactly as `os.close` did, and it flips `closed` to `True` so the finaliser
+is a no-op whatever the integer belongs to later. stdin stays with the
+writer thread, which closes its own stream - the earlier change was right for
+the wrong reason and is kept.
+
+A second, smaller hole came out of the same pass. The writer caught only
+`BrokenPipeError`. EBADF - a descriptor closed under the thread - is an
+`OSError` but not a `BrokenPipeError`, so it escaped to
+`threading.excepthook`, was printed to nowhere, and the call returned a clean
+`CompletedProcess(returncode=0)` for a child that had read nothing. Widened
+to `except OSError`.
+
+**Controls, both deterministic:**
+
+| Control | What was reintroduced | Red | Stayed green |
+|---|---|---|---|
+| A | `os.close(stream.fileno())` on the readers | the AST source test; `test_abandoned_reader_stream_is_marked_closed_so_its_finaliser_is_inert`, which captures the real `BufferedReader` and asserts `closed` after the timeout | the EBADF test - independent, as it should be |
+| B | `except BrokenPipeError` only | `test_ebadf_on_write_is_recorded_not_lost_to_the_thread` | the two reader tests |
+
+The source test parses `_run_process_bounded`'s AST for `os.close` and
+`.fileno` calls rather than grepping, because the comment explaining the
+defect quotes the forbidden call and a text search failed on its own
+explanation. The earlier runtime control for the stdin change, which could
+not go red, stays discarded.
+
+**Result.** `pytest tests/ -x` on the fixed tree did not stop: 3999 passed,
+0 failed, 10m21s. The gate on the same tree is recorded below.
+
+**On the two agents.** This was the first round to fan out. One agent's
+node-side instrumentation returned only the negative result above; the other,
+read-only, produced the mechanism and the model. The estate autocommit bot
+swept the first agent's temporary debug bundle into HEAD as `92516a1` mid-
+investigation; it was amended out (`4b6144d`, bundle byte-identical to
+`de6e217`) and the memory file for that trap now says so.
+
+## Verification on the final tree, fourth pass (round 9)
+
+Run sequentially, `PQ_GATE_PYTEST_ARGS=""`, nothing else of mine on the
+machine, on the tree that carries every round-9 change above.
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 3999 passed in 621.75s (0:10:21), 953 worked examples exact in 211.34s; `evidence/release-gate-2026-09-06-round9.log` |
+| Gate 4, for the record | 7 of 8 - the corpus test alone, before the reader-stream fix; `scratchpad` only, superseded |
+| Plain full suite, `-x` | 3999 passed, 0 failed - the reproducer that used to stop at 700 |
+| Lint, format, types | ruff, ruff format, mypy strict clean at every step |
+| Positive controls, round 9 | reader raise red/green · writer raise red/green (real EPIPE, no mock) · `Value.FromText` refusal 3 red/green, later 6 · reader integer-close (control A) red on the AST test and the finaliser test · `BrokenPipeError`-only (control B) red on the EBADF test · one runtime control that could not go red was discarded and is recorded as such |
+| `semgrep` | 1.157.0, 25 modules, 0 findings, 0 errors; supply-chain scan unavailable (needs a daemon) |
+| Exact `claude-opus-5` review of round 9's code | **not yet run at the time of this table** - see the review entry that follows it, or its absence |
+
+Not verified, unchanged across all four passes: live database, Fabric,
+Windows PQTest, native Excel or Power BI refresh. The `skipif(os.name ==
+"nt")` guards were reasoned from the repo's precedent, not run on Windows.
+
+**Left undone, on purpose:** `_bridge.cjs` still swallows its own exception
+in `main().catch(() => emit({ error: "BRIDGE_FAILURE" }))`. That is what made
+this take a whole round to find - the child knew exactly what was wrong with
+its input and threw the message away. Carrying `error.message` through would
+make the next occurrence name itself.
+
+It is not done here because the shipped file is a 2.5 MB esbuild bundle of
+`js/bridge.js`, and regenerating it puts a 2.5 MB artifact in a diff whose
+point is four small source changes. The groundwork is done and recorded:
+esbuild 0.28.2 rebuilds the committed bundle **byte-identically** from the
+current source (verified against `src/pqtools/_bridge.cjs` before this was
+written), so whoever picks it up can change `js/bridge.js`, run
+`npm run bundle`, and trust the rest of the diff. The root cause is fixed;
+this is a diagnosability improvement, and it should ride in its own commit.

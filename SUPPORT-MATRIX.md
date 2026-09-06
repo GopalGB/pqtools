@@ -127,6 +127,24 @@ The 88 documented-but-refused names each carry one of these reasons, recorded in
 Only `notyet` is a gap in this package. The other eight are statements about
 what a standalone M evaluator can know.
 
+## Implemented names with a narrowed branch
+
+A name in the registry is not a promise that every branch of its documented
+behaviour is implemented. Where a branch is not, the function **refuses that
+input by name** rather than returning a value from a branch that does apply -
+a wrong value with nothing in it to say so is the failure this package exists
+to avoid.
+
+| Name | Branch not implemented | What the input does instead |
+|---|---|---|
+| `Value.FromText` | `datetime` and `duration`. The page's return union is "number, logical, null, datetime, duration, or text", but it publishes no invariant-culture rule for either - its only datetime example passes `"de-DE"`. | Text that reads as a date, time, datetime or duration is **refused by name**, pointing at `Date.FromText` / `Time.FromText` / `DateTime.FromText` / `Duration.FromText`, which each state their format. The `number`, `logical`, `null` and `text` branches are unaffected: `"12345.6789"`, `"25.4%"`, `"true"`, `""` and `"hello world"` all behave as documented. |
+
+What counts as "reads as" is not invented for this refusal: dates and times
+are ISO 8601, which is what the invariant culture parses, and durations use
+the grammar `Duration.FromText` already implements from its own page. Text
+that grammar rejects stays text - `Value.FromText("P1D")` is `"P1D"`, and so
+is `Duration.FromText("P1D")` an error, which is why text is right for it.
+
 ## Refactoring scope
 
 `pq rename` renames exactly **one unquoted top-level `let` binding**.

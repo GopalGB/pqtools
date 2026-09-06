@@ -369,17 +369,64 @@ def test_value_from_text_falls_back_to_text_for_anything_else() -> None:
     assert evaluate('Value.FromText("hello world")') == "hello world"
 
 
-def test_value_from_text_datetime_detection_is_a_disclosed_gap() -> None:
-    """Real Value.FromText also recognises datetime/duration text (the
-    page's own About text: "returns a value of type number, logical, null,
-    datetime, duration, or text"). That parsing lives in _datetime.py, a
-    file this task does not own, so a date string under an INVARIANT
-    culture - which this module would otherwise accept rather than refuse -
-    comes back as text instead of a date. Pinned here so the gap is visible
-    (and so a future session that wires in datetime detection sees exactly
-    which test to update rather than silently changing behaviour).
+@pytest.mark.parametrize(
+    "call",
+    [
+        'Value.FromText("2024-12-24")',
+        'Value.FromText("14:33:20")',
+        'Value.FromText("2024-12-24T14:33:20")',
+        # The duration alternatives of Duration.FromText's documented
+        # grammar: "(-)hh:mm(:ss(.ff))" and "(-)ddd(.hh:mm(:ss(.ff)))".
+        'Value.FromText("1.02:03:04")',
+        'Value.FromText("02:03:04")',
+        'Value.FromText("1:00")',
+    ],
+)
+def test_value_from_text_refuses_temporal_text_rather_than_returning_it(
+    call: str,
+) -> None:
+    """This test used to pin the opposite, and said so: it asserted
+    `Value.FromText("2024-12-24") == "2024-12-24"` and invited "a future
+    session that wires in datetime detection" to update it.
+
+    Updated, but not the way that note expected. Detection is still NOT
+    implemented, because the doc page publishes no invariant-culture format
+    for it (its only datetime example passes "de-DE"), so the format table
+    would have to be written from memory. What changed is the disposition of
+    the gap: returning the text was a value real M does not produce - the
+    page's Example 4 shows `#datetime(2024, 12, 24, 14, 33, 20)` - with
+    nothing in the result to mark it. That is a silent wrong answer, and the
+    refusal replaces it.
     """
-    assert evaluate('Value.FromText("2024-12-24")') == "2024-12-24"
+    with pytest.raises(UnsupportedError, match="date, time or duration"):
+        evaluate(call)
+
+
+def test_value_from_text_still_returns_plain_text_as_text() -> None:
+    # The refusal above must not swallow the documented `text` branch of the
+    # return union: only text ISO 8601 reads as temporal is refused.
+    assert evaluate('Value.FromText("Dec 24")') == "Dec 24"
+    assert evaluate('Value.FromText("hello world")') == "hello world"
+
+
+def test_value_from_text_duration_refusal_reuses_the_documented_grammar() -> None:
+    """`duration` is the other half of the same documented union.
+
+    It is not ISO 8601, so detecting it needs a grammar - but not a NEW
+    one. `Duration.FromText` already implements the grammar its own page
+    documents, so `Value.FromText` refuses exactly what that grammar
+    accepts, by importing the pattern rather than restating it. Text the
+    grammar rejects is still text, which is what real M returns for it too.
+    """
+    from pqtools.builtins._datetime import _DURATION_TEXT_RE
+
+    assert _DURATION_TEXT_RE.match("1.02:03:04")
+    with pytest.raises(UnsupportedError, match="duration"):
+        evaluate('Value.FromText("1.02:03:04")')
+    # "P1D" is ISO 8601 duration syntax, which M's grammar does not accept
+    # either - Duration.FromText("P1D") is an error - so text is correct.
+    assert not _DURATION_TEXT_RE.match("P1D")
+    assert evaluate('Value.FromText("P1D")') == "P1D"
 
 
 def test_value_from_text_requires_text() -> None:
