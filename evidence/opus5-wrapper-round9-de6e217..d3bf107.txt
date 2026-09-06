@@ -1,0 +1,41 @@
+# Exact claude-opus-5 wrapper review - range de6e217..d3bf107 (bundle + lockfile shown as stub blobs)
+# staged:  10 files changed, 870 insertions(+), 45 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in de6e217..d3bf107, not stubbed, not in the diff
+# package-lock.json: unchanged in de6e217..d3bf107, not stubbed, not in the diff
+# invoked 2026-09-06T11:48:00Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Findings, most severe first. All verified by executing the staged tree.
+
+**HIGH — `src/pqtools/core.py:244` — the abandon path stopped closing stdin: leaked fd + a permanently stuck writer thread per timed-out call.**
+`readers` now excludes `process.stdin`, and `process.stdin = None` two lines later stops `Popen.__exit__` from closing it either, so when a grandchild holds the stdin read end nothing ever closes the write end. Measured on the same input (child spawns a sleeping grandchild, 8 MiB payload, 2 s timeout): HEAD → 0 fds leaked, 0 live threads; staged → **1 fd leaked, `Thread-3 (write)` blocked in `write()` forever**. Repeated bridge timeouts accumulate both, and the grandchild never sees EOF. The comment's premise ("a writer blocked on a full pipe gets EPIPE") holds only when the killed child is the last holder of the read end — which is the exact case the abandon path exists *not* to assume.
+*Fix:* add `process.stdin` back to the `readers` list so it is closed by the same `getattr(stream, "raw", stream).close()`. Verified: 0 fds leaked, writer exits, and it does **not** reinstate the double-close bug — the object is marked closed, so both the writer's `finally: stdin.close()` and the finaliser become no-ops. This requires relaxing `tests/test_core.py:337`, which pins the leak (`assert "process.stdin" not in readers[0]`) instead of the actual invariant already asserted above it (no `os.close`, no `.fileno`).
+
+**MEDIUM — `src/pqtools/builtins/_number.py:1341` — ISO-only detection leaves the silent wrong answer in place for the common invariant-culture date forms, which `SUPPORT-MATRIX.md` now says are refused.**
+Executed against the staged tree:
+```
+Value.FromText("12/24/2024")  -> str '12/24/2024'      Date.FromText("12/24/2024")  -> date(2024,12,24)
+Value.FromText("Apr 8, 2022") -> str 'Apr 8, 2022'     Date.FromText("Apr 8, 2022") -> date(2022,4,8)
+Value.FromText("10:12:31am")  -> str '10:12:31am'      Time.FromText("10:12:31am")  -> time(10,12,31)
+```
+The docstring's justification ("ISO 8601 … the narrowest defensible reading … without inventing a format table") is contradicted by this package's own `_datetime.py:246-251`, which explicitly rejects ISO-only as "the narrowest possible reading of 'the invariant culture' and not what it means" and cites `Time.FromText("10:12:31am")` as Microsoft's own Example 1. The grammar is already owned, grounded and tested — the same argument that (correctly) drove reusing `_DURATION_TEXT_RE` applies verbatim here and was not followed. `SUPPORT-MATRIX.md` meanwhile tells a reader that text which "reads as a date, time, datetime or duration" is refused by name.
+*Fix:* detect via the existing `_datetime._date_from` / `_time_from` / `_datetime_from` (try/except EvalError), same import-don't-copy pattern as the duration branch; or narrow the SUPPORT-MATRIX row to "ISO 8601 only" and record non-ISO invariant text as a still-open silent gap.
+
+**LOW — `src/pqtools/builtins/_number.py:1352` — duration detection uses the bare regex, not the parse, so it refuses text `Duration.FromText` itself rejects.**
+`Value.FromText("24:00")` → `UnsupportedError`, but `Duration.FromText("24:00")` → `EvalError: out of range (hours 0-23)`. That breaks the stated invariant in the new test docstring and SUPPORT-MATRIX ("Text the grammar rejects is still text… `Value.FromText("P1D")` is `"P1D"` because `Duration.FromText("P1D")` is an error here too") — the same reasoning makes `"24:00"` text.
+*Fix:* call `_parse_duration_text` in a `try` and treat `EvalError` as not-a-duration, instead of `_DURATION_TEXT_RE.match`.
+
+**LOW — `src/pqtools/pqtest.py:63` — `except _ProcessWriteError` is unreachable.**
+`_run_bounded` calls `_run_process_bounded(list(command), None, timeout)`; `input_data=None` ⇒ `stdin=DEVNULL` ⇒ no writer thread ⇒ `write_failure` is always empty. `test_pqtest_names_a_short_write` passes only because it monkeypatches the runner to raise the sentinel directly, so it pins a branch no real execution can reach.
+*Fix:* drop the handler, or note in one line that it exists for symmetry against a future stdin-carrying call.
+
+**LOW — `src/pqtools/core.py:280` — a local pipe fault on the version check is still reported as a missing Node.**
+`_require_node` folds `_ProcessReadError`/`_ProcessWriteError` into "Node.js 22 or newer is required" — the same mis-blame this round fixed in `_bridge` ("invalid JSON" for a host read fault), and it contradicts the new `llms.txt` row, which tells the reader a pipe fault "means nothing about the query is wrong: retry once" while the message says install Node 22+. `test_node_version_check_refuses_a_truncated_read` pins the misleading text.
+*Fix:* give the two sentinels their own `NodeError("Node version check could not be read in full")` before the catch-all.
+
+**LOW — `src/pqtools/core.py:256` — the read raise is unguarded while the write raise is guarded by `returncode == 0`.**
+A child that exits non-zero *and* whose stderr read faulted loses its own diagnosis: `_ProcessReadError` wins over `Node bridge failed with exit N`. The reasoning recorded at line 262 for the write path ("if it exited non-zero it has its own account") applies to reads too.
+*Fix:* either guard both on `returncode == 0`, or state in the comment why reads are deliberately unconditional.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

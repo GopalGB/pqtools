@@ -13,7 +13,6 @@ from .core import (
     AdapterError,
     _ProcessOutputLimit,
     _ProcessReadError,
-    _ProcessWriteError,
     _run_process_bounded,
 )
 
@@ -60,8 +59,8 @@ def _run_bounded(
         raise AdapterError("PQTest output exceeds 10 MiB") from error
     except _ProcessReadError as error:
         raise AdapterError("PQTest output could not be read in full") from error
-    except _ProcessWriteError as error:
-        raise AdapterError("PQTest input could not be written in full") from error
+    # No _ProcessWriteError handler: this call passes no stdin, so there is no
+    # writer thread and that sentinel cannot be raised here.
     except OSError as error:
         raise AdapterError("PQTest process failed") from error
     try:

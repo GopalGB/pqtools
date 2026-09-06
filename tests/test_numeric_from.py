@@ -375,6 +375,12 @@ def test_value_from_text_falls_back_to_text_for_anything_else() -> None:
         'Value.FromText("2024-12-24")',
         'Value.FromText("14:33:20")',
         'Value.FromText("2024-12-24T14:33:20")',
+        # The en-US patterns _datetime.py grounds on Microsoft's own
+        # examples (Date.From("Apr 8, 2022"), Time.FromText("10:12:31am")):
+        # Date.FromText / Time.FromText read these, so they are not text.
+        'Value.FromText("12/24/2024")',
+        'Value.FromText("Apr 8, 2022")',
+        'Value.FromText("10:12:31am")',
         # The duration alternatives of Duration.FromText's documented
         # grammar: "(-)hh:mm(:ss(.ff))" and "(-)ddd(.hh:mm(:ss(.ff)))".
         'Value.FromText("1.02:03:04")',
@@ -405,28 +411,24 @@ def test_value_from_text_refuses_temporal_text_rather_than_returning_it(
 def test_value_from_text_still_returns_plain_text_as_text() -> None:
     # The refusal above must not swallow the documented `text` branch of the
     # return union: only text ISO 8601 reads as temporal is refused.
-    assert evaluate('Value.FromText("Dec 24")') == "Dec 24"
+    assert evaluate('Value.FromText("Q4 report")') == "Q4 report"
     assert evaluate('Value.FromText("hello world")') == "hello world"
 
 
-def test_value_from_text_duration_refusal_reuses_the_documented_grammar() -> None:
-    """`duration` is the other half of the same documented union.
+def test_value_from_text_asks_the_parser_not_its_regex() -> None:
+    """The refusal asks `Duration.FromText`'s parser, not its pattern.
 
-    It is not ISO 8601, so detecting it needs a grammar - but not a NEW
-    one. `Duration.FromText` already implements the grammar its own page
-    documents, so `Value.FromText` refuses exactly what that grammar
-    accepts, by importing the pattern rather than restating it. Text the
-    grammar rejects is still text, which is what real M returns for it too.
+    A first cut matched `_DURATION_TEXT_RE` directly and refused "24:00",
+    which has the grammar's SHAPE but which `Duration.FromText` rejects
+    (hours 0-23) - so real M returns it as text, and now this does too.
+    Same for "P1D": ISO 8601 duration syntax, not M's, text on both sides.
     """
-    from pqtools.builtins._datetime import _DURATION_TEXT_RE
-
-    assert _DURATION_TEXT_RE.match("1.02:03:04")
     with pytest.raises(UnsupportedError, match="duration"):
         evaluate('Value.FromText("1.02:03:04")')
-    # "P1D" is ISO 8601 duration syntax, which M's grammar does not accept
-    # either - Duration.FromText("P1D") is an error - so text is correct.
-    assert not _DURATION_TEXT_RE.match("P1D")
-    assert evaluate('Value.FromText("P1D")') == "P1D"
+    for text in ("24:00", "25:00", "1.24:00", "P1D"):
+        with pytest.raises(EvalError):
+            evaluate(f'Duration.FromText("{text}")')
+        assert evaluate(f'Value.FromText("{text}")') == text
 
 
 def test_value_from_text_requires_text() -> None:

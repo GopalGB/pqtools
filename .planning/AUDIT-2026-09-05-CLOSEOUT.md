@@ -1123,3 +1123,97 @@ current source (verified against `src/pqtools/_bridge.cjs` before this was
 written), so whoever picks it up can change `js/bridge.js`, run
 `npm run bundle`, and trust the rest of the diff. The root cause is fixed;
 this is a diagnosability improvement, and it should ride in its own commit.
+
+## Round 9 reviewed - FIX-FIRST, six findings, six taken
+
+The exact `claude-opus-5` wrapper review of `de6e217..d3bf107` is at
+`evidence/opus5-wrapper-round9-de6e217..d3bf107.txt`. Verdict FIX-FIRST:
+one HIGH, one MEDIUM, four LOW. Every finding was reproduced against the
+committed tree before anything was changed, per the round-8 lesson; every
+one reproduced, and every one was taken. Two of them are my own reasoning
+from this round, inverted.
+
+### HIGH - the abandon path left stdin to the writer, and the writer to the grandchild
+
+My cut excluded `process.stdin` from the raw-close list on the reasoning that
+the killed child's EPIPE frees a blocked writer. The review's counter-case:
+a child that spawns a grandchild and exits. The grandchild inherits the read
+end, so the pipe never closes, the writer never gets EPIPE, and the write end
+is never closed by anyone - `process.stdin = None` had also taken it away
+from `Popen.__exit__`. Reproduced on the committed tree with a child that
+spawns `sleep 30` and exits at once, 10 MiB payload, 1 s timeout: one
+descriptor leaked and `Thread-3 (write)` blocked in `write()` for as long as
+the grandchild lived, per timed-out call. Fix: stdin is back in the list and
+closed through its raw `FileIO` like the other two. That does not reinstate
+the double-close: the object is marked closed, so the writer's own
+`finally: stdin.close()` and the finaliser are both no-ops - which is also
+why that `close()` still suppresses `OSError` rather than recording it, and
+the comment there now says so.
+
+Tests: the AST test now asserts stdin is IN the list (it pinned the leak),
+and a runtime test reproduces the grandchild case and asserts no thread left
+behind and no descriptor gained. Control: stdin back out of the list, both
+red; restored, both green.
+
+### MEDIUM - "ISO 8601" was the narrow reading `_datetime.py` had already rejected
+
+`Value.FromText` refused ISO dates and times only, and its docstring called
+that "the narrowest defensible reading". This package's own `_datetime.py`
+says, at the point where it grounds `Time.FromText("10:12:31am")` on
+Microsoft's Example 1, that ISO-only is "not what the invariant culture
+means". So `Value.FromText("12/24/2024")` came back as text while
+`Date.FromText("12/24/2024")` returned a date, and `SUPPORT-MATRIX.md` told
+the reader the former was refused. The argument I had applied to the
+duration branch - import the parser, do not restate its grammar - was the
+argument for this branch too, and I had not applied it. Fix: the predicate
+now asks `_date_from`, `_time_from` and `_datetime_from` themselves. Three
+new refused cases (`"12/24/2024"`, `"Apr 8, 2022"`, `"10:12:31am"`), and the
+matrix paragraph now says "whatever those four parsers accept", not "ISO".
+Control: an ISO-only regex predicate in place of the parser loop, exactly
+those three cases red and nothing else; restored, green. (A first attempt at
+this control referenced a helper that did not exist and turned everything
+red on a `NameError`; discarded, redone.)
+
+### LOW - the duration branch matched the regex, so it refused what `Duration.FromText` rejects
+
+`Value.FromText("24:00")` was refused while `Duration.FromText("24:00")` is
+an `EvalError` (hours 0-23), breaking the invariant the test docstring
+itself stated. Fix: call `_parse_duration_text` and treat `EvalError` as
+not-a-duration. `"24:00"`, `"25:00"`, `"1.24:00"` and `"P1D"` are all text,
+and the test asserts each is an error from `Duration.FromText` first.
+Control: the regex back in place of the parse, that test red; restored, green.
+
+### LOW - `pqtest.py` caught a write error that no path could raise
+
+`_run_bounded` passes no stdin, so there is no writer thread and no
+`_ProcessWriteError`; the handler and the test that monkeypatched it into
+existence pinned a branch nothing reaches. Both removed; a one-line comment
+says why there is no such branch.
+
+### LOW - a pipe fault on the version check was reported as a missing Node
+
+The same mis-blame this round fixed in `_bridge`, left in `_require_node`.
+Now `"Node version check: process output could not be read in full"`, its
+own clause before the catch-all; the test that pinned the old text updated.
+
+### LOW - the read raise was unguarded where the write raise was guarded
+
+A child exiting non-zero whose stderr read faulted lost its own diagnosis
+to `_ProcessReadError`. Both raises now sit under `returncode == 0`; a test
+with a child that exits 3 under a failing stdout asserts the exit code wins.
+
+## Verification on the final tree, fifth pass (the six review fixes)
+
+Same conditions: sequential, `PQ_GATE_PYTEST_ARGS=""`, nothing else of mine
+running. This is the tree that carries the six fixes above.
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 4003 passed in 665.09s (0:11:05), 953 worked examples exact in 140.71s; `evidence/release-gate-2026-09-06-round9-review-fixes.log` |
+| Test count | 3999 -> 4003: two new runtime tests on the teardown and the exit-code guard, three new refused `Value.FromText` cases, one test deleted (it pinned an unreachable branch) |
+| Lint, format, types | ruff, ruff format, mypy strict clean |
+| Positive controls | stdin out of the raw-close list -> the AST test and the grandchild test red · an ISO-only predicate -> exactly the three en-US cases red · the duration regex in place of the parse -> the `"24:00"` test red. Each restored and re-run green in the same command. |
+| Exact `claude-opus-5` review of these fixes | see the round-10 entry below, or its absence |
+
+Not verified, unchanged across all five passes: live database, Fabric,
+Windows PQTest, native Excel or Power BI refresh.

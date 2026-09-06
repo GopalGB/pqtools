@@ -6,6 +6,7 @@ import stat
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -297,7 +298,7 @@ def test_node_version_check_refuses_a_truncated_read(monkeypatch):
     monkeypatch.setattr(core, "_run_process_bounded", fail)
     core._require_node.cache_clear()
     try:
-        with pytest.raises(NodeError, match="Node.js 22 or newer is required"):
+        with pytest.raises(NodeError, match="could not be read in full"):
             core._require_node("/nonexistent/node")
     finally:
         core._require_node.cache_clear()
@@ -313,8 +314,14 @@ def test_timeout_teardown_never_closes_a_descriptor_by_number() -> None:
     unrelated call's pipe. That is how a corpus parse two test files later
     got `BRIDGE_FAILURE` from a child whose stdin vanished mid-document.
 
+    All three pipes, stdin included. A previous cut left stdin to the writer
+    thread on the reasoning that the killed child's EPIPE would free it -
+    true only when the child is the last holder of the read end, which a
+    grandchild breaks: one leaked descriptor and a writer stuck in
+    `write()` for as long as the grandchild lived, per timed-out call.
+
     Asserted against the source because the recycling itself is a race.
-    The runtime half of the control is the next test.
+    The runtime halves of the control are the next two tests.
     """
     # Parsed, not grepped: the comment explaining the defect quotes the very
     # call this forbids, and a text search would fail on its own explanation.
@@ -334,7 +341,7 @@ def test_timeout_teardown_never_closes_a_descriptor_by_number() -> None:
     ]
     assert len(readers) == 1, readers
     assert "process.stdout" in readers[0] and "process.stderr" in readers[0]
-    assert "process.stdin" not in readers[0]
+    assert "process.stdin" in readers[0]
 
 
 @pytest.mark.skipif(
@@ -375,6 +382,49 @@ def test_abandoned_reader_stream_is_marked_closed_so_its_finaliser_is_inert(
     stdout, stderr = captured[0]
     assert stdout.closed, "abandoned stdout reader still thinks it is open"
     assert stderr.closed, "abandoned stderr reader still thinks it is open"
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX-only: relies on closing the raw pipe unblocking the writer",
+)
+def test_abandoned_writer_behind_a_grandchild_is_freed_and_leaks_nothing():
+    """The HIGH from the round-9 review, reproduced before it was fixed.
+
+    The child exits at once but a grandchild inherits its stdin and sleeps,
+    so the read end stays open and the writer's 10 MiB never drains. With
+    stdin left out of the teardown that writer sat in `write()` until the
+    grandchild died and one descriptor stayed open; closing stdin through
+    its raw FileIO frees both.
+    """
+    before_threads = {t.name for t in threading.enumerate()}
+    before_fds = len(os.listdir("/dev/fd"))
+    command = [
+        sys.executable,
+        "-c",
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        "sys.exit(0)",
+    ]
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_process_bounded(command, b"x" * MAX_BYTES, 1)
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        stuck = [t for t in threading.enumerate() if t.name not in before_threads]
+        if not stuck:
+            break
+        time.sleep(0.05)
+    assert not stuck, [t.name for t in stuck]
+    assert len(os.listdir("/dev/fd")) <= before_fds
+
+
+def test_a_failing_child_keeps_its_own_diagnosis_over_a_short_read(failing_stdout):
+    # Same guard as the write side: the exit code is the better explanation,
+    # and callers check it first. Without the guard `_ProcessReadError`
+    # replaced "exit 3" with an account of our own pipe.
+    command = [sys.executable, "-c", "raise SystemExit(3)"]
+    result = _run_process_bounded(command, None, 10)
+    assert result.returncode == 3
 
 
 class _WriteFailsEBADF:
@@ -451,17 +501,6 @@ def test_bridge_names_a_short_write_rather_than_blaming_the_child(monkeypatch):
     monkeypatch.setattr(core, "_run_process_bounded", fail)
     with pytest.raises(NodeError, match="input could not be written in full"):
         parse(SOURCE)
-
-
-def test_pqtest_names_a_short_write(monkeypatch):
-    from pqtools import pqtest as _pqtest
-
-    def fail(*args, **kwargs):
-        raise _ProcessWriteError
-
-    monkeypatch.setattr(_pqtest, "_run_process_bounded", fail)
-    with pytest.raises(_pqtest.AdapterError, match="input could not be written"):
-        _pqtest._run_bounded(["irrelevant"], 10)
 
 
 def test_process_input_write_obeys_same_timeout():

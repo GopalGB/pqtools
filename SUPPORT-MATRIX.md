@@ -139,11 +139,13 @@ to avoid.
 |---|---|---|
 | `Value.FromText` | `datetime` and `duration`. The page's return union is "number, logical, null, datetime, duration, or text", but it publishes no invariant-culture rule for either - its only datetime example passes `"de-DE"`. | Text that reads as a date, time, datetime or duration is **refused by name**, pointing at `Date.FromText` / `Time.FromText` / `DateTime.FromText` / `Duration.FromText`, which each state their format. The `number`, `logical`, `null` and `text` branches are unaffected: `"12345.6789"`, `"25.4%"`, `"true"`, `""` and `"hello world"` all behave as documented. |
 
-What counts as "reads as" is not invented for this refusal: dates and times
-are ISO 8601, which is what the invariant culture parses, and durations use
-the grammar `Duration.FromText` already implements from its own page. Text
-that grammar rejects stays text - `Value.FromText("P1D")` is `"P1D"`, and so
-is `Duration.FromText("P1D")` an error, which is why text is right for it.
+What counts as "reads as" is not invented for this refusal: it is exactly
+what this package's own `Date.FromText`, `Time.FromText`, `DateTime.FromText`
+and `Duration.FromText` accept with no format argument - ISO 8601 plus the
+en-US patterns they ground on Microsoft's own examples (`"Apr 8, 2022"`,
+`"10:12:31am"`) - asked, not re-implemented. Text those parsers reject stays
+text: `Value.FromText("P1D")` is `"P1D"` and `Value.FromText("24:00")` is
+`"24:00"`, because `Duration.FromText` is an error for both.
 
 ## Refactoring scope
 

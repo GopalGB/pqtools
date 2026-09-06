@@ -1319,37 +1319,45 @@ def _percentage_from(args: list[Any], ctx: _Ctx) -> Any:
     return _convert_via_number_from("Percentage.From", value, ctx)
 
 
-def _is_temporal_text(stripped: str) -> bool:
-    """True when this text reads as a date, time, datetime or duration.
+def _is_temporal_text(stripped: str, ctx: _Ctx) -> bool:
+    """True when this package's own parsers read the text as temporal.
 
     Detection only - it never produces the value, because which value M
-    would produce is the part its page does not document. ISO 8601 is what
-    .NET's invariant culture parses, so it is the narrowest defensible
-    reading of "recognisably a date" without inventing a format table.
+    would produce is the part Value.FromText's page does not document.
+    What it asks is exactly what `Date.FromText`, `Time.FromText`,
+    `DateTime.FromText` and `Duration.FromText` accept with no format
+    argument, imported from `_datetime` rather than restated. Those parsers
+    are already grounded there on Microsoft's own examples - `Date.From(
+    "Apr 8, 2022")`, `Time.FromText("10:12:31am")` - which is why an
+    ISO-8601-only check was wrong: it left `"12/24/2024"` coming back as
+    text while `Date.FromText` read it as a date, and the support matrix
+    said otherwise.
 
-    Duration is not ISO 8601 and needs a grammar, but not a new one: the
-    grammar is documented and this package already owns it, in
-    `_datetime._DURATION_TEXT_RE` behind `Duration.FromText`. Imported
-    rather than copied - a second copy of a documented grammar is a second
-    thing to keep correct. The import is local because it crosses builtin
-    families; `_datetime` does not import this module, so there is no cycle.
-
-    Numbers reach `_parse_numeric_literal` first, so a bare `20241224` is
-    the number 20241224 here, and a bare `5` is 5 rather than 5 days.
+    Asking the parser rather than its regex also keeps the two sides of the
+    rule honest: `"24:00"` matches the duration grammar's shape but
+    `Duration.FromText` rejects it (hours 0-23), so it is text here too.
+    The import is local because it crosses builtin families; `_datetime`
+    does not import this module, so there is no cycle. Numbers reach
+    `_parse_numeric_literal` first, so a bare `5` is 5, not 5 days.
     """
-    for parse in (
-        datetime.datetime.fromisoformat,
-        datetime.date.fromisoformat,
-        datetime.time.fromisoformat,
-    ):
+    from ._datetime import (
+        _date_from,
+        _datetime_from,
+        _parse_duration_text,
+        _time_from,
+    )
+
+    for parse in (_date_from, _time_from, _datetime_from):
         try:
-            parse(stripped)
-        except ValueError:
+            parse([stripped], ctx)
+        except (EvalError, UnsupportedError):
             continue
         return True
-    from ._datetime import _DURATION_TEXT_RE
-
-    return _DURATION_TEXT_RE.match(stripped) is not None
+    try:
+        _parse_duration_text("Value.FromText", stripped)
+    except EvalError:
+        return False
+    return True
 
 
 def _value_from_text(args: list[Any], ctx: _Ctx) -> Any:
@@ -1401,7 +1409,7 @@ def _value_from_text(args: list[Any], ctx: _Ctx) -> Any:
     # do. Refusing by name is the other side of that rule. Returning the
     # text instead would be a value real M does not produce, with nothing in
     # the result to say so, and callers cannot tell the two apart.
-    if _is_temporal_text(stripped):
+    if _is_temporal_text(stripped, ctx):
         raise UnsupportedError(
             "Value.FromText: the text reads as a date, time or duration, "
             "which M returns as a datetime or duration; the culture-specific "

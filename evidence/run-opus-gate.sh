@@ -8,6 +8,10 @@ BASE="$1"; HEAD="$2"; OUT="$3"
 REPO="/Users/gopalmacbook/Desktop/Max HQ/pqtools"
 WT="/tmp/mq-gate-wt-$$"
 cd "$REPO" || exit 1
+# A relative OUT was resolved inside the temporary worktree below and then
+# deleted with it - a 15-minute review with nothing to show for it
+# (round 9). Anchor it to the repo before the first cd away.
+[[ "$OUT" = /* ]] || OUT="$REPO/$OUT"
 git worktree add -q "$WT" "$BASE" || exit 1
 cd "$WT" || exit 1
 git read-tree "$HEAD"

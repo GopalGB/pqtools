@@ -206,7 +206,7 @@ def _run_process_bounded(
                     # short payload. Recording it failed a legitimate parse
                     # in the full suite. The genuine short write is caught
                     # above, where it is unambiguous.
-                    with contextlib.suppress(OSError):
+                    with contextlib.suppress(OSError, ValueError):
                         stdin.close()
 
             threads.append(threading.Thread(target=write, daemon=True))
@@ -224,43 +224,49 @@ def _run_process_bounded(
             if any(thread.is_alive() for thread in threads):
                 if process.poll() is None:
                     process.kill()
-                # Close the two reader pipes through their raw FileIO, never
-                # by integer. `os.close(stream.fileno())` unblocked a reader
+                # Close all three pipes through their raw FileIO, never by
+                # integer. `os.close(stream.fileno())` unblocked a thread
                 # stuck on a pipe a grandchild kept open, but it bypassed the
-                # BufferedReader, whose `closed` flag stayed False; when the
+                # buffered object, whose `closed` flag stayed False; when the
                 # abandoned thread finally died, the object's finaliser closed
                 # the same number a second time - by then recycled by the OS
                 # to a later, unrelated call's pipe, whose child lost its
-                # stdin or stdout mid-payload and reported the truncated
-                # document as its own error. `raw.close()` has the same
-                # unblocking effect, does not take the buffer lock the stuck
-                # `read()` holds (so it does not hang), and marks the object
-                # closed so the finaliser is a no-op. stdin is left to the
-                # writer thread, the one thread that closes its own stream:
-                # the child is killed above, a writer blocked on a full pipe
-                # gets EPIPE, and it closes stdin itself, in order.
-                readers = [
+                # stdin mid-payload and reported the truncated document as
+                # its own error. `raw.close()` has the same unblocking effect,
+                # does not take the buffer lock the stuck call holds (so it
+                # does not hang), and marks the object closed so both the
+                # finaliser and the writer's own `finally: close()` are no-ops.
+                #
+                # stdin is included. A previous cut left it to the writer on
+                # the reasoning that the killed child's EPIPE would free it -
+                # true only when the child is the LAST holder of the read end,
+                # which is exactly what a grandchild breaks: measured, one
+                # leaked descriptor and a writer blocked in `write()` for as
+                # long as the grandchild lived, per timed-out call.
+                streams = [
                     stream
-                    for stream in (process.stdout, process.stderr)
+                    for stream in (process.stdout, process.stderr, process.stdin)
                     if stream is not None
                 ]
                 # Detach first so the context manager's close() below cannot
                 # block on a stream an abandoned thread still holds.
                 process.stdout = process.stderr = process.stdin = None
-                for stream in readers:
+                for stream in streams:
                     with contextlib.suppress(OSError, ValueError):
                         getattr(stream, "raw", stream).close()
                 raise subprocess.TimeoutExpired(command, timeout)
         if exceeded.is_set():
             raise _ProcessOutputLimit
-        if read_failure:
-            raise _ProcessReadError from read_failure[0]
-        # Only when the child itself succeeded. If it exited non-zero it has
-        # its own account of what went wrong, and a broken stdin pipe is
-        # usually a consequence of that exit rather than its cause; raising
-        # here would replace the child's diagnosis with ours.
-        if write_failure and process.returncode == 0:
-            raise _ProcessWriteError from write_failure[0]
+        # Both only when the child itself succeeded. If it exited non-zero it
+        # has its own account of what went wrong - a broken pipe is usually a
+        # consequence of that exit, and a short read of its output still
+        # leaves the exit code - so raising here would replace the child's
+        # diagnosis with ours. Callers check `returncode` first.
+        if process.returncode == 0:
+            if read_failure:
+                raise _ProcessReadError from read_failure[0]
+            if write_failure:
+                raise _ProcessWriteError from write_failure[0]
         return subprocess.CompletedProcess(
             command, process.returncode, *map(bytes, buffers)
         )
@@ -270,13 +276,13 @@ def _run_process_bounded(
 def _require_node(binary: str) -> None:
     try:
         result = _run_process_bounded([binary, "--version"], None, 5)
-    except (
-        OSError,
-        subprocess.SubprocessError,
-        _ProcessOutputLimit,
-        _ProcessReadError,
-        _ProcessWriteError,
-    ) as error:
+    except (_ProcessReadError, _ProcessWriteError) as error:
+        # A local pipe fault, not a missing Node: the same mis-blame `_bridge`
+        # stopped making, and llms.txt tells the reader to retry once.
+        raise NodeError(
+            "Node version check: process output could not be read in full"
+        ) from error
+    except (OSError, subprocess.SubprocessError, _ProcessOutputLimit) as error:
         raise NodeError("Node.js 22 or newer is required") from error
     if result.returncode or not re.fullmatch(
         rb"v(2[2-9]|[3-9]\d|\d{3,})\.\d+\.\d+\S*\s*", result.stdout
