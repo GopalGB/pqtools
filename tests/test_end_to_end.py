@@ -1,0 +1,226 @@
+"""The whole loop the README claims, run once, against a real query.
+
+Every other test file pins one layer. This one is the acceptance check for
+`.planning/PRD-pandas-for-powerquery-2026-09-06.md` section 6.4: open a file,
+read a query's source without running it, run it, get the rows into pandas,
+write and re-read a parquet file, and diff two versions - in that order, on
+the query a Power Query user would actually have.
+
+The query is `tests/fixtures/realworld/01_clean_and_type/query.pq`, emitted
+by Power Query's own UI, and its `expected.json` was worked out by hand
+independently of this package (see that directory's README). So a green run
+here means the loop produced the numbers a person calculated, not numbers
+this package agrees with itself about.
+
+Type assertions here are deliberately STRICTER than `test_realworld.py`'s,
+which tolerates a date arriving as its ISO string. Tolerance is right when
+the question is "did the evaluator compute the right value"; it is wrong
+here, because silently turning a date into a string is exactly the failure
+the export layer exists to prevent.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from pqtools.cli import _load_binding
+from pqtools.evaluate import evaluate
+
+_SCENARIO = Path(__file__).parent / "fixtures" / "realworld" / "01_clean_and_type"
+
+# What scenario 01's TransformColumnTypes step declares, and therefore what
+# every layer downstream has to preserve. Written out rather than derived so
+# that a change in either the fixture or the type map has to be made twice,
+# on purpose.
+_M_TYPES: dict[str, type] = {
+    "OrderID": int,
+    "CustomerName": str,
+    "Region": str,
+    "Amount": float,
+    "OrderDate": dt.date,
+    "AmountWithTax": float,
+}
+
+
+def _rows() -> list[dict[str, Any]]:
+    query = (_SCENARIO / "query.pq").read_text(encoding="utf-8")
+    bindings = {"Source": _load_binding(_SCENARIO / "sales.csv")}
+    result = evaluate(query, bindings=bindings)
+    assert isinstance(result, list)
+    return result
+
+
+def test_the_evaluator_hands_over_real_python_types_not_strings() -> None:
+    """The precondition for everything below.
+
+    If the evaluator already flattened the date to a string, an export that
+    produced an object column would look correct while being wrong, and no
+    assertion further down would catch it.
+    """
+    rows = _rows()
+    assert rows, "scenario 01 produced no rows"
+    for column, expected_type in _M_TYPES.items():
+        value = rows[0][column]
+        assert isinstance(value, expected_type), (
+            f"{column}: evaluator returned {type(value).__name__}, "
+            f"expected {expected_type.__name__}"
+        )
+    # bool is a subclass of int in Python; assert the int columns are not
+    # secretly logicals, which `isinstance(..., int)` alone would allow.
+    assert not isinstance(rows[0]["OrderID"], bool)
+
+
+def test_the_rows_match_the_independently_calculated_expected_output() -> None:
+    rows = _rows()
+    expected = json.loads((_SCENARIO / "expected.json").read_text(encoding="utf-8"))
+    assert len(rows) == len(expected)
+    assert [row["OrderID"] for row in rows] == [row["OrderID"] for row in expected]
+    assert rows[0]["OrderDate"].isoformat() == expected[0]["OrderDate"]
+    assert rows[0]["AmountWithTax"] == pytest.approx(expected[0]["AmountWithTax"])
+
+
+def test_the_loop_reaches_pandas_with_every_column_still_typed() -> None:
+    pd = pytest.importorskip("pandas")
+    from pqtools.export import to_pandas
+
+    frame = to_pandas(_rows())
+    assert list(frame.columns) == list(_M_TYPES)
+    assert len(frame) == len(_rows())
+
+    # The point of the whole feature: an integer column is an integer column,
+    # a date column is a date column, and neither arrived as `object` because
+    # something upstream stringified it.
+    assert pd.api.types.is_integer_dtype(frame["OrderID"])
+    assert pd.api.types.is_float_dtype(frame["Amount"])
+    assert (
+        pd.api.types.is_string_dtype(frame["Region"]) or frame["Region"].dtype == object
+    )
+    first_date = frame["OrderDate"].iloc[0]
+    assert isinstance(first_date, (dt.date, pd.Timestamp)), type(first_date)
+
+
+def test_the_loop_survives_a_parquet_round_trip(tmp_path: Path) -> None:
+    pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    import pandas as pd
+
+    from pqtools.export import to_parquet
+
+    rows = _rows()
+    target = tmp_path / "orders.parquet"
+    to_parquet(rows, target)
+    back = pd.read_parquet(target)
+    assert len(back) == len(rows)
+    assert list(back.columns) == list(_M_TYPES)
+    assert back["OrderID"].tolist() == [row["OrderID"] for row in rows]
+    # The column a round trip is most likely to flatten.
+    assert str(back["OrderDate"].iloc[0])[:10] == rows[0]["OrderDate"].isoformat()
+
+
+def test_export_refuses_rather_than_filling_a_missing_column() -> None:
+    """Ragged rows are the silent-wrong-data case for a column-shaped export.
+
+    pandas would happily produce NaN for the absent key, which reads as "this
+    order had no region" rather than "these rows do not describe the same
+    table". M has no such table, so neither does this.
+    """
+    from pqtools.export import ExportRefusal, to_pandas
+
+    pytest.importorskip("pandas")
+    ragged = [{"a": 1, "b": 2}, {"a": 3}]
+    with pytest.raises(ExportRefusal):
+        to_pandas(ragged)
+
+
+def test_the_cli_writes_a_parquet_file_a_reader_can_type(tmp_path: Path) -> None:
+    """`pq eval --to parquet` is the loop's last step, from a shell.
+
+    Driven through `main()` rather than a subprocess so a failure surfaces as
+    the real exception rather than an exit code with no traceback.
+    """
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+
+    from pqtools.cli import main
+
+    target = tmp_path / "orders.parquet"
+    code = main(
+        [
+            "eval",
+            str(_SCENARIO / "query.pq"),
+            "--bind",
+            f"Source={_SCENARIO / 'sales.csv'}",
+            "--to",
+            "parquet",
+            "--out",
+            str(target),
+        ]
+    )
+    assert code == 0
+    assert target.exists()
+    back = pd.read_parquet(target)
+    assert list(back.columns) == list(_M_TYPES)
+    assert pd.api.types.is_integer_dtype(back["OrderID"])
+    assert back["AmountWithTax"].iloc[0] == pytest.approx(604.8)
+
+
+def test_to_parquet_without_out_refuses_before_running_the_query(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A columnar format needs a file, and the mistake is visible up front.
+
+    The query here reads a Windows path that does not exist, so if the
+    refusal came *after* evaluation this would report File.Contents instead -
+    which is how the ordering is pinned without timing anything.
+    """
+    from pqtools.cli import main
+
+    assert main(["eval", str(_SCENARIO / "query.pq"), "--to", "parquet"]) != 0
+    message = capsys.readouterr().err
+    assert "--out" in message, message
+    assert "File.Contents" not in message, message
+
+
+def test_to_parquet_refuses_a_result_that_is_not_a_table(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pqtools.cli import main
+
+    code = main(
+        [
+            "eval",
+            str(_SCENARIO / "scalar.pq"),
+            "--to",
+            "parquet",
+            "--out",
+            str(tmp_path / "x.parquet"),
+        ]
+    )
+    assert code != 0
+    assert "requires the result to be a table" in capsys.readouterr().err
+    assert not (tmp_path / "x.parquet").exists(), "refused but still wrote a file"
+
+
+def test_set_param_obeys_the_same_network_gate_as_the_query(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The property that makes `--set-param` running real M acceptable.
+
+    It evaluates an M expression, not a restricted literal grammar - so the
+    thing worth pinning is that it inherits the query's IO policy rather than
+    opening a side door around it.
+    """
+    from pqtools.cli import main
+
+    query = tmp_path / "q.pq"
+    query.write_text("let x = P in x\n", encoding="utf-8")
+    code = main(
+        ["eval", str(query), "--set-param", 'P=Web.Contents("http://example.com")']
+    )
+    assert code != 0
+    assert "--allow-net" in capsys.readouterr().err

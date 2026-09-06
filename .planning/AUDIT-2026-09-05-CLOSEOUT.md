@@ -1291,3 +1291,108 @@ The stdin exclusion was re-run against the *strengthened* grandchild test
 after it was rewritten, not only against the original: both it and the AST
 test go red with stdin out of the list and green with it back in. A
 rewritten test is a new test and gets its own control.
+
+## Round 11 - the "pandas for Power Query" build
+
+Not an audit round. This is the feature work the audit's closing analysis
+pointed at, specified in
+`.planning/PRD-pandas-for-powerquery-2026-09-06.md` and scoped by a 15-model
+`orchestra --all` fight over the eight gaps a read-only pass had found.
+
+### What the fight changed about the plan
+
+Its most useful output was not a ranking. It was a **ninth gap the audit had
+missed entirely**: there is no way to set a query parameter. `--bind` binds a
+name to a *file*; real queries open with `#"StartDate" = #date(...)`, and
+without a scalar equivalent such a query cannot be run at all without editing
+it. Four of the fifteen models named this independently, and one observed
+that every answer that spotted it then failed to put it in its own plan. It
+shipped.
+
+The fight also settled the object-API question the same way from six
+directions: a thin handle for discoverability, never a DataFrame mimic.
+Transforms belong in M, where they fold and where the semantics are
+Microsoft's. A second, silently different dialect would be worse than none.
+
+### Shipped
+
+`pqtools.export` - `to_pandas` / `to_arrow` / `to_parquet`, `ExportRefusal`,
+and `pqtools.open()` returning a handle with `.queries` / `.source` / `.eval`
+and deliberately no transform verbs. `pandas` and `pyarrow` are optional
+extras; `dependencies` stays empty.
+
+CLI: `pq show` (raw M, never evaluated), `pq explain NAME` (why a name is
+refused, answered from the registry the evaluator itself uses so it cannot
+drift), `pq diff A B`, glob/batch on every read-only verb with one exit code
+for the batch, `--set-param NAME=VALUE`, and `pq eval --to parquet --out`.
+
+Deferred and now named in `SUPPORT-MATRIX.md` rather than left silent:
+query-to-query dependencies, Fabric Arrow decoding, TMDL write-back.
+
+### What the verification found that the builders could not
+
+Two Sonnet agents built the lanes and both reported green with controls. Both
+reports were true and both were incomplete, in the same way.
+
+**The export lane's suite was green only in its own environment.** It had
+installed pandas to ground the type map empirically - the right call - and so
+could never execute the bare path. With the extras genuinely absent, ten
+refusal tests failed: they assert a data-shaped message ("ragged rows are
+refused") while `to_pandas` correctly reports the missing library *first*,
+which is the right order for a caller who cannot act on a complaint about
+their data until the library is installed. The tests needed the guard, not
+the code. Now 12 pass and 27 skip bare, 39 pass with the extras, zero
+failures either way.
+
+**The instrument for that check was wrong before the check was right.** The
+first attempt put stub modules on `PYTHONPATH` whose body was
+`raise ImportError`. That reported 24 failures, every one of them the
+harness's fault: `pytest.importorskip` skips on `ModuleNotFoundError` and
+deliberately lets a plain `ImportError` through, because a module that exists
+and fails to import is a broken installation and must not be hidden. Absence
+is simulated with a `sys.meta_path` finder that declines the name. The rule
+this repeats: positive-control the instrument before believing its red.
+
+**`--set-param` was documented as taking "a scalar M literal" and takes
+arbitrary M.** `File.Contents(...)` in a `--set-param` does what it says.
+That is not an escalation - the query body could already call it, so there is
+no boundary being crossed - and the IO policy *is* threaded through, so a
+`--set-param` naming `Web.Contents` is refused without `--allow-net`
+(verified). But the help text described a restricted grammar that does not
+exist. It now says what the flag does, and a test pins the network gate,
+which is the property that would matter if VALUE ever came from anywhere but
+the operator's own command line.
+
+**`--to parquet` without `--out` was diagnosed after the query ran.** A user
+who forgot the destination waited for a full evaluation to be told so. The
+check moved ahead of evaluation, and the test pins the ordering by using a
+query that would fail loudly at evaluation - if the refusal ever moves back
+after it, the test sees `File.Contents` instead of `--out`.
+
+Also: the `dev` extra installed neither pandas nor pyarrow, so a fresh
+development environment would have silently skipped all 34 export tests -
+the same "a skipped check reporting green" failure `release_gate.sh` step 7
+already prints a warning about. Both are in `dev` now.
+
+### The swallow sweep, again
+
+`export.py` contributes **zero** exception handlers that return without
+raising. `cli.py` gains nine, every one of them a batch loop recording a
+per-file failure and continuing - which is the intended semantics only if the
+batch's exit code still reflects it. Checked by hand rather than by reading:
+`parse`, `dependencies`, `check` and `format` all exit 2 with one broken file
+among good ones, and print the error. `show` and `list` exit 0 for a file
+with invalid M syntax - correct, since `show` prints text and never parses -
+and exit 2 for a file that genuinely cannot be read. An empty glob is an
+error, not a quiet success.
+
+### The autocommit bot, at its worst
+
+It fired twice mid-build. The second sweep, `9881315`, captured `cli.py`
+**mid positive-control**, with `raise  # POSITIVE-CONTROL DEFECT` still in
+place, and bundled it with the other lane's files. The working tree held the
+corrected version as an uncommitted diff on top. Both sweeps were absorbed by
+`git reset --soft` before committing, so no deliberate defect reaches the
+branch history. This is the third time this bot has interfered with a control
+in one day; the standing rule - check `git log -1` before every commit - is
+what caught it.

@@ -161,6 +161,72 @@ worse than one that declines, because the failure is a silently altered query.
 Narrowing the guard requires binding-aware analysis of the parse tree, not a
 smaller set of forbidden characters.
 
+## Getting the rows out
+
+`to_pandas()`, `to_arrow()`, `to_parquet()` (and `pq eval --to parquet`).
+`pandas` and `pyarrow` are optional extras; with neither installed the package
+imports and every other verb works, and the export functions refuse by name
+with the install command.
+
+The type map is one M type per column, and a column whose values do not share
+one M type is refused rather than widened to `object`. What survives:
+
+| M | pandas | Arrow |
+|---|---|---|
+| logical | `boolean` (nullable) | `bool` |
+| number, all integral | `Int64` (nullable) | `int64` |
+| number, any fractional | `float64` | `double` |
+| text | `object` | `string` |
+| binary | `object` | `binary` |
+| date | `object` (`datetime.date`) | `date32` |
+| time | `object` (`datetime.time`) | `time64[us]` |
+| datetime | `datetime64[us]` | `timestamp[us]` |
+| datetimezone | `datetime64[us, tz]` | `timestamp[us, tz]` |
+| duration | `timedelta64[us]` | `duration[us]` |
+
+The nullable `Int64` matters: pandas' default integer column cannot hold a
+null, so a naive export turns `1, null, 3` into `1.0, NaN, 3.0` and silently
+changes the type of every row to get one null in.
+
+**Refused, by name, rather than exported:** an unread lazy table (select it
+first), a record, a nested list or table (expand it first), a `type` value, a
+function value, ragged rows, a column mixing two M types, an integer past the
+64-bit range, a `datetimezone` column mixing UTC offsets, and - on the pandas
+path only - a number column holding both `null` and `#nan`, which `float64`
+represents identically. Arrow keeps a real null bitmap and so accepts that
+last one.
+
+## Tool-level gaps, named
+
+The sections above are about M. These three are about the tool, and they are
+listed for the same reason: a gap a user can discover by being wrong is worse
+than one stated here. Each is a typed refusal today, not a silent partial
+answer.
+
+**Query-to-query dependencies.** `dependencies()` reports the builtin
+functions a query calls. It does **not** report which other queries in a
+multi-query file a query references. Asking it for that returns the builtin
+list, which is a true answer to a different question - so read it as "what
+does this call", never as "what does this depend on". A real answer needs
+binding-aware analysis of the parse tree, the same thing `pq rename`'s guard
+is deliberately over-strict for want of; approximating it would produce a
+dependency graph that is right most of the time, and a graph that is wrong
+about one edge is worse than no graph, because nothing in the output says
+which edge.
+
+**Fabric and PQTest results.** Both adapters exist and both are reachable as
+adapters. `pq eval` does not route through them, and the Fabric adapter
+returns the service's raw Arrow bytes rather than decoding them to rows.
+Decoding is refused rather than guessed: the payload is a versioned binary
+format from a service this package cannot test against offline, and a decode
+that is subtly wrong produces plausible rows, which is the one failure this
+package promises not to have.
+
+**`.pbip` / TMDL write-back.** `.pbip` projects are readable. Writing to them
+raises `SafeWriteError`. TMDL round-trip fidelity - preserving everything the
+format carries that this package does not model - is a separate piece of work,
+and a partial write to a project file is a corrupted project.
+
 ## What enforces this file
 
 | Claim | Enforced by |

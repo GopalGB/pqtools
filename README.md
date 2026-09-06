@@ -14,6 +14,11 @@ pq eval  report.pq                      # or run a .pq directly
 pq eval  report.pq --allow-net          # ...including its Web.Contents source
 pq format report.pq                     # format it
 pq check  report.pq                     # lint it in CI
+pq check  'queries/**/*.pq'             # ...or a whole repo of them
+pq show   report.pbix --member Sales    # read one query's M, without running it
+pq explain Table.FuzzyNestedJoin        # why is this one refused?
+pq diff   before.pq after.pq            # what changed?
+pq eval   report.pq --to parquet --out sales.parquet   # hand the rows to your stack
 ```
 
 For AI assistants and coding agents there is an [`llms.txt`](llms.txt) - what
@@ -90,6 +95,26 @@ pq rename query.pq --old OldName --new NewName
 
 # Run a query's transformation chain locally, against your own data
 pq eval report.pq --bind Source=data.csv
+
+# Set a query parameter, as an M literal - parsed by M, never by Python eval()
+pq eval report.pq --bind Source=data.csv --set-param StartDate='#date(2024,1,1)'
+
+# Print one query's M source without running it (no connector is touched)
+pq show report.pbix --member Sales
+
+# Why is a name refused? The answer comes from the same registry the
+# evaluator uses, so it cannot drift from what actually happens.
+pq explain Table.FuzzyNestedJoin
+
+# Unified diff of two queries' formatted source; exit 1 if they differ
+pq diff before.pq after.pq
+
+# Every read-only verb takes a glob. One exit code for the batch, one line
+# per file, and a glob that matches nothing is an error, not a quiet success.
+pq check 'src/**/*.pq'
+
+# Write the result as a typed columnar file (needs the `arrow` extra)
+pq eval report.pq --bind Source=data.csv --to parquet --out sales.parquet
 ```
 
 ## Python API
@@ -599,20 +624,44 @@ the syntax Power Query accepts, not a reimplementation that drifts.
 
 ### Is pqtools the pandas of Power Query?
 
-That is the goal, and it now holds on both halves.
+That is the goal, and it now holds on all three halves of it - data in,
+transformation, data out.
 
-**Transformation:** M builtins covering `Table.*` aggregation and joins (all
-six `JoinKind` values), pivot/unpivot, the type system, date/time handling.
-
-**Getting the data:** `read_csv` has `Csv.Document`; `read_excel` has
+**Getting the data in:** `read_csv` has `Csv.Document`; `read_excel` has
 `Excel.Workbook`; `read_sql` has `Sql.Database` / `Odbc.Query` /
 `PostgreSQL.Database`; a URL has `Web.Contents`. Drivers are optional extras
 exactly as pandas keeps psycopg optional.
 
-Two honest differences. pandas does not fold queries into the database either,
-so that is parity, not a gap - but Power Query *does*, so a query that folds in
-Power BI moves more bytes here. And pqtools asks permission before reaching the
-network, because in pandas you type the URL and here the query supplies it.
+**Transformation:** M builtins covering `Table.*` aggregation and joins (all
+six `JoinKind` values), pivot/unpivot, the type system, date/time handling.
+
+**Getting the data out:** `to_pandas()`, `to_arrow()` and `to_parquet()`, with
+pandas and pyarrow as optional extras - `pq eval --to parquet` from the shell.
+The types survive: an integer column with nulls arrives as a nullable `Int64`,
+not a float column with `NaN` in it. What has no lossless column type is
+**refused by name** rather than flattened - an unread lazy table, a record, a
+nested table, ragged rows, a column mixing two M types. A refusal you can read
+beats a `NaN` you cannot distinguish from data.
+
+```python
+import pqtools
+
+report = pqtools.open("report.pbix")
+report.queries                      # ['Sales', 'Customers', ...]
+report.source("Sales")              # the M, unevaluated
+pqtools.to_pandas(report.eval("Sales"))
+```
+
+That handle is deliberately thin. It has no `.filter()` and no `.groupby()`,
+because transformations belong in M, where they fold and where the semantics
+are Microsoft's rather than ours. A second, silently different dialect would
+be worse than no dialect.
+
+Two honest differences remain. pandas does not fold queries into the database
+either, so that is parity, not a gap - but Power Query *does*, so a query that
+folds in Power BI moves more bytes here. And pqtools asks permission before
+reaching the network, because in pandas you type the URL and here the query
+supplies it.
 
 ### How do I test a Power Query transformation?
 
