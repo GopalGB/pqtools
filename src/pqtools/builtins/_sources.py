@@ -749,6 +749,22 @@ def _deferred_query(
     return _DeferredRows(fetch, what)
 
 
+def _sql_identifier(name: str, what: str) -> str:
+    """A catalog name as a SQL Server identifier: quoted, with `"` doubled.
+
+    The navigation SELECT wrapped INFORMATION_SCHEMA names in quotes and did
+    nothing else, so a name carrying a `"` closed the identifier early and
+    the rest of the name ran as SQL - reading a different table than the
+    query named, or a second statement - under the rights of the account
+    pqtools connects with, which need not be the account that named the
+    table. Doubling the quote is the SQL standard and what SQL Server reads
+    under QUOTED_IDENTIFIER, which ODBC turns on.
+    """
+    if "\x00" in name:
+        raise EvalError(f"{what}: catalog name contains a NUL byte: {name!r}")
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
     """``Sql.Database(server, database, options)`` - SQL Server.
 
@@ -843,7 +859,9 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
             "Data": _deferred_query(
                 pyodbc,
                 str(connection_string),
-                f'SELECT * FROM "{row["TABLE_SCHEMA"]}"."{row["TABLE_NAME"]}"',
+                "SELECT * FROM "
+                f"{_sql_identifier(row['TABLE_SCHEMA'], 'Sql.Database')}."
+                f"{_sql_identifier(row['TABLE_NAME'], 'Sql.Database')}",
                 f"Sql.Database: {row['TABLE_SCHEMA']}.{row['TABLE_NAME']}",
                 connect_timeout,
                 command_timeout,

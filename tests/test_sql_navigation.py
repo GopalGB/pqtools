@@ -335,3 +335,33 @@ def test_a_library_caller_has_a_public_way_to_read_a_deferred_table(
     # Reading twice runs the query once.
     assert data.read() == [{"Id": 1, "Note": "keep"}]
     assert len(_table_reads(odbc)) == 1
+
+
+# --- identifiers come from the catalog, and the catalog is not trusted ----
+
+
+def test_a_table_name_containing_a_quote_cannot_break_out_of_its_identifier(
+    odbc: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The navigation SELECT wrapped catalog names in quotes without escaping.
+
+    A name is chosen by whoever can CREATE TABLE in that database, which is
+    not always the account pqtools connects with. A name carrying a `"`
+    closed the identifier early: `Wanted"."Other` read a different table
+    than the one the query named, silently, and a name carrying `;` ran a
+    second statement under the connecting account's rights. Found by ruff's
+    bandit rule S608; present since before the audit baseline.
+    """
+    hostile = 'Wanted"."Other'
+    monkeypatch.setattr(
+        sys.modules[__name__], "CATALOG", [("dbo", hostile, "BASE TABLE")]
+    )
+    in_m = hostile.replace('"', '""')  # M doubles a quote inside a string literal
+    evaluate(
+        'let S = Sql.Database("srv", "db"), '
+        f'T = S{{[Schema="dbo", Item="{in_m}"]}}[Data] in T',
+        io=ALLOW_DB,
+    )
+    [sql] = _table_reads(odbc)
+    # the quote is doubled INSIDE the identifier, so the name stays one name
+    assert sql == 'SELECT * FROM "dbo"."Wanted"".""Other"'

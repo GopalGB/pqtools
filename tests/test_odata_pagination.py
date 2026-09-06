@@ -387,10 +387,16 @@ def test_the_response_cap_bounds_the_whole_feed_not_each_page(
         feed.pages[f"/odata?page={index}" if index else "/odata"] = _page(
             [{"id": index, "pad": filler}], nxt
         )
-    with pytest.raises(EvalError, match="bytes across"):
-        evaluate(f'OData.Feed("{feed.base}/odata")', io=NET)
-    # It stopped early rather than reading all six.
-    assert len(feed.hits) < 6
+    # Page one through a 302, so the cycle set holds two URLs for one page.
+    feed.redirects["/start"] = "/odata"
+    with pytest.raises(EvalError, match="bytes across") as info:
+        evaluate(f'OData.Feed("{feed.base}/start")', io=NET)
+    # It stopped early rather than reading all six (plus the redirect hop).
+    assert len(feed.hits) < 7
+    # The message counts pages READ, not URLs seen: the redirect is not a
+    # page. Counting `len(seen)` here reported one more than was read.
+    pages_read = len(feed.hits) - 1
+    assert f"across {pages_read} page(s)" in str(info.value)
 
 
 # --------------------------------------------------------------------------

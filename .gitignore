@@ -17,4 +17,6 @@ codedb.snapshot
 
 # Runtime logs written into the CWD by whatever tool happens to run here
 # (a google-calendar-mcp server did, and two of its files got committed).
-/logs/
+# Unanchored on purpose: the tool writes relative to ITS cwd, which need
+# not be the repo root, and no `logs` package exists here to protect.
+logs/

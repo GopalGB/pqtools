@@ -294,9 +294,17 @@ def test_a_documented_example_produces_its_documented_output(
 # third of the matches could have died silently. Equality means the number
 # moving in either direction stops the build and the documents get updated in
 # the same commit.
-DOCUMENTED_MATCHES: int = json.loads(
-    (CORPUS.parent / "doc-example-matches.json").read_text(encoding="utf-8")
-)["reproducing_exactly"]
+_MATCHES = CORPUS.parent / "doc-example-matches.json"
+try:
+    DOCUMENTED_MATCHES: int = int(
+        json.loads(_MATCHES.read_text(encoding="utf-8"))["reproducing_exactly"]
+    )
+except (OSError, ValueError, KeyError, TypeError) as error:
+    raise RuntimeError(
+        f"{_MATCHES}: missing or malformed ({error!r}). It is maintained by "
+        "hand, asserted for equality by this module, and read by "
+        "scripts/sync_builtin_list.py."
+    ) from error
 
 
 def test_enough_examples_actually_match_to_mean_something() -> None:
