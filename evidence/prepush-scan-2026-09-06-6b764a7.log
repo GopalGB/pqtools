@@ -1,0 +1,93 @@
+╔══════════════════════════════════════════════════════════════════╗
+║       MAX HQ — Pre-Push Sensitive-Info Gate                      ║
+╚══════════════════════════════════════════════════════════════════╝
+Remote: origin  URL: https://github.com/GopalGB/pqtools.git
+Commits going out: 46   Files touched: 148   Tags: 0
+
+── COMMITS ──────────────────────────────────────────────────────
+  04964f5  feat(pqtools): the M operators, per the specification's own operand tables  Gopal Bagaswar, 2 days ago
+  06816bb  feat(pqtools): run Microsoft's own worked examples as a gate, and fix what it found  Gopal Bagaswar, 32 hours ago
+  07bf9ed  fix(odata): count pages separately from the cycle set; pin arity-before-policy for every DB connector  Gopal Bagaswar, 20 hours ago
+  100f346  chore(security): extend the gitleaks ruleset here, allowlisting only sk_live_ strings too short to be real  Gopal Bagaswar, 10 hours ago
+  26cce00  fix(pqtools): seven findings from an adversarial review, each reproduced first  Gopal Bagaswar, 29 hours ago
+  2c99c96  docs(audit): rounds 7-8 dispositions and the third-pass verification, GATE PASSED  Gopal Bagaswar, 10 hours ago
+  2e27afd  fix(cli): a workbook backup can no longer be redirected or overwritten  Gopal Bagaswar, 23 hours ago
+  3d1d92d  fix(builtins): the documented signature is the contract, and it has two halves  Gopal Bagaswar, 26 hours ago
+  3e362cb  fix(enums): "the numbering is unconfirmed" was a claim about the cache  Gopal Bagaswar, 25 hours ago
+  43ba1eb  fix(pqtools): the argument shapes Microsoft's examples use, that the suite never did  Gopal Bagaswar, 29 hours ago
+  43cb1a9  fix(gate): make the release gate's default path run, and tie the worked-example count to its measurement  Gopal Bagaswar, 20 hours ago
+  475ce01  refactor(shared): name the public type after its public spelling  Gopal Bagaswar, 21 hours ago
+  539c30d  chore(auto): session commit 2026-09-05 — 14 file(s)  Gopal Bagaswar, 2 days ago
+  545dd99  chore(auto): session commit 2026-09-05 — 12 file(s)  Gopal Bagaswar, 2 days ago
+  58f439c  fix(tests,sources): close two gates that could not see their own defects  Gopal Bagaswar, 23 hours ago
+  5a0e370  chore(auto): session commit 2026-09-06 — 1 file(s)  Gopal Bagaswar, 20 hours ago
+  5d52aac  chore(ops): the project lives in one folder again  Gopal Bagaswar, 25 hours ago
+  63f9c5f  docs(audit): map each clause of the stated requirement to its evidence; record the agent-discoverability surfaces  Gopal Bagaswar, 20 hours ago
+  643c3af  docs(claude): what a session opened in this folder needs to know  Gopal Bagaswar, 25 hours ago
+  6b764a7  fix(core,builtins): the six findings from the round-9 review, each reproduced first  Gopal Bagaswar, 22 seconds ago
+  6db1f2b  test(signatures): close the gate's own blind spot  Gopal Bagaswar, 25 hours ago
+  7b622a5  feat(pqtools): the M standard library, and the language rule three doc pages disagreed about  Gopal Bagaswar, 30 hours ago
+  829acd7  docs(readme): the rename feature bullet oversold what rename accepts  Gopal Bagaswar, 22 hours ago
+  832f7e8  chore(evidence): record the sequential release-gate run for this range  Gopal Bagaswar, 21 hours ago
+  86f2da3  docs(audit): round 6 dispositions, controls, and the autocommit capture  Gopal Bagaswar, 20 hours ago
+  9ad6ab8  chore(auto): session commit 2026-09-05 — 4 file(s)  Gopal Bagaswar, 22 hours ago
+  9f7ecb4  chore(auto): session commit 2026-09-06 — 1 file(s)  Gopal Bagaswar, 22 hours ago
+  a2250f5  fix(review): untrack stray MCP logs, guard POSIX-only tests, probe arity under a deny-all policy  Gopal Bagaswar, 20 hours ago
+  a3faea2  fix(sources): a cross-origin REDIRECT forwarded the caller's credentials too  Gopal Bagaswar, 22 hours ago
+  a4d78ed  chore(auto): session commit 2026-09-05 — 5 file(s)  Gopal Bagaswar, 2 days ago
+  a4f5735  docs: one authoritative support matrix, and a test that keeps it true  Gopal Bagaswar, 22 hours ago
+  bd95332  fix(sql): build a navigation row's SELECT when the row is read, not when it is listed  Gopal Bagaswar, 10 hours ago
+  bdbdbbe  chore(evidence): final sequential release-gate run on the closed-out tree, GATE PASSED 3977/3977  Gopal Bagaswar, 19 hours ago
+  c13c407  fix: round-3 findings from the claude-opus-5 review  Gopal Bagaswar, 22 hours ago
+  c433e33  fix(sql): escape catalog identifiers in the navigation SELECT; three LOWs from the round-7 review  Gopal Bagaswar, 12 hours ago
+  c7ffc5f  style(scripts): the lint step covers scripts/ too  Gopal Bagaswar, 25 hours ago
+  cab35ae  feat(pqtools): connectors, and the M that real workbooks actually contain  Gopal Bagaswar, 2 days ago
+  d02f5ac  fix(pqtools): X.FromText signatures, per each function's own Syntax block  Gopal Bagaswar, 2 days ago
+  d3bf107  fix(core): refuse instead of returning a truncated child payload; Value.FromText refuses temporal text  Gopal Bagaswar, 5 hours ago
+  dd29552  docs(agents): give an AI agent the error-code vocabulary and the credential rule, test-enforced  Gopal Bagaswar, 20 hours ago
+  de6e217  docs(handoff): carry this session's review transcripts and state into the repo  Gopal Bagaswar, 9 hours ago
+  e1e90f3  fix: seven findings from the claude-opus-5 review of the audit fixes  Gopal Bagaswar, 22 hours ago
+  eb2c7fd  chore(auto): session commit 2026-09-06 — 1 file(s)  Gopal Bagaswar, 20 hours ago
+  ec23090  fix(pqtools): the IsIn* family answered one question two ways  Gopal Bagaswar, 2 days ago
+  ee04185  fix(evidence): stub the bundle and lockfile only when they changed in the reviewed range  Gopal Bagaswar, 20 hours ago
+  f4fdeac  fix(sources): four connector defects that returned wrong data quietly  Gopal Bagaswar, 23 hours ago
+
+── FILES ────────────────────────────────────────────────────────
+  .gitignore
+  .planning/AUDIT-2026-09-05-CLOSEOUT.md
+  .planning/AUDIT-2026-09-05.md
+  .planning/HANDOFF-2026-09-06.md
+  .planning/m-inventory.md
+  AGENTS.md
+  CLAUDE.md
+  evidence/matrix-run1-baseline-9bc508c.log
+  evidence/matrix-run10-round5-pass1.log
+  evidence/matrix-run11-round5-pass2.log
+  evidence/matrix-run12-round6-pass1.log
+  evidence/matrix-run13-round6-pass2.log
+  evidence/matrix-run2-fixed-tree-pass1.log
+  evidence/matrix-run3-fixed-tree-pass2.log
+  evidence/matrix-run4-round2-pass1.log
+  evidence/matrix-run5-round2-pass2.log
+  evidence/matrix-run6-round3-pass1.log
+  evidence/matrix-run7-round3-pass2.log
+  evidence/matrix-run8-round4-pass1.log
+  evidence/matrix-run9-round4-pass2.log
+  evidence/ocr-final-8326d3f..1ad34a9.txt
+  evidence/ocr-final-8326d3f..259b2cd.txt
+  evidence/opus5-review-round4-c7ffc5f..ee04185.txt
+  evidence/opus5-review-round5-BLOCKED-prompt-too-long.txt
+  evidence/opus5-review-round6-ee04185..eb2c7fd.txt
+  ... and 123 more
+
+── SECRET SCAN ──────────────────────────────────────────────────
+  gitleaks: /opt/homebrew/bin/gitleaks
+  ruleset: MAX HQ (/Users/gopalmacbook/Desktop/Max HQ/pqtools/security/gitleaks.toml)
+  gitleaks: clean
+  in-house scan: clean
+
+✅ Scan clean. 46 commit(s), 148 file(s) ready to push to origin.
+
+⚠️  No controlling terminal, so the confirmation cannot be read.
+   Re-run the same command from Terminal.app or iTerm and answer y.
+   (GIT_PUSH_BYPASS skips the secret scan and is not the remedy for this.)

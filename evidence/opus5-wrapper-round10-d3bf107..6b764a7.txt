@@ -1,0 +1,29 @@
+# Exact claude-opus-5 wrapper review - range d3bf107..6b764a7 (bundle + lockfile shown as stub blobs)
+# staged:  11 files changed, 332 insertions(+), 93 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in d3bf107..6b764a7, not stubbed, not in the diff
+# package-lock.json: unchanged in d3bf107..6b764a7, not stubbed, not in the diff
+# invoked 2026-09-06T16:32:58Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Verified against the staged tree (`git show :<path>`), not the diff text.
+
+**MEDIUM — `src/pqtools/builtins/_number.py:1350` — the new detector makes the *common* `Value.FromText` path ~100x more expensive.**
+`_is_temporal_text` now calls `_date_from` → `_parse_iso_date` (10 fallback patterns), `_time_from` → `_parse_iso_time` (8), `_datetime_from` → `_parse_iso_datetime` (`_FALLBACK_DATE_PATTERNS + 10×8` cross product = 90). Every one goes through `_compile_format` (`_datetime.py:981`), which has **no cache** — it re-scans the format and rebuilds the pattern string on each call. So any text that is *not* temporal (the ordinary case, and the one that falls through to `return text`) now builds ~108 format regexes per call, where the old code did 3 `fromisoformat` calls plus one regex match. Per-row use (`Table.TransformColumns`) pays this on every cell.
+*Fix:* `@lru_cache(maxsize=None)` on `_compile_format`, or precompile the three fallback tuples once at import. One line, no behaviour change.
+
+**LOW — `src/pqtools/core.py:279` — `_require_node`'s new handler catches `_ProcessWriteError`, which it cannot raise.** Exactly the defect this same diff deleted from `pqtest.py:62`: `_run_process_bounded([binary, "--version"], None, 5)` → `input_data=None` → `stdin=DEVNULL` → `process.stdin is None` → no writer thread → `write_failure` is always empty. *Fix:* catch `_ProcessReadError` alone and carry over the same one-line note used in `pqtest.py`.
+
+**LOW — `tests/test_core.py:333` — the comment now contradicts the assertion it introduces.** `# The streams the abandon path closes: the two readers, never stdin.` sits three lines above `assert "process.stdin" in readers[0]`; the local is still `readers` while the source list it parses is now `streams`. *Fix:* rename to `streams` and say "all three, stdin included".
+
+**LOW — `src/pqtools/core.py:200-209` — the writer's `finally` comment justifies its suppression by a mechanism this diff removed.** It still reads "the timeout path below, which closes these fds **by number**" — the teardown now closes through `raw`, and the newly added `ValueError` (the reason for the edit) is unexplained. *Fix:* rewrite to the raw-close rationale and name what `ValueError` comes from.
+
+**LOW — `tests/test_numeric_from.py:414` — the swap from `"Dec 24"` to `"Q4 report"` drops the only near-miss coverage.** `"Q4 report"` cannot match anything; `"Dec 24"` is the boundary (month name, no year — no `_FALLBACK_DATE_PATTERNS` entry matches a two-token string lacking `yyyy`, so it is still text). Losing it means a future pattern addition that starts refusing it goes unnoticed. *Fix:* keep `"Dec 24"` and add `"Q4 report"` alongside.
+
+**LOW — `tests/test_core.py:401,418` — the new grandchild test is flaky and has an unbound-name path.** `before_fds = len(os.listdir("/dev/fd"))` / `<= before_fds` is a process-global count in a suite that leaves `sleep 30` grandchildren and daemon threads behind; any concurrent open in the same interpreter fails it for unrelated reasons. Separately, `stuck` is bound only inside the `while`, so an already-expired deadline raises `NameError` instead of asserting. *Fix:* `stuck: list = []` before the loop; compare the `set()` of `/dev/fd` entries and ignore ones not opened by this call, or assert threads only (the fd claim is already covered by the AST + `closed` tests).
+
+**LOW — `src/pqtools/core.py:259` — the runner's new contract ("a returned `CompletedProcess` may carry a truncated buffer when `returncode != 0`") lives only in a comment.** All three current callers (`_require_node`, `_bridge:321`, `pqtest._run_bounded:70`) do reject non-zero before touching the buffers, so nothing is broken today — but silent truncation is this package's recurring defect class, and the next caller that logs stderr on failure gets a prefix with no mark on it. *Fix:* state it in the function docstring, or return the recorded failure alongside the result.
+
+No correctness or security defect found: the stdin teardown fix is right (raw close, object marked closed, finaliser and the writer's `finally` both inert), and the `returncode == 0` guard cannot leak a truncated payload past any existing caller.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

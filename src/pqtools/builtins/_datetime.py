@@ -124,6 +124,7 @@ import calendar
 import math
 import re
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from ._shared import (
@@ -978,8 +979,19 @@ _ROUND_TRIP_RE = re.compile(
 )
 
 
+@lru_cache(maxsize=512)
 def _compile_format(name: str, fmt: str) -> tuple[re.Pattern[str], list[str]]:
-    """Custom format string -> (anchored regex, token per capture group)."""
+    """Custom format string -> (anchored regex, token per capture group).
+
+    Cached because the format set is closed and tiny - the fallback tuples
+    below plus whatever a caller passes - while the call count is not. One
+    `Value.FromText` on non-temporal text asks all three parsers, which walk
+    108 fallback formats between them before concluding "not a date"; without
+    the cache that rebuilt 108 regexes per cell, on the branch that is the
+    ordinary case. `name` is in the key only because it appears in the error
+    messages raised while scanning, so two callers with the same format
+    string must not share a compilation that names the other one.
+    """
     parts: list[str] = []
     tokens: list[str] = []
     i, n = 0, len(fmt)

@@ -1217,3 +1217,77 @@ running. This is the tree that carries the six fixes above.
 
 Not verified, unchanged across all five passes: live database, Fabric,
 Windows PQTest, native Excel or Power BI refresh.
+
+## Round 10 - the review of the round-9 review fixes: SHIP
+
+`evidence/opus5-wrapper-round10-d3bf107..6b764a7.txt`. Verdict **SHIP**, with
+the reviewer stating plainly what it checked and found sound: the stdin
+teardown fix is right (raw close, object marked closed, so the finaliser and
+the writer's own `finally` are both inert), and the `returncode == 0` guard
+cannot leak a truncated payload past any existing caller. No correctness or
+security defect.
+
+Seven improvements were raised and all seven are taken. None changes
+behaviour except the first, which changes only cost.
+
+### MEDIUM - the new detector made the ordinary path 108 regex compiles deep
+
+`_is_temporal_text` asks three parsers, which between them walk 108 fallback
+formats before concluding "not a date". `_compile_format` had no cache, so
+every one of those was rebuilt from its format string **per call** - on the
+branch that is the common case, the text that falls through and is returned
+as text. Measured on the committed tree: 108 `_compile_format` calls for one
+`Value.FromText("Q4 report")`.
+
+Fixed with `@lru_cache(maxsize=512)` on `_compile_format`. The format set is
+closed and tiny; the call count is not. Measured after: 108 compiles on the
+first call, still 108 after fifty more. `name` stays in the cache key because
+it appears in the errors raised while scanning, so two callers must not share
+a compilation that names the other one.
+
+This is worth recording as a class, not just a fix. The round-9 correction
+was "ask the parser, do not restate its grammar", and it was right - but
+asking a parser costs what the parser costs, and this one was built for
+single calls on a `Date.FromText` argument, not for a per-cell predicate.
+The cheapest correct thing was not free.
+
+### Six LOW, all comment-and-test hygiene, all taken
+
+- **`_require_node` caught `_ProcessWriteError`, which it cannot raise** -
+  exactly the defect this same commit had just deleted from `pqtest.py`, in
+  the file next to it. No stdin means no writer thread means no write
+  failure. Now catches `_ProcessReadError` alone, carrying the same one-line
+  note about why the other clause is absent.
+- **The AST test's comment contradicted the assertion below it** - it still
+  said "the two readers, never stdin" three lines above `assert
+  "process.stdin" in ...`, and its local was still called `readers` while the
+  source list it parses had been renamed `streams`.
+- **The writer's `finally` comment justified its suppression by the
+  mechanism this commit removed** - it still said the timeout path closes
+  "by number". It closes through `raw` now, and the `ValueError` that was
+  added alongside was unexplained. Both rewritten.
+- **`"Dec 24"` had been swapped out for `"Q4 report"`, losing the only near
+  miss.** `"Q4 report"` cannot match anything; `"Dec 24"` is the boundary - a
+  month name with no year that no fallback pattern accepts. Both are asserted
+  now, and the comment says which is which and why the near miss earns its
+  keep.
+- **The grandchild test was flaky and had an unbound-name path.** `stuck` was
+  bound only inside the `while`, so an already-expired deadline raised
+  `NameError` instead of asserting; and a process-global `/dev/fd` count is
+  not a signal in a suite that leaves sleeping grandchildren behind. Now
+  `stuck` is initialised, and the test runs the timed-out call three times
+  and asserts the count did not grow by three - the defect leaks one
+  descriptor per call, so growth is the signal and a single unrelated open
+  is not.
+- **The runner's truncation contract lived only in a comment.** A returned
+  `CompletedProcess` may carry a truncated buffer when `returncode != 0` -
+  every current caller rejects non-zero first, so nothing is broken, but
+  silent truncation is this package's recurring defect class. Now stated in
+  the function's docstring, where the next caller will read it.
+
+### Control
+
+The stdin exclusion was re-run against the *strengthened* grandchild test
+after it was rewritten, not only against the original: both it and the AST
+test go red with stdin out of the list and green with it back in. A
+rewritten test is a new test and gets its own control.

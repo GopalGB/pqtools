@@ -149,6 +149,16 @@ def _newline(source: str) -> str:
 def _run_process_bounded(
     command: list[str], input_data: bytes | None, timeout: int
 ) -> subprocess.CompletedProcess[bytes]:
+    """Run `command`, bounded by `timeout` and `MAX_BYTES`, and never lie.
+
+    A pipe fault raises rather than returning a short buffer - that is the
+    point of the two sentinels - but **only when the child exited 0**. When
+    `returncode != 0` the child's own account wins, so the returned
+    `CompletedProcess` may carry a truncated `stdout`/`stderr` with nothing
+    to mark it as truncated. Every caller today rejects a non-zero return
+    before reading the buffers; a caller that wants to log stderr from a
+    failed child must know that the tail may be missing.
+    """
     deadline = time.monotonic() + timeout
     with subprocess.Popen(
         command,
@@ -198,14 +208,15 @@ def _run_process_bounded(
                     # returned a clean run of a child that had read nothing.
                     write_failure.append(error)
                 finally:
-                    # NOT recorded, deliberately. `close()` here raises
-                    # EBADF whenever this thread was abandoned by the
-                    # timeout path below, which closes these fds by number
-                    # to unblock a stuck reader - so an error here says the
-                    # parent tore the pipe down, not that the child got a
-                    # short payload. Recording it failed a legitimate parse
-                    # in the full suite. The genuine short write is caught
-                    # above, where it is unambiguous.
+                    # NOT recorded, deliberately. When the timeout path below
+                    # abandoned this thread it already closed the same stream
+                    # through its raw FileIO, so this close is a no-op that
+                    # raises: EBADF as `OSError`, or `ValueError` from the
+                    # buffered layer refusing to flush an already-closed raw.
+                    # Either says the parent tore the pipe down, not that the
+                    # child got a short payload - and recording it failed a
+                    # legitimate parse in the full suite. The genuine short
+                    # write is caught above, where it is unambiguous.
                     with contextlib.suppress(OSError, ValueError):
                         stdin.close()
 
@@ -276,9 +287,12 @@ def _run_process_bounded(
 def _require_node(binary: str) -> None:
     try:
         result = _run_process_bounded([binary, "--version"], None, 5)
-    except (_ProcessReadError, _ProcessWriteError) as error:
+    except _ProcessReadError as error:
         # A local pipe fault, not a missing Node: the same mis-blame `_bridge`
-        # stopped making, and llms.txt tells the reader to retry once.
+        # stopped making, and llms.txt tells the reader to retry once. There
+        # is no `_ProcessWriteError` clause because this call passes no input,
+        # so there is no writer thread that could record one - the same reason
+        # `pqtest._run_bounded` has none.
         raise NodeError(
             "Node version check: process output could not be read in full"
         ) from error

@@ -411,6 +411,11 @@ def test_value_from_text_refuses_temporal_text_rather_than_returning_it(
 def test_value_from_text_still_returns_plain_text_as_text() -> None:
     # The refusal above must not swallow the documented `text` branch of the
     # return union: only text ISO 8601 reads as temporal is refused.
+    # "Dec 24" is the near miss and the reason this assertion earns its keep:
+    # a month name with no year, which no fallback date pattern accepts. If a
+    # future pattern starts reading it, this goes red instead of the change
+    # landing silently. "Q4 report" cannot match anything and is the easy case.
+    assert evaluate('Value.FromText("Dec 24")') == "Dec 24"
     assert evaluate('Value.FromText("Q4 report")') == "Q4 report"
     assert evaluate('Value.FromText("hello world")') == "hello world"
 

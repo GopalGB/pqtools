@@ -331,17 +331,17 @@ def test_timeout_teardown_never_closes_a_descriptor_by_number() -> None:
     ]
     assert "os.close" not in calls, calls
     assert not any(call.endswith(".fileno") for call in calls), calls
-    # The streams the abandon path closes: the two readers, never stdin.
-    readers = [
+    # The streams the abandon path closes: all three, stdin included.
+    streams = [
         ast.unparse(node.elt) + " <- " + ast.unparse(node.generators[0].iter)
         for node in ast.walk(tree)
         if isinstance(node, ast.ListComp)
         and node.generators
         and "stream is not None" in ast.unparse(node.generators[0])
     ]
-    assert len(readers) == 1, readers
-    assert "process.stdout" in readers[0] and "process.stderr" in readers[0]
-    assert "process.stdin" in readers[0]
+    assert len(streams) == 1, streams
+    assert "process.stdout" in streams[0] and "process.stderr" in streams[0]
+    assert "process.stdin" in streams[0]
 
 
 @pytest.mark.skipif(
@@ -406,16 +406,24 @@ def test_abandoned_writer_behind_a_grandchild_is_freed_and_leaks_nothing():
         "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
         "sys.exit(0)",
     ]
-    with pytest.raises(subprocess.TimeoutExpired):
-        _run_process_bounded(command, b"x" * MAX_BYTES, 1)
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
+    # Three calls, not one. A single descriptor is noise here - this suite
+    # leaves sleeping grandchildren and daemon threads behind, and anything
+    # else in the interpreter may open a file between the two counts. The
+    # defect leaks one fd *per timed-out call*, so it shows up as growth,
+    # and growth is what this asserts.
+    rounds = 3
+    for _ in range(rounds):
+        with pytest.raises(subprocess.TimeoutExpired):
+            _run_process_bounded(command, b"x" * MAX_BYTES, 1)
+    stuck: list[threading.Thread] = []
+    deadline = time.monotonic() + 5
+    while True:
         stuck = [t for t in threading.enumerate() if t.name not in before_threads]
-        if not stuck:
+        if not stuck or time.monotonic() > deadline:
             break
         time.sleep(0.05)
     assert not stuck, [t.name for t in stuck]
-    assert len(os.listdir("/dev/fd")) <= before_fds
+    assert len(os.listdir("/dev/fd")) < before_fds + rounds
 
 
 def test_a_failing_child_keeps_its_own_diagnosis_over_a_short_read(failing_stdout):
