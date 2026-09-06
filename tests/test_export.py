@@ -496,7 +496,12 @@ def test_open_reads_a_section_document_with_several_members(tmp_path: Path):
     )
     handle = pqtools.open(path)
     assert sorted(handle.queries) == ["Name", "Sales"]
-    assert handle.source("Sales") == "shared Sales = 1 + 1;"
+    # The EXPRESSION, not the `shared NAME = ...;` statement - the same text
+    # `pq show --member Sales` prints. The two surfaces disagreed until the
+    # round-11 review pointed out that a reader has no way to know which one
+    # "a query's source" means; see test_end_to_end.py for the test that
+    # holds them together.
+    assert handle.source("Sales") == "1 + 1"
     assert handle.eval("Sales") == 2
     assert handle.eval("Name") == "hi"
 

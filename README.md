@@ -648,9 +648,15 @@ import pqtools
 
 report = pqtools.open("report.pbix")
 report.queries                      # ['Sales', 'Customers', ...]
-report.source("Sales")              # the M, unevaluated
-pqtools.to_pandas(report.eval("Sales"))
+report.source("Sales")              # the M, unevaluated - same text as `pq show`
+rows = report.eval("Sales", bindings={"Source": my_rows})
+pqtools.to_pandas(rows)
 ```
+
+`.eval` forwards `bindings` and `io` to `evaluate()`, so it runs the
+connector-backed queries that are the ordinary case - the equivalents of
+`pq eval --bind` and `--allow-net`. Network access stays off unless you pass
+it, here as on the command line.
 
 That handle is deliberately thin. It has no `.filter()` and no `.groupby()`,
 because transformations belong in M, where they fold and where the semantics

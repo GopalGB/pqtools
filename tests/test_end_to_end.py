@@ -32,6 +32,9 @@ from pqtools.cli import _load_binding
 from pqtools.evaluate import evaluate
 
 _SCENARIO = Path(__file__).parent / "fixtures" / "realworld" / "01_clean_and_type"
+# Synthetic, and kept OUT of realworld/, whose README declares every file
+# there hand-verified and emitted by Power Query's own UI.
+_MISC = Path(__file__).parent / "fixtures" / "misc"
 
 # What scenario 01's TransformColumnTypes step declares, and therefore what
 # every layer downstream has to preserve. Written out rather than derived so
@@ -194,7 +197,7 @@ def test_to_parquet_refuses_a_result_that_is_not_a_table(
     code = main(
         [
             "eval",
-            str(_SCENARIO / "scalar.pq"),
+            str(_MISC / "scalar.pq"),
             "--to",
             "parquet",
             "--out",
@@ -224,3 +227,164 @@ def test_set_param_obeys_the_same_network_gate_as_the_query(
     )
     assert code != 0
     assert "--allow-net" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# Regressions from the round-11 review. Each of these reproduced against the
+# committed tree before it was fixed; the reproduction is in the docstring
+# so the test says what it is defending, not just that it passes.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--allow-net", "explain", "Table.SelectRows"],
+        ["--json", "explain", "Table.SelectRows"],
+        ["explain", "Table.SelectRows"],
+        ["explain", "Table.SelectRows", "--json"],
+    ],
+)
+def test_an_option_before_the_verb_does_not_change_the_answer(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-11 HIGH.
+
+    The verb used to be read as `argv[0]`, which argparse has never required
+    it to be. With any option first, `explain` received a `Path` instead of a
+    name, found it in no registry, and reported a function pqtools implements
+    as "not a name pqtools recognizes" - exiting 0 on a confident wrong
+    answer, from the one verb whose stated guarantee is that it cannot drift
+    from what the evaluator does.
+    """
+    from pqtools.cli import main
+
+    assert main(argv) == 0
+    assert "is implemented by pqtools" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("verb", ["check", "parse", "dependencies", "list", "show"])
+def test_a_batch_verb_survives_an_option_in_any_position(
+    verb: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The same HIGH's other half: `pq --json check f.pq` raised a bare
+    `TypeError: 'PosixPath' object is not iterable` - an invocation that
+    worked before the batch feature existed."""
+    from pqtools.cli import main
+
+    good = tmp_path / "a.pq"
+    good.write_text("let a = 1 in a\n", encoding="utf-8")
+    for argv in ([verb, "--json", str(good)], ["--json", verb, str(good)]):
+        assert main(argv) == 0, argv
+        capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["explain"], "exactly one NAME"),
+        (["diff", "a.pq"], "exactly two files"),
+        (["eval", "a.pq", "b.pq"], "exactly one file"),
+        (["check"], "at least one file"),
+    ],
+)
+def test_wrong_argument_count_is_a_typed_refusal_not_a_traceback(
+    argv: list[str], expected: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pqtools.cli import main
+
+    assert main(argv) == 2
+    assert expected in capsys.readouterr().err
+
+
+def test_an_unknown_option_is_still_rejected() -> None:
+    # The arity fix folds argparse's leftover positionals back into `file`,
+    # which must not quietly swallow a mistyped flag along with them.
+    from pqtools.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["list", "--bogus", "a.pq"])
+
+
+def test_list_json_carries_a_read_failure_into_the_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`pq list --json` reported failures on stderr only, so stdout carried a
+    complete-looking array with nothing saying a file had failed. A consumer
+    reading stdout alone would have believed it was the whole answer."""
+    import json as jsonlib
+
+    from pqtools.cli import main
+
+    good = tmp_path / "s.pq"
+    good.write_text("section S;\nshared Q = 1 + 1;\n", encoding="utf-8")
+    assert main(["list", "--json", str(good), str(tmp_path / "missing.pq")]) == 2
+    records = jsonlib.loads(capsys.readouterr().out)
+    assert any("error" in record for record in records), records
+
+
+def test_a_real_file_whose_name_contains_glob_syntax_is_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`report[1].pq` - what a downloads folder produces - was reported as
+    "no files matched glob", because `glob.glob` read the brackets as a
+    character class. The file was right there."""
+    from pqtools.cli import main
+
+    bracketed = tmp_path / "report[1].pq"
+    bracketed.write_text("let a = 1 in a\n", encoding="utf-8")
+    assert main(["show", str(bracketed)]) == 0
+    assert "let a = 1 in a" in capsys.readouterr().out
+
+
+def test_the_library_refuses_a_non_table_the_way_the_cli_does() -> None:
+    """README's own example is `to_pandas(report.eval("Sales"))`, and a query
+    returning a scalar or a record is ordinary. That used to raise
+    `TypeError: 'int' object is not subscriptable` from inside the column
+    builder, where the module documents a typed `ExportRefusal`."""
+    from pqtools.export import ExportRefusal, to_arrow, to_pandas
+
+    for export in (to_pandas, to_arrow):
+        for value in (5, "text", {"a": 1}, [1, 2]):
+            with pytest.raises(ExportRefusal, match="table"):
+                export(value)
+
+
+def test_the_member_expression_parser_has_exactly_one_definition() -> None:
+    """It was copied into cli.py and export.py while the two lanes were built
+    in parallel. Two copies of a parser-driven span calculation drift; this
+    pins that they are the same object, not two that currently agree."""
+    from pqtools import cli, containers, export
+
+    assert cli._member_expression is containers.member_expression
+    assert export._member_expression is containers.member_expression
+    assert cli._is_container is containers.is_container
+
+
+def test_the_handle_and_the_cli_agree_on_what_a_query_source_is(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import pqtools
+    from pqtools.cli import main
+
+    path = tmp_path / "s.pq"
+    path.write_text("section S;\nshared Q = 1 + 1;\n", encoding="utf-8")
+    assert main(["show", str(path), "--member", "Q"]) == 0
+    from_cli = capsys.readouterr().out.strip()
+    assert pqtools.open(path).source("Q") == from_cli == "1 + 1"
+
+
+def test_the_handle_can_run_a_query_that_needs_its_data_bound() -> None:
+    """`.eval` took no bindings and no io policy, so it was pinned to
+    DENY_ALL and could only run a query that reads nothing - not the query
+    anyone opens a report to find."""
+    import pqtools
+    from pqtools.cli import _load_binding
+
+    handle = pqtools.open(_SCENARIO / "query.pq")
+    rows = handle.eval(
+        handle.queries[0],
+        bindings={"Source": _load_binding(_SCENARIO / "sales.csv")},
+    )
+    assert len(rows) == 5
+    assert rows[0]["OrderID"] == 1005

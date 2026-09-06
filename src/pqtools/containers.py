@@ -41,7 +41,57 @@ from typing import Any
 from . import core
 from .core import FileSnapshot, MQueryError
 
+# The ZIP containers THIS module opens. `.pbip` is deliberately absent: it is
+# a directory-based project, not a zip, so the reader/writer below must not
+# treat it as one. Callers asking the broader question "is this path a
+# container rather than a bare .pq" want `is_container` instead.
 _CONTAINER_SUFFIXES = (".xlsx", ".pbix", ".pbit")
+PROJECT_SUFFIXES = frozenset({*_CONTAINER_SUFFIXES, ".pbip"})
+
+
+def is_container(path: Path) -> bool:
+    """True when `path` holds queries rather than being one.
+
+    A `.pbip` project is a directory, hence the `is_dir()` arm.
+    """
+    return path.suffix.lower() in PROJECT_SUFFIXES or path.is_dir()
+
+
+def member_expression(member_text: str) -> str:
+    """Strip a :func:`split_shared` value down to its expression.
+
+    `member_text` is always ``shared NAME = <expr>;`` (or without the
+    trailing ``;`` in a malformed document) - a full section member, not a
+    standalone expression `evaluate()` can parse on its own, since ``shared``
+    is only valid inside a ``section``. Wrapping it in a throwaway section
+    and re-parsing locates the exact token span of ``<expr>`` without ever
+    guessing at raw text offsets - safe even if a quoted member name like
+    ``#"a = b"`` contains an ``=`` character.
+
+    It lives here, beside `split_shared`, because `split_shared` is what
+    produces the strings it takes apart. It was briefly copied into two
+    modules while they were built in parallel; two copies of a parser-driven
+    span calculation is exactly the thing that drifts.
+    """
+    prefix = "section S; "
+    wrapped = prefix + member_text
+    try:
+        parsed = core.parse(wrapped)
+    except MQueryError as error:
+        raise MQueryError(f"unable to isolate member expression: {error}") from error
+    tokens = parsed["tokens"]
+    equal_index = next(
+        (index for index, token in enumerate(tokens) if token["kind"] == "Equal"),
+        None,
+    )
+    if equal_index is None:
+        raise MQueryError("unable to isolate member expression: no '=' found")
+    start = int(tokens[equal_index]["end"])
+    last = tokens[-1]
+    end = int(last["start"]) if last["kind"] == "Semicolon" else int(last["end"])
+    return wrapped[start:end].strip()
+
+
 _SEGMENT_NAMES = ("packageParts", "permissions", "metadata", "permissionBindings")
 _XML_DATAMASHUP = re.compile(
     r"<(?:[\w.\-]+:)?DataMashup\b[^>]*>(.*?)</(?:[\w.\-]+:)?DataMashup>",

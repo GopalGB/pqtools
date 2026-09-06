@@ -35,7 +35,6 @@ from .core import (
 from .evaluate import BUILTINS, evaluate
 from .io import IOPolicy
 
-_CONTAINER_SUFFIXES = {".xlsx", ".pbix", ".pbit", ".pbip"}
 # Suffixes with a structured reading. Everything else binds to raw bytes,
 # which is what File.Contents returns - so there is no file --bind refuses.
 _BIND_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".xlsb"}
@@ -53,8 +52,11 @@ def _source(path: Path) -> str:
     return _snapshot(path).data.decode("utf-8", "strict")
 
 
-def _is_container(path: Path) -> bool:
-    return path.suffix.lower() in _CONTAINER_SUFFIXES or path.is_dir()
+# Both live in containers.py, beside `split_shared`, which produces what
+# `member_expression` takes apart. They were copied here and into export.py
+# while those lanes were built in parallel; one home now.
+_is_container = containers.is_container
+_member_expression = containers.member_expression
 
 
 def _unprintable(item: Any) -> Any:
@@ -108,36 +110,6 @@ def _print(value: Any, as_json: bool) -> None:
         print(value, end="" if value.endswith("\n") else "\n")
 
 
-def _member_expression(member_text: str) -> str:
-    """Strip a ``containers.split_shared()`` value down to its expression.
-
-    `member_text` is always ``shared NAME = <expr>;`` (or without the
-    trailing ``;`` in a malformed document) - a full ``SectionMember``, not
-    a standalone expression `evaluate()` can parse on its own (``shared``
-    is only valid inside a ``section``). Wrapping it in a throwaway section
-    and re-parsing locates the exact token span of ``<expr>`` without ever
-    guessing at raw text offsets - safe even if a quoted member name like
-    ``#"a = b"`` contains an ``=`` character.
-    """
-    prefix = "section S; "
-    wrapped = prefix + member_text
-    try:
-        parsed = parse(wrapped)
-    except MQueryError as error:
-        raise MQueryError(f"unable to isolate member expression: {error}") from error
-    tokens = parsed["tokens"]
-    equal_index = next(
-        (index for index, token in enumerate(tokens) if token["kind"] == "Equal"),
-        None,
-    )
-    if equal_index is None:
-        raise MQueryError("unable to isolate member expression: no '=' found")
-    start = int(tokens[equal_index]["end"])
-    last = tokens[-1]
-    end = int(last["start"]) if last["kind"] == "Semicolon" else int(last["end"])
-    return wrapped[start:end].strip()
-
-
 def _member_source(text: str, container: str, member: str) -> str:
     members = containers.split_shared(text, container)
     if member not in members:
@@ -185,8 +157,13 @@ def _expand_one(token: str) -> list[Path]:
     matches = sorted(Path(match) for match in glob.glob(token, recursive=True))
     if matches:
         return matches
-    if has_glob_syntax:
+    if has_glob_syntax and not Path(token).exists():
         raise MQueryError(f"no files matched glob {token!r}")
+    # An existing file whose NAME contains glob syntax - `report[1].pq` is
+    # what Windows and every downloads folder produce - reaches here because
+    # `glob.glob` read the brackets as a character class and matched nothing.
+    # The file is right there; refusing it as an unmatched glob would be a
+    # confident wrong answer about a path the user typed correctly.
     return [Path(token)]
 
 
@@ -520,6 +497,14 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
             code = getattr(error, "code", "M_IO_ERROR")
             print(f"{path}: error {code}: {error}", file=sys.stderr)
             worst = 2
+            # Also into the JSON. Reporting the failure on stderr alone left
+            # `pq list --json` printing a complete-looking array on stdout
+            # with nothing in it saying a file had failed - every other batch
+            # verb appends this record, and a consumer reading only stdout
+            # would have believed the list was the whole answer.
+            entries.append(
+                {"file": str(path), "error": {"code": code, "message": str(error)}}
+            )
             continue
         for section in sections:
             try:
@@ -901,16 +886,40 @@ def _run_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _normalise_targets(args: argparse.Namespace) -> None:
+    """Give `args.file` the shape each verb's own code expects.
+
+    Argparse fixes a positional's arity when it is declared, so per-verb
+    arity cannot be expressed there without knowing the verb first - and
+    learning the verb by peeking at `argv[0]` is wrong, because options may
+    precede it. So the positional is declared once as a list and reshaped
+    here, after argparse has identified the command properly.
+    """
+    targets: list[str] = [str(item) for item in args.file]
+    verb = args.command
+    if verb == "explain":
+        if len(targets) != 1:
+            raise MQueryError(
+                "explain takes exactly one NAME, e.g. pq explain Table.Group"
+            )
+        args.file = targets[0]
+        return
+    if verb == "diff":
+        if len(targets) != 2:
+            raise MQueryError("diff takes exactly two files: pq diff A.pq B.pq")
+        args.file = [Path(item) for item in targets]
+        return
+    if verb in _BATCH_VERBS:
+        if not targets:
+            raise MQueryError(f"{verb} needs at least one file")
+        args.file = targets
+        return
+    if len(targets) != 1:
+        raise MQueryError(f"{verb} takes exactly one file, got {len(targets)}")
+    args.file = Path(targets[0])
+
+
 def main(argv: list[str] | None = None) -> int:
-    # The "file" positional's shape depends on which verb this invocation
-    # names: a glob-eligible list for the read-only batch verbs, exactly two
-    # paths for `diff`, a bare NAME (not a path at all) for `explain`, and a
-    # single required Path for everything else - unchanged from before this
-    # feature existed. Argparse fixes a positional's arity when it is added,
-    # before parsing, so that decision is made here by reading `argv[0]`
-    # directly rather than by inspecting `args` after the fact.
-    argv = list(sys.argv[1:] if argv is None else argv)
-    command = argv[0] if argv else None
     parser = argparse.ArgumentParser(prog="pq")
     parser.add_argument(
         "command",
@@ -938,31 +947,23 @@ def main(argv: list[str] | None = None) -> int:
             "files or a glob."
         ),
     )
-    if command == "explain":
-        parser.add_argument(
-            "file",
-            nargs="?",
-            metavar="NAME",
-            help="the M identifier to explain (a name, not a file)",
-        )
-    elif command == "diff":
-        parser.add_argument(
-            "file",
-            nargs=2,
-            type=Path,
-            metavar="FILE",
-            help="two files whose FORMATTED M source is compared",
-        )
-    elif command in _BATCH_VERBS:
-        parser.add_argument(
-            "file",
-            nargs="+",
-            metavar="FILE",
-            help="one or more files, or a glob (quote it so the shell "
-            "does not expand it first)",
-        )
-    else:
-        parser.add_argument("file", type=Path)
+    # ONE positional, always a list, arity checked after parsing by
+    # `_normalise_targets`. An earlier cut chose the positional's shape from
+    # `argv[0]`, which argparse itself has never required the verb to be:
+    # `pq --json check f.pq` is valid and made the peek read "--json" as the
+    # command, so `check` got a single Path where it expected a list
+    # (TypeError, bare traceback) and `explain` got a Path where it expected
+    # a name - answering "not a name pqtools recognizes" about a function it
+    # implements, and exiting 0. Option order must not be able to change the
+    # parser's shape.
+    parser.add_argument(
+        "file",
+        nargs="*",
+        metavar="FILE",
+        help="the file(s) to act on - one or more (or a quoted glob) for "
+        "parse/check/format/dependencies/show/list, exactly two for diff, "
+        "one for everything else. For `explain` this is a NAME, not a file.",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--write",
@@ -1035,11 +1036,19 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="eval: destination file for --to",
     )
-    args = parser.parse_args(argv)
+    # `parse_known_args`, not `parse_args`, because argparse cannot split a
+    # variable-length positional across an intervening option: given
+    # `pq list --json a.pq b.pq` it matches `file` as empty and hands both
+    # paths back as leftovers. They are the files, in order, so they are
+    # folded back below - while a leftover that looks like an option is still
+    # the unknown-option error argparse would have raised.
+    args, extra = parser.parse_known_args(argv)
+    if any(item.startswith("-") for item in extra):
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
+    args.file = [*args.file, *extra]
     try:
+        _normalise_targets(args)
         if args.command == "explain":
-            if args.file is None:
-                raise MQueryError("explain requires a NAME argument")
             return _run_explain(args)
         if args.command == "diff":
             return _run_diff(args)

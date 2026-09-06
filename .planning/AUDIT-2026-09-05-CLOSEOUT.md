@@ -1396,3 +1396,123 @@ corrected version as an uncommitted diff on top. Both sweeps were absorbed by
 branch history. This is the third time this bot has interfered with a control
 in one day; the standing rule - check `git log -1` before every commit - is
 what caught it.
+
+## Verification on the final tree, sixth pass (the round-11 build)
+
+Sequential, `PQ_GATE_PYTEST_ARGS=""`, nothing else of mine running. Run on
+the exact tree that became `df192c6` + `76f36b1` - the gate was started once,
+stopped and restarted when a late edit landed, so that the result describes
+the tree that was committed rather than one that shifted under it.
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 4084 passed in 662.99s (0:11:02), 953 worked examples exact in 139.36s; `evidence/release-gate-2026-09-06-round11.log` |
+| Test count | 4003 -> 4084. 34 export, 39 CLI verbs, 9 end-to-end, and the rest from the two lanes' own coverage |
+| Suite with `pandas` and `pyarrow` genuinely absent | see the row below - run separately, because the gate's environment has them |
+| Lint, format, types | ruff, ruff format, mypy strict clean on 26 source files |
+| The end-to-end loop, by hand | `pq show` (does not evaluate, proven on a query whose connector points nowhere) -> `pq explain` -> `pq eval --set-param` -> `--to parquet` -> read back in pandas with types intact -> `pq diff`. Run against `tests/fixtures/realworld/01_clean_and_type`, whose expected output was worked out independently of this package |
+| Batch exit codes, by hand | `parse`/`dependencies`/`check`/`format` exit 2 with one broken file among good ones and print the error; `show`/`list` exit 0 for invalid M syntax (correct - `show` never parses) and 2 for a file that cannot be read; an empty glob is an error |
+| Swallow sweep | `export.py` adds **zero** handlers that return without raising; `cli.py`'s nine are all batch loops whose exit code was checked by execution, not by reading |
+| Positive controls | export: type-map row, a refusal, the missing-extras message - each red then green. CLI: show-never-evaluates, empty-glob, batch exit code, `--set-param` error naming - each red then green. One CLI control went red by a different mechanism than predicted (`IndexError` rather than a silent success) and is recorded as such rather than smoothed over |
+| Exact `claude-opus-5` review of the build | see the round-11 entry below, or its absence |
+
+Not verified, unchanged across all six passes: live database, Fabric,
+Windows PQTest, native Excel or Power BI refresh. Fabric's Arrow decode is
+now a *stated* refusal rather than an untested path.
+
+## Round 11 reviewed - FIX-FIRST, eight findings, eight taken
+
+`evidence/opus5-wrapper-round11-251b4a1..76f36b1.txt`. Every finding was
+reproduced against the committed tree before anything changed. All eight
+reproduced; all eight are fixed.
+
+### HIGH - the verb was read from `argv[0]`, which argparse never required
+
+Argparse fixes a positional's arity when it is declared, so the per-verb
+shape of `file` had to be chosen before parsing - and it was chosen by
+reading `argv[0]`. But `pq --json check f.pq` is a valid invocation, and it
+made the peek read `--json` as the command. Two reproduced failures:
+
+- `pq --allow-net explain Table.SelectRows` answered **"not a name pqtools
+  recognizes ... may be a typo"** and **exited 0**. A confident wrong answer
+  from the one verb whose entire guarantee is that it cannot drift from what
+  the evaluator does.
+- `pq --json check f.pq` raised `TypeError: 'PosixPath' object is not
+  iterable` as a bare traceback - an invocation that worked before the batch
+  feature existed.
+
+Fixed by declaring `file` once as `nargs="*"` and validating arity per verb
+*after* parsing, so option order cannot change the parser's shape. That
+exposed a second argparse limitation immediately: it cannot split a
+variable-length positional across an intervening option, so
+`pq list --json a.pq b.pq` matched `file` as empty and handed both paths back
+as leftovers. `parse_known_args` folds them back in order, while a leftover
+that looks like an option is still the unknown-option error argparse would
+have raised. Wrong argument counts are now typed refusals naming the verb and
+the count, not usage dumps.
+
+**One knock-on, taken deliberately:** `pq rename a.pq b.pq` used to be
+refused by argparse with `SystemExit`; it is now refused by name with exit 2.
+The existing test was updated to the better behaviour rather than the code
+reverted to the worse one, and the test says why.
+
+### The rest
+
+- **The library did not refuse a non-table the way the CLI did.** README's
+  own example is `to_pandas(report.eval("Sales"))`, and a query returning a
+  scalar or a record is ordinary; it raised `'int' object is not
+  subscriptable` from inside the column builder where the module promises a
+  typed `ExportRefusal`. `cli.py`'s `_export_result` had the guard; the
+  library entry points did not.
+- **`pq list --json` dropped read failures out of the JSON**, reporting them
+  on stderr only, so stdout carried a complete-looking array with nothing
+  saying a file had failed. Every other batch verb appends an error record;
+  this one now does too.
+- **The extras allowed `pandas>=2` while the type map was verified only on
+  3.0.5.** pandas 2.x infers nanosecond resolution from a list of `datetime`
+  or `timedelta`, so `SUPPORT-MATRIX.md`'s table and several tests were wrong
+  for a version the metadata permits. Rather than raise the floor to the
+  version that happened to be installed, the three native dtypes are now
+  coerced explicitly, so both agree.
+- **`_member_expression` existed twice**, byte-identical, in `cli.py` and
+  `export.py` - and `_CONTAINER_SUFFIXES` existed three times, with
+  `containers.py`'s copy correctly excluding `.pbip` (a directory format, not
+  a zip) and the other two including it. The parser-driven span calculation
+  now lives once in `containers.py`, beside `split_shared`, which produces
+  the strings it takes apart; `containers.py`'s zip tuple is untouched and a
+  separate `is_container` answers the broader question. A test pins that the
+  three names are the same object, not two that currently agree.
+- **A real file named `report[1].pq` was unreadable**, reported as "no files
+  matched glob" because `glob.glob` read the brackets as a character class.
+  An existing path is now returned even when it looks like a glob.
+- **The handle could not run a real query and disagreed with the CLI about
+  what "source" means.** `.eval` took no `bindings` and no `io`, so it was
+  pinned to `DENY_ALL` and could only run a query that reads nothing;
+  `.source` returned `shared Sales = 1 + 1;` where `pq show --member`
+  returned `1 + 1`. Both fixed, and a test now holds the two surfaces
+  together.
+- **A synthetic fixture had been dropped into `tests/fixtures/realworld/`**,
+  whose README declares every file there hand-verified and emitted by Power
+  Query's own UI. Moved to `tests/fixtures/misc/`.
+
+### Controls
+
+Five behavioural fixes, five controls, each red with the defect and green
+after restoring: the argv peek, the export shape check, the `list --json`
+error record, the glob-bracket path, and the `.source` agreement. The
+identity of the deduplicated helpers is pinned by assertion rather than by
+control, since there is no defect to reintroduce that a test could see.
+
+## Verification on the final tree, seventh pass (the round-11 review fixes)
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 4104 passed in 668.88s (0:11:08), 953 worked examples exact in 125.02s; `evidence/release-gate-2026-09-06-round11-review-fixes.log` |
+| Full suite with `pandas` and `pyarrow` genuinely absent | **4055 passed, 29 skipped, 0 failed** - the whole suite, not just the export tests. Absence simulated with a `sys.meta_path` finder raising `ModuleNotFoundError`, after a first attempt using `ImportError` stubs reported 24 failures that were the instrument's fault |
+| Test count | 4084 -> 4104 |
+| Lint, format, types | clean on 26 source files |
+| Positive controls, round-11 review | argv peek · export shape check · `list --json` error record · glob-bracket path · `.source` agreement - each red with the defect, green after restoring |
+| Option position, by hand | every verb answered identically with the option before, between and after the positionals; unknown options still rejected |
+
+Not verified, unchanged across all seven passes: live database, Fabric,
+Windows PQTest, native Excel or Power BI refresh.

@@ -17,8 +17,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from pqtools.cli import main
 
 
@@ -346,14 +344,22 @@ def test_show_accepts_a_glob_and_headers_each_file(tmp_path: Path, capsys) -> No
     assert "2" in out
 
 
-def test_rename_refuses_a_second_file_argument(tmp_path: Path) -> None:
-    """Writing verbs stay single-file - argparse itself refuses the extra
-    positional, by name, rather than silently renaming only the first file.
+def test_rename_refuses_a_second_file_argument(tmp_path: Path, capsys) -> None:
+    """Writing verbs stay single-file, refusing by name rather than silently
+    renaming only the first file.
+
+    The refusal moved from argparse to `_normalise_targets` when the `file`
+    positional became a single `nargs="*"` - which it had to, because
+    choosing the positional's arity from `argv[0]` misread the verb whenever
+    an option came first. So this now asserts a typed `MQueryError` and exit
+    2 instead of `SystemExit`, and the message names the verb and the count
+    rather than printing a usage dump.
     """
     a = _write(tmp_path / "a.pq", "let A = 1 in A")
     b = _write(tmp_path / "b.pq", "let A = 1 in A")
-    with pytest.raises(SystemExit):
-        main(["rename", str(a), str(b), "--old", "A", "--new", "B"])
+    assert main(["rename", str(a), str(b), "--old", "A", "--new", "B"]) == 2
+    assert "rename takes exactly one file" in capsys.readouterr().err
+    assert a.read_text(encoding="utf-8") == "let A = 1 in A"
 
 
 # --------------------------------------------------------------------------

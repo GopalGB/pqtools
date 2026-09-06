@@ -30,11 +30,13 @@ import math
 from pathlib import Path
 from typing import Any, NoReturn
 
+from . import containers
 from .builtins._shared import DeferredTable
 from .builtins._type import _MType
 from .containers import read_sections, split_shared
-from .core import MQueryError, _snapshot, parse
+from .core import MQueryError, _snapshot
 from .evaluate import evaluate
+from .io import DENY_ALL, IOPolicy
 
 
 class ExportRefusal(MQueryError):
@@ -162,6 +164,12 @@ def _refuse(column: str, kind: str) -> NoReturn:
     )
 
 
+def _type_name_for_message(value: Any) -> str:
+    """What to call `value` in a refusal - its M kind when we have one."""
+    kind = _cell_kind(value)
+    return "an M " + kind if kind != "unknown" else f"a {type(value).__name__}"
+
+
 def _column_order(rows: list[dict[str, Any]]) -> list[str]:
     """Column names in row-0 order, after refusing any ragged row.
 
@@ -170,6 +178,23 @@ def _column_order(rows: list[dict[str, Any]]) -> list[str]:
     pyarrow 25.0.1 2026-09-06) - exactly the "fill with NaN" PRD s4 refuses.
     Checked once here, ahead of both builders, rather than twice.
     """
+    # Shape first. `to_pandas(report.eval("Sales"))` is the README's own
+    # example, and a query returning a scalar, a record or a list of scalars
+    # is an ordinary thing to have written - it must produce the typed
+    # refusal this module documents, not `'int' object is not subscriptable`
+    # from somewhere inside the column builder. `cli.py`'s `_export_result`
+    # already guarded this; the library entry points did not.
+    if not isinstance(rows, list):
+        raise ExportRefusal(
+            f"export requires the result to be a table (a list of records), "
+            f"got {_type_name_for_message(rows)}"
+        )
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ExportRefusal(
+                f"export requires the result to be a table (a list of "
+                f"records); row {index} is {_type_name_for_message(row)}"
+            )
     if not rows:
         return []
     columns = list(rows[0].keys())
@@ -258,12 +283,21 @@ def _pandas_column(pd: Any, name: str, kind: str, values: list[Any]) -> Any:
         # 3.0.5 2026-09-06; `date`/`time`/`binary` were already `object`
         # under plain inference, so this only changes behaviour for text.
         return pd.Series(values, dtype=object)
-    # duration / datetime / datetimezone: pandas' own inference from a
-    # plain list already lands on the right native dtype - timedelta64,
-    # datetime64, and (single-offset only, `_classify_column` already
-    # refused a mixed one) datetime64[.., tz=...]. Verified against pandas
-    # 3.0.5 2026-09-06.
-    return pd.Series(values)
+    # duration / datetime / datetimezone. pandas 3.0's inference from a
+    # plain list lands on microsecond resolution, which is what M carries and
+    # what SUPPORT-MATRIX.md documents - but pandas 2.x infers NANOsecond
+    # (`datetime64[ns]`), and the extras permit `pandas>=2`. Rather than
+    # raise the floor to the version this was verified on, ask for the unit
+    # explicitly so both agree. A tz-aware column keeps its offset;
+    # `_classify_column` has already refused a column that mixes offsets,
+    # which is the case a single dtype cannot represent.
+    series = pd.Series(values)
+    if kind == "duration":
+        return series.astype("timedelta64[us]")
+    if kind == "datetime":
+        return series.astype("datetime64[us]")
+    offset = values[next(i for i, v in enumerate(values) if v is not None)].tzinfo
+    return series.dt.tz_convert(offset).astype(f"datetime64[us, {offset}]")
 
 
 def _pandas_number_column(pd: Any, name: str, values: list[Any]) -> Any:
@@ -374,50 +408,20 @@ def to_parquet(rows: list[dict[str, Any]], path: str | Path) -> None:
 # pqtools.open() - a discoverability handle, not a transform layer
 # --------------------------------------------------------------------------
 
-_CONTAINER_SUFFIXES = frozenset({".xlsx", ".pbix", ".pbit", ".pbip"})
 
-
-def _member_expression(member_text: str) -> str:
-    """``shared NAME = <expr>;`` -> ``<expr>``, via the pinned parser.
-
-    Ported from cli.py's private ``_member_expression`` rather than
-    imported: cli.py is being edited by a concurrent lane, and this is the
-    one piece of parsing this facade needs - locating the expression's
-    token span inside a member string ``split_shared`` already isolated.
-    Wrapping in a throwaway ``section S;`` re-parses it validly (``shared``
-    is only legal inside a section) and finds the exact span even if a
-    quoted member name like ``#"a = b"`` contains an ``=`` character.
-    """
-    prefix = "section S; "
-    wrapped = prefix + member_text
-    try:
-        parsed = parse(wrapped)
-    except MQueryError as error:
-        raise MQueryError(f"unable to isolate member expression: {error}") from error
-    tokens = parsed["tokens"]
-    equal_index = next(
-        (index for index, token in enumerate(tokens) if token["kind"] == "Equal"),
-        None,
-    )
-    if equal_index is None:
-        raise MQueryError("unable to isolate member expression: no '=' found")
-    start = int(tokens[equal_index]["end"])
-    last = tokens[-1]
-    end = int(last["start"]) if last["kind"] == "Semicolon" else int(last["end"])
-    return wrapped[start:end].strip()
+_member_expression = containers.member_expression
 
 
 def _discover(path: Path) -> tuple[dict[str, str], dict[str, str]]:
     """(named ``shared`` members, anonymous single-query sections) for `path`.
 
-    Mirrors cli.py's own container/plain-file split - container suffixes
-    and directories go through ``containers.read_sections``, everything
-    else is read as a raw text file - without importing cli.py, which a
-    concurrent lane owns (see ``_member_expression``'s docstring).
+    The same container/plain-file split the CLI makes, through the same
+    `containers.is_container` - containers and directories go through
+    ``read_sections``, everything else is read as raw text.
     """
     members: dict[str, str] = {}
     anonymous: dict[str, str] = {}
-    if path.is_dir() or path.suffix.lower() in _CONTAINER_SUFFIXES:
+    if path.is_dir() or containers.is_container(path):
         for section in read_sections(path):
             found = split_shared(section.source, section.container)
             if found:
@@ -466,21 +470,38 @@ class PqFile:
         return [*self._members, *self._anonymous]
 
     def source(self, name: str) -> str:
-        """`name`'s exact M source text, unevaluated."""
+        """`name`'s M source, unevaluated - the expression, not the statement.
+
+        The same text `pq show --member NAME` prints. An earlier cut returned
+        the whole ``shared NAME = <expr>;`` statement here while the CLI
+        returned ``<expr>``, so the two surfaces disagreed about what a
+        query's source is; one answer is worth more than either.
+        """
         if name in self._members:
-            return self._members[name]
+            return containers.member_expression(self._members[name])
         if name in self._anonymous:
             return self._anonymous[name]
         raise MQueryError(f"{self._path}: no query named {name!r}")
 
-    def eval(self, name: str) -> Any:
+    def eval(
+        self,
+        name: str,
+        *,
+        bindings: dict[str, Any] | None = None,
+        io: IOPolicy = DENY_ALL,
+    ) -> Any:
         """Run `name` and return its value, via the same ``evaluate()``
-        every other entry point uses."""
-        if name in self._members:
-            return evaluate(_member_expression(self._members[name]))
-        if name in self._anonymous:
-            return evaluate(self._anonymous[name])
-        raise MQueryError(f"{self._path}: no query named {name!r}")
+        every other entry point uses.
+
+        `bindings` and `io` are forwarded unchanged, so this handle can run
+        the connector-backed queries that are the ordinary case - the
+        equivalents of ``pq eval --bind`` and ``--allow-net``. Without them
+        the facade was pinned to `DENY_ALL` and could only ever run a query
+        that reads nothing, which is not the query anyone opens a `.pbix` to
+        find. The default stays `DENY_ALL`: reaching the network is the
+        caller's decision to make explicitly, here as on the command line.
+        """
+        return evaluate(self.source(name), bindings=bindings, io=io)
 
 
 def open(path: str | Path) -> PqFile:

@@ -1,0 +1,30 @@
+# Exact claude-opus-5 wrapper review - range 251b4a1..76f36b1 (bundle + lockfile shown as stub blobs)
+# staged:  13 files changed, 2553 insertions(+), 58 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 251b4a1..76f36b1, not stubbed, not in the diff
+# package-lock.json: unchanged in 251b4a1..76f36b1, not stubbed, not in the diff
+# invoked 2026-09-06T17:33:11Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+**HIGH — src/pqtools/cli.py:913** `command = argv[0] if argv else None` misreads the verb whenever any option precedes it, and argparse has always accepted that form. Two reproduced failures:
+- `pq --json explain Table.SelectRows` → `file` is declared as a single `type=Path`, so `_run_explain` gets `Path('Table.SelectRows')`; `name in BUILTINS` is False and `catalog.explain(Path(...))` returns None, so it prints "Table.SelectRows is not a name pqtools recognizes … may be a typo", `supported: false`, **exit 0**. Verified directly: `Path('Table.SelectRows') in BUILTINS` → False, `'Table.SelectRows' in BUILTINS` → True. A confident wrong answer from the one verb whose stated guarantee is that it cannot drift from what the evaluator does.
+- `pq --json check f.pq` (same for parse/format/dependencies/show/list) → `_expand_targets(args.file)` at cli.py:1049 receives a `Path`; iterating it raises `TypeError: 'PosixPath' object is not iterable`, which the `except (OSError, UnicodeDecodeError, MQueryError)` handler does not catch → bare traceback. This invocation worked before the diff.
+- Fix: delete the argv peek; declare `file` once as `nargs="*"`, then validate arity per verb after `parse_args` and raise `MQueryError` on the wrong count, so option order cannot change the parser's shape.
+
+**MEDIUM — src/pqtools/export.py:175** `_column_order` does `rows[0].keys()` with no shape check, and neither `to_pandas` (229) nor `to_arrow` (305) validates first. README's own example `pqtools.to_pandas(report.eval("Sales"))` on a query returning a scalar/record/list raises `TypeError: 'int' object is not subscriptable` / `AttributeError: 'str' object has no attribute 'keys'` — a bare traceback where the module docstring promises a typed `ExportRefusal`. The CLI sibling `_export_result` (cli.py:857) does guard this; the library path does not. Fix: refuse non-list input and non-dict rows in `_column_order` as `ExportRefusal`, reusing the "requires the result to be a table" wording.
+
+**MEDIUM — src/pqtools/cli.py:540** `_run_list` in `--json` mode drops read failures out of the JSON entirely — the except branch prints plain text to stderr only, so `pq list --json good.pq broken.pbix` emits a complete-looking array on stdout with nothing saying a file failed. `_run_show`, `_run_parse_batch`, `_run_dependencies_batch` and `_run_format_batch` all append `{"file":…, "error":{…}}`. Fix: append the same error record in `_run_list`'s except branch.
+
+**MEDIUM — pyproject.toml:63,73,86** extras declare `pandas>=2` / `pyarrow>=14`, but export.py's own comments state the type map was verified only against pandas 3.0.5 / pyarrow 25.0.1, and test_export.py asserts those exact dtype strings. pandas 2.x infers `datetime64[ns]`/`timedelta64[ns]` from Python `datetime`/`timedelta` lists rather than `[us]`, so SUPPORT-MATRIX's table and several tests are wrong for a version the metadata permits. Fix: raise the floor to the version actually verified, or stop relying on inference — coerce with `.astype("datetime64[us]")` / `.astype("timedelta64[us]")` in `_pandas_column`.
+
+**MEDIUM — src/pqtools/export.py:380** `_member_expression` is a second full copy of cli.py:110's parser-driven span logic, and `_CONTAINER_SUFFIXES` (export.py:377) plus `_is_container`'s dir/suffix rule are duplicated too. The stated reason ("cli.py is being edited by a concurrent lane") expired when both lanes landed in this commit; two copies of an M-span parser will drift. Fix: import them from cli.py or hoist to a shared module before merge.
+
+**LOW — src/pqtools/cli.py:184** `has_glob_syntax` counts `[` as glob syntax, so a real file named `report[1].pq` is reported as `no files matched glob 'report[1].pq'` instead of being read. Fix: after an empty `glob.glob`, return `[Path(token)]` when `Path(token).exists()`, before raising.
+
+**LOW — src/pqtools/export.py PqFile.eval** takes no `io` or `bindings`, so it is hard-wired to `DENY_ALL` and can never run the connector-backed query the README example implies; and `PqFile.source("Sales")` returns `shared Sales = 1 + 1;` while `pq show --member Sales` returns `1 + 1`, so the two surfaces disagree on what a query's source is. Fix: accept `io=`/`bindings=` on `.eval`, and return the expression from `.source` (or state the difference in both README and SUPPORT-MATRIX).
+
+**LOW — tests/fixtures/realworld/01_clean_and_type/scalar.pq** is a synthetic `let a = 1 + 1 in a` dropped into a directory whose README declares hand-verified, Power-Query-UI-emitted scenarios; it is used only by `test_end_to_end.py`'s non-table refusal test. Fix: move it to a generic fixture path.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
