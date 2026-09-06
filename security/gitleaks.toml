@@ -1,0 +1,28 @@
+# pqtools' gitleaks ruleset, picked up by the MAX HQ pre-push hook, which
+# resolves `<repo>/security/gitleaks.toml` before the estate copy.
+#
+# It EXTENDS the estate ruleset rather than replacing it, so every upstream
+# rule plus the estate's own additions (currently the AC-prefixed Twilio
+# Account SID rule) still apply here, including ones added later. The path
+# is relative to the repo root, which is the cwd git hooks run in.
+[extend]
+path = "../security/gitleaks.toml"
+
+# The one thing this file adds.
+#
+# `evidence/` holds review transcripts. One of them records a test of whether
+# a semgrep rule's `bearer\s+` regex matched a `Bearer <token>` string; the
+# token was invented for that test and carries an `sk_live_` prefix, so
+# gitleaks' stripe-access-token rule fires on it and blocked the push.
+#
+# Allowlisting it by fingerprint is impossible: the hook scans the push diff
+# written to `mktemp` with `--no-git`, so the fingerprint contains a path
+# that changes every run.
+#
+# So the allowlist is by SHAPE, and the shape chosen cannot be a real key: a
+# Stripe live secret key is `sk_live_` followed by 24 or more characters, and
+# this matches only 1 to 23. A genuine key is still caught - verified by
+# positive control, both directions, before this file was committed.
+[allowlist]
+description = "sk_live_ strings too short to be a valid Stripe key (fabricated tokens in evidence/ review transcripts)"
+regexes = ['''\bsk_live_[A-Za-z0-9]{1,23}\b''']
