@@ -1,0 +1,6 @@
+# Exact claude-opus-5 wrapper review - range c7ffc5f..a2250f5 (bundle + lockfile shown as stub blobs)
+# staged:  31 files changed, 3987 insertions(+), 155 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in c7ffc5f..a2250f5, not stubbed, not in the diff
+# package-lock.json: unchanged in c7ffc5f..a2250f5, not stubbed, not in the diff
+# invoked 2026-09-05T20:39:56Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+

@@ -1,0 +1,25 @@
+# Exact claude-opus-5 wrapper review - range c7ffc5f..ee04185 (bundle + lockfile shown as stub blobs)
+# staged:  31 files changed, 3929 insertions(+), 151 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in c7ffc5f..ee04185, not stubbed, not in the diff
+# package-lock.json: unchanged in c7ffc5f..ee04185, not stubbed, not in the diff
+# invoked 2026-09-05T20:24:13Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+- HIGH — `logs/combined.log:1`, `logs/error.log:1`: unrelated `google-calendar-mcp` runtime logs are staged into a published package repo, and `logs/` is absent from `.gitignore`. Fix: `git rm --cached logs/combined.log logs/error.log && echo 'logs/' >> .gitignore`.
+
+- HIGH — `tests/test_container_backup_safety.py:159`: `os.chmod(tmp_path, 0o500)` does not block file creation in a directory on Windows, so `os.open(..., O_CREAT|O_EXCL)` succeeds, the backup is written, `main()` returns 0, and `assert _run(argv, book) != 0` fails on the `windows-latest` legs of the CI matrix (2 parametrized cases). Fix: `@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")`.
+
+- HIGH — `tests/test_container_backup_safety.py:95,115`: `Path.symlink_to` is used with no platform guard (4 parametrized cases), while the repo's own precedent for exactly this is `tests/test_containers.py:200` — `skipif(os.name == "nt", reason="POSIX symlink semantics; Windows needs Developer Mode")`. Fix: apply the same skipif to both symlink tests.
+
+- MEDIUM — `tests/test_documented_signatures.py:92-93`: the arity probe executes every helper-registered builtin at collection time with `IOPolicy(allow_net=True, allow_db=True, allow_private=True)`; it is safe today only because each such connector happens to call `_require_str(args[0])` before touching a driver, so a future 0-arg I/O builtin would make a live network/DB call during test collection. Fix: move `_arity` ahead of `_policy(ctx).check_db/check_net` in the connector bodies, then probe under a deny-all `IOPolicy()`.
+
+- MEDIUM — `scripts/sync_builtin_list.py:29`: a documentation-generation script now imports `tests.test_doc_examples`, hard-coupling it to the tests tree and to pytest; running it outside a dev checkout raises ImportError. Fix: publish `DOCUMENTED_MATCHES` from a non-test module (or a JSON fixture) that both the test and the script read.
+
+- LOW — `src/pqtools/builtins/_sources.py:400,413`: `seen` records the pre-`_build_url` URL for page one, so a `@odata.nextLink` pointing back at page one's *built* URL (with `RelativePath`/`Query` applied) is not detected as a cycle — only the 200-page ceiling stops it. Fix: seed `seen` with the `landed` URL returned by `_http_fetch_resolved` instead of the requested one.
+
+- LOW — `tests/test_support_matrix.py:111`: the docstring still says the match count is "read from the floor ... already asserts and ratchets", but `_documented_matches()` now reads the `DOCUMENTED_MATCHES` equality constant — stale prose inside the file whose stated purpose is preventing stale prose. Fix: update the docstring to say equality-asserted constant.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

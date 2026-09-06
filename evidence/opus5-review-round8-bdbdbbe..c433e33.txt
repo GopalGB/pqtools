@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range bdbdbbe..c433e33 (bundle + lockfile shown as stub blobs)
+# staged:  5 files changed, 73 insertions(+), 9 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in bdbdbbe..c433e33, not stubbed, not in the diff
+# package-lock.json: unchanged in bdbdbbe..c433e33, not stubbed, not in the diff
+# invoked 2026-09-06T06:29:32Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+MEDIUM — `src/pqtools/builtins/_sources.py:763` (helper) / `:859-864` (call site): the NUL `EvalError` fires eagerly inside the navigation-row comprehension, so one poisoned catalog name aborts `Sql.Database(...)` entirely and a healthy table can no longer be selected — the exact coupling `tests/test_sql_navigation.py:132` (`test_a_broken_unrelated_table_does_not_break_the_wanted_one`) exists to forbid. Fix: build the identifier (and run the NUL check) inside `_deferred_query`'s `fetch` closure so the failure stays scoped to the row that owns the bad name.
+
+LOW — `src/pqtools/builtins/_sources.py:763`: the NUL branch is the one line of new logic with no test, and `what` is used nowhere else in the helper. Fix: add a catalog row with `"a\x00b"` and assert the `EvalError` names the connector.
+
+LOW — `tests/test_sql_navigation.py:343`: covers the `"` breakout but not the `;` second-statement case the helper's own docstring claims to close. Fix: parametrize the same test with `'Wanted"; DROP TABLE x --'` and assert the SQL still reads as one identifier.
+
+LOW — `.gitignore:22`: unanchoring to `logs/` now hides every nested `logs/` (`evidence/logs/`, `ops/logs/`), not just the CWD one; nothing tracked matches today, so no loss yet. Fix: if a nested `logs/` is ever wanted, add an explicit `!evidence/logs/` negation rather than re-anchoring.
+
+LOW (state, not code) — the working tree is at HEAD while the index holds this change: `git diff` is the exact byte-inverse of `git diff --cached` for all five files. Running pytest on disk right now exercises the *unescaped* `SELECT`, and any `git checkout .` drops the fix. Fix: `git stash`-free reconciliation — commit the index, or `git checkout-index -a -f` before running the gate.
+
+The escaping itself is correct: `'"' + name.replace('"','""') + '"'` is the right SQL Server form under QUOTED_IDENTIFIER (ODBC default ON; OFF turns it into a loud syntax error, not an injection), the implicit three-part string concatenation stays one positional argument to `_deferred_query`, and the new test is a genuine positive control — the pre-fix SQL `"dbo"."Wanted"."Other"` fails its equality assertion.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

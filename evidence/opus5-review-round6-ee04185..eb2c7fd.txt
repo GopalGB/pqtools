@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range ee04185..eb2c7fd (bundle + lockfile shown as stub blobs)
+# staged:  12 files changed, 163 insertions(+), 32 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in ee04185..eb2c7fd, not stubbed, not in the diff
+# package-lock.json: unchanged in ee04185..eb2c7fd, not stubbed, not in the diff
+# invoked 2026-09-05T20:42:28Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Reviewed the **staged** tree (`git show :<path>`); the worktree in this gate holds the pre-change state, so the `AD`/`MM` statuses are wrapper artifacts, not findings.
+
+**HIGH — `src/pqtools/builtins/_sources.py:422`** — `seen.add(landed)` overloads a cycle-detection set that is also read as a page counter. `elif rows or len(seen) > 1:` (line 443) now misfires on **page one served via a redirect**: `OData.Feed("http://svc/start")` where `/start` 302s to `/v2/Products(1)` returning a single entity (`{"Id":99}`, no `value`) previously returned that record via the `else: return document` branch; it now raises `EvalError: ... was reached as a next page but is not a collection response` — wrong, and the message names a hop that never happened. Redirect-on-page-one is an exercised path (`test_a_relative_next_link_resolves_against_the_landed_url`, `tests/test_odata_pagination.py:470`), and no test covers the page-one single-entity branch at all. Fix: add `pages = 0`, increment once per loop iteration, and test `elif rows or pages > 1:`; leave `seen` for cycle detection only.
+
+**MEDIUM — `src/pqtools/builtins/_sources.py:758,876,1063,1081`** — the arity-before-policy reorder is enforced by no test for the four literal-arity connectors; the closeout's own control proved reverting `Sql.Database` stays green. Only `_generic_database` is in the runtime probe's population. Fix: add a direct test per connector asserting a wrong-arity call under `IOPolicy()` raises the arity `UnsupportedError`, not `IOBlockedError`.
+
+**LOW — `src/pqtools/builtins/_sources.py:433`** — same root cause: `across {len(seen)} page(s)` in the byte-cap message counts two entries per redirected page, so the refusal overstates the page count. Fixed by the same `pages` counter.
+
+**LOW — `tests/test_documented_signatures.py:84-86`** — the new comment claims a policy-first regression makes "the comparison below fail for that name". It does not: `_probe_arity` returns `None`, the name drops out of `PROBED`/`_COMPARABLE`, and only `test_no_documented_builtin_escapes_both_arity_checks` catches it. Name that test in the comment.
+
+**LOW — `.gitignore:17`** — `logs/` is unanchored and ignores a `logs/` directory at any depth; the stated intent is CWD-root runtime logs. Use `/logs/`.
+
+**LOW — `scripts/sync_builtin_list.py:33` / `tests/test_doc_examples.py:295`** — two independently-written paths to the same fixture (`ROOT/"tests"/"fixtures"` vs `CORPUS.parent`), each with a bare `json.loads(...)["reproducing_exactly"]`; a rename or key typo surfaces as `FileNotFoundError`/`KeyError` at import time in a docs generator. Have the script import the constant from one loader, or add the "run scripts/harvest_doc_examples.py" hint to a wrapped error.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

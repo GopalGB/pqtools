@@ -1,0 +1,19 @@
+# Exact claude-opus-5 wrapper review - range eb2c7fd..bdbdbbe (bundle + lockfile shown as stub blobs)
+# staged:  8 files changed, 181 insertions(+), 9 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in eb2c7fd..bdbdbbe, not stubbed, not in the diff
+# package-lock.json: unchanged in eb2c7fd..bdbdbbe, not stubbed, not in the diff
+# invoked 2026-09-06T04:49:00Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Checked against the staged blobs (`git show :`), not the worktree, since several paths are `MM`/`AD`.
+
+Verified as correct, so not reported: the `pages` counter fully decouples page counting from cycle detection (`seen` has no other reader — grep confirms); `_arity` precedes `check_db` at all six `check_db` call sites (`_sources.py:759, 877, 919, 1064, 1082`), and the new test's six names cover every one of them; `IOBlockedError(MQueryError)` is genuinely not an `UnsupportedError`, so the test's stated failure mode holds; the regression test would have been red pre-fix (`seen` reaches 2 on a page-one redirect); cross-origin credential stripping on both the 302 path (`_RedirectHandler.redirect_request`) and the next-link path is intact.
+
+- LOW — `src/pqtools/builtins/_sources.py:437`: the byte-cap page count changed from `len(seen)` to `pages`, but nothing distinguishes the two. The only cap test, `tests/test_odata_pagination.py:355`, uses no redirect (so both spellings give the same number) and matches on `"bytes across"` alone. By this repo's own positive-control bar, that fix is unverified. Fix: add a page-one redirect to that test and assert the literal `across N page(s)`.
+- LOW — `tests/test_doc_examples.py:297`: still the bare `json.loads(...)["reproducing_exactly"]` that the diff wrapped at `scripts/sync_builtin_list.py:33-44`. The closeout records the reader hardened, while the reader that runs on every suite is untouched and fails at import with a raw `KeyError`. Fix: one shared helper both import, or mirror the wrapped read here.
+- LOW — `.gitignore:20`: anchoring to `/logs/` stops ignoring `logs/` written from any subdirectory, which is the incident class the comment above it describes; no `logs` directory exists anywhere in the tree, so the unanchored form was costing nothing. Fix: keep `logs/` and anchor only if a real `logs` package ever appears.
+
+No correctness or security defect found in the code changes.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
