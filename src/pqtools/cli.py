@@ -478,6 +478,7 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
     rather than losing the names the good files already found.
     """
     entries: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
     worst = 0
     for path in files:
         try:
@@ -502,7 +503,13 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
             # with nothing in it saying a file had failed - every other batch
             # verb appends this record, and a consumer reading only stdout
             # would have believed the list was the whole answer.
-            entries.append(
+            # Into a SEPARATE list. The first cut appended this straight
+            # into `entries`, which the plain-text branch below formats with
+            # `item["name"]` - so every read failure under a non-JSON
+            # `pq list` died with a bare KeyError, and the test written with
+            # it covered only the --json path that already worked. A record
+            # with no "name" does not belong in a list of names.
+            failures.append(
                 {"file": str(path), "error": {"code": code, "message": str(error)}}
             )
             continue
@@ -523,7 +530,7 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
                     }
                 )
     if args.json:
-        _print(entries, True)
+        _print([*entries, *failures], True)
     elif not entries:
         print("no queries found", file=sys.stderr)
     else:

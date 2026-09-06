@@ -1516,3 +1516,82 @@ control, since there is no defect to reintroduce that a test could see.
 
 Not verified, unchanged across all seven passes: live database, Fabric,
 Windows PQTest, native Excel or Power BI refresh.
+
+## Round 12 - the review of the round-11 fixes: FIX-FIRST, five findings
+
+`evidence/opus5-wrapper-round12-76f36b1..3577791.txt`. All five reproduced
+before anything changed. **Two of the five were defects the round-11 fixes
+had just introduced**, which is the reason this loop exists.
+
+### HIGH - the fix for one output path broke the other
+
+Round 11 correctly made `pq list --json` carry read failures into the JSON.
+It did so by appending `{"file":…, "error":…}` to the same list the
+**plain-text** branch formats with `item["name"]`. So every non-JSON
+`pq list` with an unreadable file died on `KeyError: 'name'` - exit 1, bare
+traceback, where it had previously printed a stderr line and exited 2.
+
+The test written with that fix covered only the `--json` path: the one that
+already worked. That is the whole lesson. A fix to one branch of a
+conditional needs a test on the *other* branch, because the other branch is
+what the fix can break. Failures now go to a separate list, merged only for
+JSON; the text branch still prints the names it did find.
+
+### MEDIUM - the tz fix assumed a stricter classification than the code makes
+
+`_classify_column` admits a `datetimezone` column when the values share a
+`utcoffset()`, **not** when they share a `tzinfo`. So `timezone.utc` and
+`ZoneInfo("Europe/London")` in January are legitimately one column. Round 11
+read the offset off the first row's `tzinfo` and handed pandas a plain
+`Series`; pandas infers `object` for mixed tzinfo, and `.dt` then raised
+`AttributeError` - a bare traceback where the module documents a refusal,
+the same defect class round 11 had just fixed elsewhere. `to_arrow` on the
+identical rows succeeded, because it had always derived the offset from
+`utcoffset()`. The pandas path now mirrors it.
+
+### MEDIUM - "verified" covered only half the declared range, and the answer was to verify, not to narrow
+
+Round 11 addressed the pandas half of a version claim and left `pyarrow>=14`
+untouched, and no run against pandas 2 existed anywhere in the evidence -
+both gate logs were the same 3.0.5 / 25.0.1 environment.
+
+The tempting fix was to raise both floors to the versions that happened to be
+installed. That narrows the package to protect a claim rather than checking
+it. Instead: a clean virtualenv at the declared floor - pandas 2.3.3, pyarrow
+14.0.2, and `numpy<2`, which pyarrow 14 requires because it predates the
+NumPy 2 ABI - ran the 63 export and end-to-end tests. **All pass, and the
+dtype table is byte-identical to the one the current environment produces.**
+The explicit dtype coercion added in round 11 is exactly what makes that
+true. Recorded in
+`evidence/export-dtypes-across-the-declared-range-2026-09-06.txt`, and both
+`pyproject.toml` and `SUPPORT-MATRIX.md` now say the range is exercised at
+both ends rather than at one.
+
+### LOW x2
+
+- `path.is_dir() or containers.is_container(path)` - the first clause was
+  dead, since `is_container` already returns True for a directory.
+- **`core._snapshot` reported every failed open as a write refusal.** It is
+  the read path as well as the write path, so `pq check missing.pq` said
+  `M_SAFE_WRITE_REFUSED: writes require a regular, non-symlink, single-link
+  file` - nothing about which was true of what the user did. It had been
+  merely confusing on stderr; round 11 promoted it into structured output
+  that consumers parse. A failed `os.open` now propagates its own `OSError`,
+  which the CLI already renders as `M_IO_ERROR` with the OS's own reason. The
+  genuine write-safety refusals - symlink, non-regular, more than one hard
+  link - keep `SafeWriteError`, because those are about writing.
+
+### Controls
+
+Three behavioural fixes, three controls, each red with the defect and green
+after restoring: the `list` text path, the timezone offset derivation, and
+the read-side error code.
+
+## Verification on the final tree, eighth pass (the round-12 fixes)
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 4107 passed in 680.63s (0:11:20), 953 worked examples exact; `evidence/release-gate-2026-09-07-round12-fixes.log` |
+| Export suite at the DECLARED FLOOR | pandas 2.3.3 / pyarrow 14.0.2 / numpy<2 in a clean venv: **63 passed**, dtype table byte-identical to the 3.0.5 / 25.0.1 run; `evidence/export-dtypes-across-the-declared-range-2026-09-06.txt` |
+| Positive controls | `pq list` text path · timezone offset derivation · read-side error code - each red with the defect, green after restoring |
+

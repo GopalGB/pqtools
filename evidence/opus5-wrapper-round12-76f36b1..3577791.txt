@@ -1,0 +1,21 @@
+# Exact claude-opus-5 wrapper review - range 76f36b1..3577791 (bundle + lockfile shown as stub blobs)
+# staged:  12 files changed, 612 insertions(+), 133 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 76f36b1..3577791, not stubbed, not in the diff
+# package-lock.json: unchanged in 76f36b1..3577791, not stubbed, not in the diff
+# invoked 2026-09-06T18:02:53Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+**HIGH — src/pqtools/cli.py:505** `_run_list` appends the new `{"file":…, "error":…}` record unconditionally, but the plain-text branch at cli.py:530 does `max(len(item["name"]) for item in entries)`. Any read failure in a non-`--json` `pq list` now dies with a bare `KeyError: 'name'`. Reproduced against the staged tree: `main(["list", "/tmp/missing.pq"])` → traceback (was: stderr line + exit 2), and `main(["list", good, missing])` → same, after the good file's names were already collected. `KeyError` is not in `main`'s `except (OSError, UnicodeDecodeError, MQueryError)`, so it escapes as exit 1 with a traceback. The new test covers only the `--json` path, which is the one that already worked. Fix: append the record only when `args.json` (or filter `if "name" in item` in the text branch and keep printing the names it did find).
+
+**MEDIUM — src/pqtools/export.py:300** `series.dt.tz_convert(offset)` assumes pandas inferred a datetimelike dtype, but `_classify_column` (export.py:230) admits a datetimezone column on equal `utcoffset()`, not equal `tzinfo`. Rows mixing `timezone.utc` with `ZoneInfo("Europe/London")` in January pass classification, pandas infers `object`, and `to_pandas` raises `AttributeError: Can only use .dt accessor with datetimelike values` - reproduced on pandas 3.0.5, while `to_arrow` on the identical rows succeeds because it derives the offset from `utcoffset()`. Bare traceback where the module documents `ExportRefusal`, i.e. the same defect class as the round-11 MEDIUM this diff was fixing. The `f"datetime64[us, {offset}]"` interpolation of `str(tzinfo)` is only valid by the same accident. Fix: mirror `_arrow_array` - `offset = datetime.timezone(next(v.utcoffset() for v in values if v is not None))`, then `pd.to_datetime(values, utc=True).dt.tz_convert(offset).astype(...)`.
+
+**MEDIUM — pyproject.toml:64,58** the round-11 finding was that extras permit versions the type map was never verified on; only the pandas half was addressed. `pyarrow>=14` is untouched, and `_arrow_array`'s comments still say the timestamp/tz behaviour was verified against 25.0.1 only. Symmetrically, the new `astype("datetime64[us]")` path is asserted to fix pandas 2.x but no run against pandas 2 exists in the evidence - both gate logs are the 3.0.5/25.0.1 environment. Fix: raise both floors to the verified versions, or add one gate lane pinned to the floor.
+
+**LOW — src/pqtools/export.py:424** `if path.is_dir() or containers.is_container(path)` - the first clause is dead, `is_container` (containers.py:52) already returns True for any directory. Fix: drop `path.is_dir() or`.
+
+**LOW — src/pqtools/cli.py:505** the message this now writes into `list --json`'s contract is `M_SAFE_WRITE_REFUSED: writes require a regular, non-symlink, single-link file` for a missing file under a read-only verb (reproduced). Pre-existing wording from `_snapshot`, but the diff promotes it from stderr prose into structured output consumers will parse. Fix: map the not-found/not-regular case to a read-side code before emitting the record.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

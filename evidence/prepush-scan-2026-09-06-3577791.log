@@ -1,0 +1,50 @@
+╔══════════════════════════════════════════════════════════════════╗
+║       MAX HQ — Pre-Push Sensitive-Info Gate                      ║
+╚══════════════════════════════════════════════════════════════════╝
+Remote: origin  URL: https://github.com/GopalGB/pqtools.git
+Commits going out: 4   Files touched: 25   Tags: 0
+
+── COMMITS ──────────────────────────────────────────────────────
+  251b4a1  perf(datetime): cache _compile_format; the round-10 review's seven, all taken  Gopal Bagaswar, 77 minutes ago
+  3577791  fix(cli,export): the eight findings from the round-11 review, each reproduced first  Gopal Bagaswar, 20 seconds ago
+  76f36b1  feat(cli): show, explain, diff, batch globs, --set-param, --to parquet  Gopal Bagaswar, 30 minutes ago
+  df192c6  feat(export): to_pandas/to_arrow/to_parquet, and a thin handle over a file  Gopal Bagaswar, 30 minutes ago
+
+── FILES ────────────────────────────────────────────────────────
+  .planning/AUDIT-2026-09-05-CLOSEOUT.md
+  .planning/HANDOFF-2026-09-06.md
+  .planning/PRD-pandas-for-powerquery-2026-09-06.md
+  evidence/opus5-wrapper-round10-d3bf107..6b764a7.txt
+  evidence/opus5-wrapper-round11-251b4a1..76f36b1.txt
+  evidence/prepush-scan-2026-09-06-6b764a7.log
+  evidence/release-gate-2026-09-06-round11-review-fixes.log
+  evidence/release-gate-2026-09-06-round11.log
+  llms.txt
+  pyproject.toml
+  README.md
+  src/pqtools/__init__.py
+  src/pqtools/builtins/_datetime.py
+  src/pqtools/cli.py
+  src/pqtools/containers.py
+  src/pqtools/core.py
+  src/pqtools/export.py
+  SUPPORT-MATRIX.md
+  tests/fixtures/misc/scalar.pq
+  tests/fixtures/realworld/01_clean_and_type/scalar.pq
+  tests/test_cli_verbs.py
+  tests/test_core.py
+  tests/test_end_to_end.py
+  tests/test_export.py
+  tests/test_numeric_from.py
+
+── SECRET SCAN ──────────────────────────────────────────────────
+  gitleaks: /opt/homebrew/bin/gitleaks
+  ruleset: MAX HQ (/Users/gopalmacbook/Desktop/Max HQ/pqtools/security/gitleaks.toml)
+  gitleaks: clean
+  in-house scan: clean
+
+✅ Scan clean. 4 commit(s), 25 file(s) ready to push to origin.
+
+⚠️  No controlling terminal, so the confirmation cannot be read.
+   Re-run the same command from Terminal.app or iTerm and answer y.
+   (GIT_PUSH_BYPASS skips the secret scan and is not the remedy for this.)

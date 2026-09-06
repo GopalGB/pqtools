@@ -291,13 +291,25 @@ def _pandas_column(pd: Any, name: str, kind: str, values: list[Any]) -> Any:
     # explicitly so both agree. A tz-aware column keeps its offset;
     # `_classify_column` has already refused a column that mixes offsets,
     # which is the case a single dtype cannot represent.
-    series = pd.Series(values)
     if kind == "duration":
-        return series.astype("timedelta64[us]")
+        return pd.Series(values).astype("timedelta64[us]")
     if kind == "datetime":
-        return series.astype("datetime64[us]")
-    offset = values[next(i for i, v in enumerate(values) if v is not None)].tzinfo
-    return series.dt.tz_convert(offset).astype(f"datetime64[us, {offset}]")
+        return pd.Series(values).astype("datetime64[us]")
+    # datetimezone. `_classify_column` admits this column on equal
+    # `utcoffset()`, NOT equal `tzinfo`, so rows may legitimately mix
+    # `timezone.utc` with `ZoneInfo("Europe/London")` in January. Reading the
+    # offset off the first row's `tzinfo` and handing pandas a plain Series
+    # therefore broke on exactly that column: pandas infers `object` for
+    # mixed tzinfo and `.dt` raises "Can only use .dt accessor with
+    # datetimelike values" - a bare traceback where this module promises a
+    # refusal, while `to_arrow` on the same rows succeeded because it derives
+    # the offset from `utcoffset()`. Mirror Arrow: normalise through UTC,
+    # then convert to the one offset the column shares.
+    offset = datetime.timezone(
+        next(value.utcoffset() for value in values if value is not None)
+    )
+    converted = pd.to_datetime(values, utc=True).tz_convert(offset)
+    return pd.Series(converted).astype(f"datetime64[us, {offset}]")
 
 
 def _pandas_number_column(pd: Any, name: str, values: list[Any]) -> Any:
@@ -421,7 +433,7 @@ def _discover(path: Path) -> tuple[dict[str, str], dict[str, str]]:
     """
     members: dict[str, str] = {}
     anonymous: dict[str, str] = {}
-    if path.is_dir() or containers.is_container(path):
+    if containers.is_container(path):
         for section in read_sections(path):
             found = split_shared(section.source, section.container)
             if found:

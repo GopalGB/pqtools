@@ -1,0 +1,33 @@
+# Export type map at BOTH ends of the declared extras range.
+# pyproject: pandas>=2, pyarrow>=14. Run 2026-09-06.
+# The round-12 review asked whether the floor was ever exercised. It is now.
+
+## Floor: a clean venv with pandas>=2,<3 and pyarrow>=14,<15 (numpy<2, which
+## pyarrow 14 requires - it predates the NumPy 2 ABI).
+# pandas 2.3.3 | pyarrow 14.0.2
+logical        pandas=boolean                arrow=bool
+number int     pandas=Int64                  arrow=int64
+number float   pandas=float64                arrow=double
+text           pandas=object                 arrow=string
+binary         pandas=object                 arrow=binary
+date           pandas=object                 arrow=date32[day]
+time           pandas=object                 arrow=time64[us]
+datetime       pandas=datetime64[us]         arrow=timestamp[us]
+datetimezone   pandas=datetime64[us, UTC]    arrow=timestamp[us, tz=+00:00]
+duration       pandas=timedelta64[us]        arrow=duration[us]
+
+## Current dev environment
+# pandas 3.0.5 | pyarrow 25.0.1
+logical        pandas=boolean                arrow=bool
+number int     pandas=Int64                  arrow=int64
+number float   pandas=float64                arrow=double
+text           pandas=object                 arrow=string
+binary         pandas=object                 arrow=binary
+date           pandas=object                 arrow=date32[day]
+time           pandas=object                 arrow=time64[us]
+datetime       pandas=datetime64[us]         arrow=timestamp[us]
+datetimezone   pandas=datetime64[us, UTC]    arrow=timestamp[us, tz=+00:00]
+duration       pandas=timedelta64[us]        arrow=duration[us]
+
+## diff of the two tables: EMPTY. tests/test_export.py + tests/test_end_to_end.py:
+## 63 passed on the floor venv.

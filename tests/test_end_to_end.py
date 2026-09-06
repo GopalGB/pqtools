@@ -388,3 +388,69 @@ def test_the_handle_can_run_a_query_that_needs_its_data_bound() -> None:
     )
     assert len(rows) == 5
     assert rows[0]["OrderID"] == 1005
+
+
+# --------------------------------------------------------------------------
+# Regressions from the round-12 review - the review OF the round-11 fixes.
+# The first two are defects those fixes introduced.
+# --------------------------------------------------------------------------
+
+
+def test_plain_text_list_survives_a_read_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-12 HIGH, and a defect the round-11 fix introduced.
+
+    Carrying read failures into `pq list --json` was right; appending them to
+    the same list the PLAIN-TEXT branch formats with `item["name"]` was not.
+    Every non-JSON `pq list` with an unreadable file died on `KeyError:
+    'name'`. The test written alongside that fix covered only the `--json`
+    path - the one that already worked - which is how it shipped.
+    """
+    from pqtools.cli import main
+
+    good = tmp_path / "s.pq"
+    good.write_text("section S;\nshared Q = 1 + 1;\n", encoding="utf-8")
+    assert main(["list", str(good), str(tmp_path / "missing.pq")]) == 2
+    captured = capsys.readouterr()
+    assert "Q" in captured.out, "the names it did find must still print"
+    assert "missing.pq" in captured.err
+
+
+def test_a_column_mixing_tzinfo_objects_at_one_offset_exports(tmp_path: Path) -> None:
+    """`_classify_column` admits a datetimezone column on equal `utcoffset()`,
+    not equal `tzinfo`, so UTC and Europe/London in January are one column.
+    Reading the offset off the first row's `tzinfo` made pandas infer
+    `object`, and `.dt` then raised where the module promises a refusal -
+    while `to_arrow` on the same rows succeeded, because it had always
+    derived the offset from `utcoffset()`.
+    """
+    pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    from zoneinfo import ZoneInfo
+
+    from pqtools.export import to_arrow, to_pandas
+
+    rows = [
+        {"a": dt.datetime(2024, 1, 1, tzinfo=dt.UTC)},
+        {"a": dt.datetime(2024, 1, 2, tzinfo=ZoneInfo("Europe/London"))},
+    ]
+    assert str(to_pandas(rows)["a"].dtype) == "datetime64[us, UTC]"
+    assert "tz=+00:00" in str(to_arrow(rows).schema.field("a").type)
+
+
+def test_a_missing_file_under_a_read_verb_is_an_io_error_not_a_write_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`core._snapshot` is the READ path as well as the write path, and it
+    reported every failed open as `M_SAFE_WRITE_REFUSED: writes require a
+    regular, non-symlink, single-link file`. For `pq check missing.pq` that
+    is not true of anything the user did. The genuine write-safety refusals
+    (symlink, non-regular, multiple hard links) keep that code.
+    """
+    from pqtools.cli import main
+
+    assert main(["check", str(tmp_path / "missing.pq")]) == 2
+    err = capsys.readouterr().err
+    assert "M_IO_ERROR" in err, err
+    assert "writes require" not in err, err

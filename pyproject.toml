@@ -60,6 +60,12 @@ fabric = ["pyarrow>=14"]
 # CLI/linter half of this package never drags in a data-science stack;
 # `arrow` covers both to_arrow() and to_parquet() since parquet support
 # ships inside the pyarrow wheel itself, no separate package needed.
+# BOTH ENDS of these ranges are exercised, not just the version that happens
+# to be installed: the type map produces byte-identical dtypes on pandas
+# 2.3.3 / pyarrow 14.0.2 and on pandas 3.0.5 / pyarrow 25.0.1, and the 63
+# export tests pass on both. See
+# evidence/export-dtypes-across-the-declared-range-2026-09-06.txt. Raising
+# either floor needs a reason; widening one needs a fresh run.
 pandas = ["pandas>=2"]
 arrow = ["pyarrow>=14"]
 # Connector drivers, kept optional the way pandas keeps psycopg and

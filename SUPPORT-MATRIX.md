@@ -188,6 +188,14 @@ The nullable `Int64` matters: pandas' default integer column cannot hold a
 null, so a naive export turns `1, null, 3` into `1.0, NaN, 3.0` and silently
 changes the type of every row to get one null in.
 
+This table is the same at both ends of the declared dependency range -
+`pandas>=2`, `pyarrow>=14` - and not only on whichever version happens to be
+installed. Verified by running the export suite against pandas 2.3.3 /
+pyarrow 14.0.2 as well as 3.0.5 / 25.0.1; the two dtype tables are identical
+and all 63 tests pass on each. The three native dtypes are coerced
+explicitly rather than inferred, which is what makes that true: pandas 2
+infers nanosecond resolution where pandas 3 infers microsecond.
+
 **Refused, by name, rather than exported:** an unread lazy table (select it
 first), a record, a nested list or table (expand it first), a `type` value, a
 function value, ragged rows, a column mixing two M types, an integer past the

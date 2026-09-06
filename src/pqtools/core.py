@@ -702,10 +702,18 @@ def _snapshot(path: Path) -> FileSnapshot:
                 "writes require a regular, non-symlink, single-link file"
             )
         descriptor = os.open(path, flags)
-    except OSError as error:
-        raise SafeWriteError(
-            "writes require a regular, non-symlink, single-link file"
-        ) from error
+    except OSError:
+        # Deliberately NOT re-wrapped as SafeWriteError. This function is the
+        # read path too (`cli._source`, `export`, `containers`), and a file
+        # that will not open is missing or unreadable - not a file that is
+        # unsafe to WRITE. Reporting `pq check missing.pq` as
+        # "M_SAFE_WRITE_REFUSED: writes require a regular, non-symlink,
+        # single-link file" told the reader nothing true. The OSError carries
+        # the OS's own reason, and every caller already catches it; the CLI
+        # renders it as M_IO_ERROR. The genuine write-safety refusals - a
+        # symlink, a non-regular file, more than one hard link - stay
+        # SafeWriteError below, because those are exactly about writing.
+        raise
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
