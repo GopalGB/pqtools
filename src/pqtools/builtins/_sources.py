@@ -41,6 +41,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -723,7 +724,7 @@ def _sql_server_options(
 def _deferred_query(
     driver: Any,
     connection_string: str,
-    sql: str,
+    sql: Callable[[], str],
     what: str,
     connect_timeout: float | None = None,
     command_timeout: float | None = None,
@@ -738,11 +739,17 @@ def _deferred_query(
     """
 
     def fetch() -> list[dict[str, Any]]:
+        # The statement is BUILT here, not at navigation time. Building it
+        # eagerly meant one unusable catalog name (a NUL) refused the whole
+        # `Sql.Database(...)` call, so no table could be selected - the same
+        # all-or-nothing coupling the deferral exists to prevent for a table
+        # that merely fails to read.
+        statement = sql()
         connection = _odbc_connect(driver, connection_string, connect_timeout)
         try:
             if command_timeout is not None:
                 connection.timeout = _timeout_int(command_timeout)
-            return _run_query(connection, sql)
+            return _run_query(connection, statement)
         finally:
             connection.close()
 
@@ -763,6 +770,24 @@ def _sql_identifier(name: str, what: str) -> str:
     if "\x00" in name:
         raise EvalError(f"{what}: catalog name contains a NUL byte: {name!r}")
     return '"' + name.replace('"', '""') + '"'
+
+
+def _navigation_sql(schema: str, table: str) -> Callable[[], str]:
+    """One navigation row's SELECT, built when that row is read.
+
+    Bound per row and deferred, so a name this cannot express refuses only
+    the row that owns it. Built eagerly in the comprehension, one such name
+    refused `Sql.Database(...)` itself and no table could be selected.
+    """
+
+    def build() -> str:
+        return (
+            "SELECT * FROM "
+            f"{_sql_identifier(schema, 'Sql.Database')}."
+            f"{_sql_identifier(table, 'Sql.Database')}"
+        )
+
+    return build
 
 
 def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
@@ -859,9 +884,7 @@ def _sql_database(args: list[Any], ctx: _Ctx) -> Any:
             "Data": _deferred_query(
                 pyodbc,
                 str(connection_string),
-                "SELECT * FROM "
-                f"{_sql_identifier(row['TABLE_SCHEMA'], 'Sql.Database')}."
-                f"{_sql_identifier(row['TABLE_NAME'], 'Sql.Database')}",
+                _navigation_sql(row["TABLE_SCHEMA"], row["TABLE_NAME"]),
                 f"Sql.Database: {row['TABLE_SCHEMA']}.{row['TABLE_NAME']}",
                 connect_timeout,
                 command_timeout,

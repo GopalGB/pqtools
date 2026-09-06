@@ -365,3 +365,54 @@ def test_a_table_name_containing_a_quote_cannot_break_out_of_its_identifier(
     [sql] = _table_reads(odbc)
     # the quote is doubled INSIDE the identifier, so the name stays one name
     assert sql == 'SELECT * FROM "dbo"."Wanted"".""Other"'
+
+
+def test_a_nul_in_one_catalog_name_does_not_break_a_healthy_table(
+    odbc: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The NUL refusal must be scoped to the row that owns the bad name.
+
+    Built eagerly in the navigation comprehension, one poisoned catalog name
+    aborted `Sql.Database(...)` itself, so no table could be selected - the
+    same all-or-nothing coupling
+    `test_a_broken_unrelated_table_does_not_break_the_wanted_one` forbids for
+    an unreadable table.
+    """
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "CATALOG",
+        [("dbo", "Wanted", "BASE TABLE"), ("dbo", "bad\x00name", "BASE TABLE")],
+    )
+    assert evaluate(_select("Wanted"), io=ALLOW_DB) == [{"Id": 1, "Note": "keep"}]
+
+
+def test_selecting_the_nul_named_table_refuses_by_name(
+    odbc: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sys.modules[__name__], "CATALOG", [("dbo", "bad\x00name", "BASE TABLE")]
+    )
+    with pytest.raises(EvalError, match="Sql.Database.*NUL"):
+        evaluate(_select("bad\x00name"), io=ALLOW_DB)
+
+
+def test_a_semicolon_in_a_table_name_stays_inside_one_identifier(
+    odbc: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `;` case the helper's docstring claims to close.
+
+    A second statement smuggled through a catalog name would run under the
+    rights of the account pqtools connects with.
+    """
+    hostile = 'Wanted"; SELECT 1 --'
+    monkeypatch.setattr(
+        sys.modules[__name__], "CATALOG", [("dbo", hostile, "BASE TABLE")]
+    )
+    in_m = hostile.replace('"', '""')
+    evaluate(
+        'let S = Sql.Database("srv", "db"), '
+        f'T = S{{[Schema="dbo", Item="{in_m}"]}}[Data] in T',
+        io=ALLOW_DB,
+    )
+    [sql] = _table_reads(odbc)
+    assert sql == 'SELECT * FROM "dbo"."Wanted""; SELECT 1 --"'
