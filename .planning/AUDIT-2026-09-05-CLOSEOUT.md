@@ -579,6 +579,91 @@ sweep was amended to the verified tree with the message above. Nothing was
 pushed at any point.
 
 
+## Round 7 - the round-6 fixes reviewed, and the static security scan
+
+**Review of `eb2c7fd..bdbdbbe`** (the round-6 fixes, closeout, evidence),
+exact `claude-opus-5` wrapper: **SHIP**. The reviewer independently confirmed the round-6 claims that
+mattered: `seen` has no reader but the cycle check, `_arity` precedes
+`check_db` at all six sites and the new test names all six, and the
+credential stripping on both the 302 and next-link paths is intact. Three
+LOWs, all taken:
+
+| Finding | Disposition |
+|---|---|
+| the byte-cap message's `pages` was unverified - the only cap test used no redirect, so `len(seen)` and `pages` agreed | FIXED - the cap test now redirects on page one and asserts the literal `across 1 page(s)`; red under `len(seen)` |
+| `test_doc_examples.py` still read the matches fixture bare, while the closeout said the reader was hardened | FIXED - the same wrapped read, naming the file and who maintains it |
+| `/logs/` anchored stops ignoring a `logs/` written from a subdirectory, which is the incident class | TAKEN - round 6 said anchor, round 7 says not; on the merits (the tool writes relative to its own cwd; no `logs` package exists) it is unanchored again, with both arguments in the comment |
+
+**Static security scan.** `semgrep` is not installed here and the first
+pass said so. What is installed is ruff, whose `S` ruleset is the
+flake8-bandit port, so it ran offline over `src/`: 45 hits.
+
+| Rule | Hits | Disposition |
+|---|---|---|
+| S105 hardcoded password | 19 | noise - every one is a variable named `token` in the date-format parser (`"yyyy"`, `"MM"`, ...) |
+| S101 assert | 18 | noise - every one narrows a value that the preceding lines guarantee (`is not None`, `isinstance`); none guards a security property, so `python -O` stripping them changes an error type, not an outcome |
+| S311 non-cryptographic random | 4 | noise - `Number.Random` / `List.Random` are not cryptographic in M either |
+| S603 subprocess | 1 | closed by inspection - argument list, no shell, binary resolved with a guard that refuses a `node` in the CWD, bounded by a deadline |
+| S310 urlopen scheme | 1 | closed by inspection - `IOPolicy.check_net` refuses anything but `http`/`https` with a host, and the redirect handler re-checks every hop |
+| S608 SQL built from strings | 2 | one false positive (`evaluate.py:997` has no SQL); **one real defect, fixed - below** |
+
+### The real one: catalog names were quoted, not escaped
+
+`Sql.Database` navigation built `SELECT * FROM "schema"."table"` from
+`INFORMATION_SCHEMA` names by wrapping them in quotes and nothing else -
+**present since before the audit baseline** (`c7ffc5f`, line 519). A name
+carrying a `"` closes the identifier early, so `Wanted"."Other` reads a
+different object than the query named, silently, and a name carrying `;`
+runs a second statement - under the rights of the account pqtools connects
+with, which need not be the account that was allowed to name the table.
+Same family as finding 5's ODBC connection-string escaping.
+
+Reproduced red with the fake driver recording the executed SQL:
+`SELECT * FROM "dbo"."Wanted"."Other"`. Fixed with `_sql_identifier`, which
+doubles the quote (SQL standard; what SQL Server reads under
+`QUOTED_IDENTIFIER`, which ODBC turns on) and refuses a NUL. Green:
+`SELECT * FROM "dbo"."Wanted"".""Other"`. The S608 hit on that line
+remains, correctly - the rule flags construction, and construction with
+escaped identifiers is what this is.
+
+Targeted modules after the fix: 809 passed (SQL navigation/options/credentials, connector arity, OData paging, documented signatures, catalog, support matrix, llms.txt, the worked-example equality).
+
+## Round 8 - the review of the round-7 fixes
+
+`eb2c7fd..bdbdbbe` had already returned **SHIP**; this is the review of the
+security-scan fix on top of it, `bdbdbbe..c433e33`. **Verdict: SHIP**, with
+one MEDIUM and three LOWs. The MEDIUM was worth taking on its own merits.
+
+The reviewer confirmed the escaping itself: `'"' + name.replace('"','""') +
+'"'` is the correct SQL Server form under `QUOTED_IDENTIFIER` (ODBC turns it
+on; with it off the result is a loud syntax error, not an injection), the
+implicit string concatenation stays one positional argument, and the new
+test is a genuine positive control.
+
+| Severity | Finding | Status |
+|---|---|---|
+| MEDIUM | the NUL guard ran inside the navigation comprehension, so one unusable catalog name refused `Sql.Database(...)` itself and no table could be selected | FIXED - **mine, from the round-7 fix**; `_navigation_sql` defers the build per row |
+| LOW | the NUL branch had no test | FIXED - selecting the NUL-named table refuses with the connector named |
+| LOW | only the `"` breakout was covered, not the `;` second statement the docstring claims to close | FIXED - both are now parametrised cases |
+| LOW | unanchored `logs/` also hides a nested `evidence/logs/` | NOT TAKEN - nothing wants one today; a negation can be added if that changes |
+| LOW | working tree diverges from the index, so pytest on disk runs the unescaped SELECT | NOT A FINDING - it describes the gate wrapper's own worktree, which read-trees HEAD over a BASE checkout; this repo was clean throughout, verified before and after |
+
+### The MEDIUM is the audit's own lesson, applied to my own fix
+
+Finding 3 of the original audit was "SQL navigation eagerly reads every
+table": selecting one table paid for all of them, and failed if any of them
+failed. `DeferredTable` fixed that. Then my round-7 escaping put a *different*
+eager failure back in the same comprehension - not a read this time, a
+refusal, but with the identical all-or-nothing shape. The test that already
+existed for the read case (`test_a_broken_unrelated_table_does_not_break_the
+_wanted_one`) is exactly the property I broke, and it did not catch it
+because it fakes an unreadable table, not an unnameable one.
+
+Building the statement inside `_deferred_query`'s fetch closure is what the
+row's `Data` being lazy always meant. Control: building it eagerly again
+turns the new scoping test red and nothing else.
+
+
 ## Scope limits - what was NOT verified
 
 Local completion is reported separately from live verification on purpose.
@@ -687,3 +772,21 @@ Not verified, unchanged from the first pass: live database, Fabric, Windows
 PQTest, native Excel or Power BI refresh, `semgrep` (not installed). The
 three `skipif(os.name == "nt")` guards added in round 5 were verified by
 inspection against the repo's precedent, not by a Windows run.
+
+## Verification on the final tree, third pass
+
+Final tree ``bd95332``. Run sequentially, `PQ_GATE_PYTEST_ARGS=""`, nothing
+else of mine on the machine.
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 3981 passed in 654.58s (0:10:54), 953 worked examples exact; `evidence/release-gate-2026-09-06-c7ffc5f..bd95332.log` |
+| Targeted modules through rounds 7-8 | 809, then 106, then 23 - ruff, ruff format, mypy strict clean at every step |
+| Positive controls, rounds 7-8 | catalog-identifier breakout red then green; byte-cap count red under `len(seen)` (4 reported for 3 read); eager SQL build red on the NUL-scoping test |
+| Exact `claude-opus-5` reviews | round 4 `c7ffc5f..ee04185` (full range, FIX-FIRST) · round 6 `ee04185..eb2c7fd` (FIX-FIRST) · round 7 `eb2c7fd..bdbdbbe` (**SHIP**) · round 8 `bdbdbbe..c433e33` (**SHIP**, one MEDIUM taken). Together they cover every commit from baseline to `c433e33`. **``bd95332`` - the round-8 MEDIUM fix itself - carries no model review**: the CLI hit its session limit mid-round and the remaining budget went to the gate |
+| Static security | gitleaks clean, pip-audit clean (first pass) · ruff bandit ruleset over `src/`: 45 hits, 44 recorded as noise, 1 real and fixed · `semgrep` still NOT RUN, not installed here |
+
+Not verified, unchanged across all three passes: live database, Fabric,
+Windows PQTest, native Excel or Power BI refresh. The three
+`skipif(os.name == "nt")` guards were reasoned from the repo's own
+precedent, not run on Windows.
