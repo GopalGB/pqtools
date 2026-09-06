@@ -56,6 +56,12 @@ dependencies = []
 
 [project.optional-dependencies]
 fabric = ["pyarrow>=14"]
+# pqtools.export - to_pandas()/to_arrow()/to_parquet(). Optional so the
+# CLI/linter half of this package never drags in a data-science stack;
+# `arrow` covers both to_arrow() and to_parquet() since parquet support
+# ships inside the pyarrow wheel itself, no separate package needed.
+pandas = ["pandas>=2"]
+arrow = ["pyarrow>=14"]
 # Connector drivers, kept optional the way pandas keeps psycopg and
 # SQLAlchemy optional: nobody installing a linter should pull an ODBC stack.
 excel = ["openpyxl>=3.1"]
@@ -64,6 +70,8 @@ postgres = ["psycopg[binary]>=3.1"]
 mysql = ["pymysql>=1.1"]
 oracle = ["oracledb>=2"]
 all = [
+    "pandas>=2",
+    "pyarrow>=14",
     "openpyxl>=3.1",
     "pyodbc>=5",
     "psycopg[binary]>=3.1",
@@ -71,6 +79,12 @@ all = [
     "oracledb>=2",
 ]
 dev = [
+    # pandas and pyarrow are optional for USERS but required for the gate:
+    # without them every export test skips, and 34 silent skips reporting
+    # green is the same failure release_gate.sh step 7 already guards
+    # against by printing "THIS CHECK DID NOT RUN".
+    "pandas>=2",
+    "pyarrow>=14",
     "openpyxl>=3.1",
     # An independent (Rust) xlsx reader. The container write path is verified
     # by readers that share no code with ours or with each other; a second

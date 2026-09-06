@@ -25,6 +25,7 @@ from .core import (
     update_file,
 )
 from .evaluate import EvalError, UnsupportedError, evaluate
+from .export import ExportRefusal, PqFile, open, to_arrow, to_pandas, to_parquet
 
 __all__ = [
     "AdapterError",
@@ -32,9 +33,11 @@ __all__ = [
     "EvalError",
     "ContainerError",
     "Diagnostic",
+    "ExportRefusal",
     "MQueryError",
     "NodeError",
     "ParseError",
+    "PqFile",
     "QuerySection",
     "RenameRefusal",
     "SafeWriteError",
@@ -43,11 +46,15 @@ __all__ = [
     "dependencies",
     "evaluate",
     "format_source",
+    "open",
     "parse",
     "read_sections",
     "rename",
     "replace_source",
     "split_shared",
+    "to_arrow",
+    "to_pandas",
+    "to_parquet",
     "update_file",
     "write_sections",
 ]
