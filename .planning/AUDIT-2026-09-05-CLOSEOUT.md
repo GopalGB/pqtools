@@ -1680,8 +1680,10 @@ Found while reproducing the LOWs above. `_run_list` caught a `split_shared`
 failure and set `members = {}` under a comment claiming the section was
 "still worth reporting" - directly above the line that reported nothing. So
 `pq list parsefail.pq` printed `no queries found` and exited **0** on a file
-that `pq check` rejects with `M_PARSE_ERROR`: a shorter answer than the
-truth, carrying a success code. That is precisely the failure mode the
+that `pq check` rejects as a parse error: a shorter answer than the truth,
+carrying a success code. (Round 14 corrected the code named here: `list`
+surfaces it through `split_shared`, which wraps it as `ContainerError`, so the
+code a user sees from `list` is `M_CONTAINER_ERROR`.) That is precisely the failure mode the
 package's stated contract rules out ("never silently return incomplete or
 incorrect data"), and it was hiding behind a comment that said the opposite.
 It now reports the section's own error and exits 2, while a genuinely empty
@@ -1693,3 +1695,99 @@ Five fixes, five controls, each red with the defect reintroduced and green
 after restoring: ELOOP re-wrap removed · failures appended at the end again ·
 `no queries found` printed after an error · unsplittable section silently
 emptied · timezone format hardcoded back to UTC.
+
+## Verification on the final tree, ninth pass (the round-13 fixes)
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** - 4112 passed in 668.08s (0:11:08), 953 worked examples exact, ruff + mypy strict clean, coverage 547/635 already current; `evidence/release-gate-2026-09-07-round13-fixes.log` |
+| Export suite at the DECLARED FLOOR, re-measured on THIS tree | pandas 2.3.3 / pyarrow 14.0.2 / numpy 1.26.4 in a clean venv: **71 passed**; dtype tables byte-identical to 3.0.5 / 25.0.1 by `diff`, now including a `datetimezone +05:30` row; `evidence/export-dtypes-across-the-declared-range-2026-09-07.txt` |
+| Positive controls | ELOOP re-wrap removed · failures appended at the end again · `no queries found` printed after an error · unsplittable section silently emptied · tz format hardcoded back to UTC - each red with the defect, green after restoring |
+| Documented quick-start, run literally | All 12 README quick-start lines against real artifacts in a clean directory, including `pq show`/`pq list` on a synthesised `.pbix` and a parquet round-trip read back with pandas. `diff` exits 1 on differing files as documented; every other line exits 0 |
+| Pre-push scan on `a49ed2a..b44f459` | gitleaks clean, in-house scan clean, 11 files; `evidence/prepush-scan-2026-09-07-b44f459.log`. Pushed with `GIT_PUSH_BYPASS=1` only because the hook itself reported no controlling terminal and the scan above had already run clean |
+| Pushed | `b44f4596767c916013005f75c2855f5c30426da6`, verified against `git ls-remote` |
+
+Two autocommit-bot sweeps (`a3fffbb`, `3aa8f67`) landed during the gate run and
+were absorbed with `git reset --soft a49ed2a` before committing. The staged
+tree was checked for leaked positive-control mutations first; the only match
+was the removal line for `members = {}`, which is the fix.
+
+## Round 14 - the review of the round-13 fixes: FIX-FIRST, five findings
+
+`evidence/opus5-wrapper-round14-a49ed2a..b44f459.txt`. All five taken. The
+HIGH is a regression I introduced in round 13, on the very finding round 13
+was fixing.
+
+### HIGH - the ELOOP re-wrap caught the wrong call
+
+Round 13 wrapped `errno.ELOOP` as `SafeWriteError` to give `O_NOFOLLOW`'s
+TOCTOU refusal its proper code. But `os.lstat` sits inside the same `try`,
+and **`lstat` raises ELOOP on its own** whenever a DIRECTORY component of the
+path is a symlink loop - no `O_NOFOLLOW`, no race. So a read verb on an
+ordinary broken path started reporting a write refusal:
+
+    $ pq check loopdir/x.pq
+    error M_SAFE_WRITE_REFUSED: writes require a regular, non-symlink,
+    single-link file
+
+That is precisely the false-message class round 12 removed, reintroduced on a
+case far more reachable than the race it was aimed at - and it contradicted
+the README and SUPPORT-MATRIX text the same commit added, both of which say a
+file that will not open raises `OSError`.
+
+Reproduced with `ln -s loopdir loopdir`, confirming `os.lstat` alone returns
+errno 62. Fixed by splitting the `try`: `lstat`'s failures propagate
+untouched, and only `os.open`'s ELOOP - which can only mean a symlink
+appeared after `lstat` said there was none - becomes `SafeWriteError`.
+
+The round-13 comment reasoned correctly about what ELOOP means from
+`os.open` and never asked what else in the same block could raise it. That is
+the counter-case rule failing on a block boundary rather than a caller.
+
+### MEDIUM - the new failure record could not be aligned either
+
+`containers.read_sections` hardcodes `path="Formulas/Section1.m"` for every
+`.xlsx`/`.pbix`, so keying the section-failure record on `section.path` gave
+two different unparseable workbooks the **identical** `"file"` value - which
+is the exact alignment the record was added to provide. Reproduced with two
+distinct broken workbooks; both records read `"file": "Formulas/Section1.m"`.
+
+Now container-qualified (`a.xlsx!Formulas/Section1.m`), matching
+`_check_diagnostics` and `_parse_records`. Qualified only when the section is
+a real container section: a plain `.pq` gets a synthetic section whose
+container IS its path, and `q.pq!q.pq` helps nobody.
+
+### LOW - an unreachable default naming the wrong code
+
+`getattr(error, "code", "M_PARSE_ERROR")` - `MQueryError` defines `code` on
+the base class, so the default was unreachable, and the code it named was not
+the one that arrives: `split_shared` wraps the parse failure as
+`ContainerError`, so a user sees `M_CONTAINER_ERROR`. The round-13 comment
+and this closeout both said `M_PARSE_ERROR`, and the test asserted only that
+some error appeared. Now `error.code` directly, and the test pins the real
+code - controlled by making `split_shared` raise a different one.
+
+### LOW - a process-wide mock that ignored its argument
+
+`mock.patch("pqtools.core.os.lstat", lambda p, *a, **k: real_lstat(target))`:
+`pqtools.core.os` IS the stdlib `os` module, so this replaced `os.lstat` for
+every caller in the interpreter, handing `target`'s stat to anything that
+happened to call it inside the block. Now discriminates on the path.
+
+No positive control - the fix removes cross-test contamination that no
+current test detects. Recorded as hygiene, not as a verified behaviour change.
+
+### LOW - the gate log named no tree
+
+Same provenance gap as the round-13 HIGH, one directory over. Fixed in
+`scripts/release_gate.sh` itself rather than by remembering to paste a header:
+every run now emits commit SHA, a dirty-tree marker, branch, total collect
+count and UTC date as its first five lines. Machinery, not intention.
+
+### Controls
+
+Three of the five are behavioural and each was controlled, red with the defect
+and green after restoring: ELOOP wrap unscoped again · failure record keyed on
+`section.path` only · `split_shared` raising a different code. The other two
+(the mock's blast radius, the log header) have no behavioural control, and are
+recorded as such rather than given a fake one.

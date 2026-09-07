@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range a49ed2a..b44f459 (bundle + lockfile shown as stub blobs)
+# staged:  11 files changed, 461 insertions(+), 57 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in a49ed2a..b44f459, not stubbed, not in the diff
+# package-lock.json: unchanged in a49ed2a..b44f459, not stubbed, not in the diff
+# invoked 2026-09-07T03:11:07Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Findings, ranked:
+
+- **HIGH — src/pqtools/core.py:726 — the ELOOP re-wrap catches `os.lstat`'s ELOOP, not just `os.open`'s, so an ordinary broken path is now reported as a write refusal.** `os.lstat` is inside the same `try`, and it raises ELOOP itself when any *directory* component of the path is a symlink loop — no TOCTOU race, no `O_NOFOLLOW` involved. Reproduced against the staged module: with `loopdir -> loopdir`, staged `_snapshot("loopdir/x.pq")` → `SafeWriteError / M_SAFE_WRITE_REFUSED: writes require a regular, non-symlink, single-link file`; HEAD → `OSError [Errno 62]`. So `pq check loopdir/x.pq`, a read verb, now prints a write-safety refusal — the exact false-message class round 12 removed, on a case more reachable than the race this fixes. It also makes the text this same diff adds untrue: README.md:720 and SUPPORT-MATRIX.md:205 both now state that a file which will not open raises `OSError`. Fix: move `descriptor = os.open(...)` into its own `try`, or set a flag after `lstat` returns and gate the ELOOP wrap on it, so only `O_NOFOLLOW`'s ELOOP is wrapped.
+
+- **MEDIUM — src/pqtools/cli.py:534 — the new section-failure record identifies the section, not the file, so `--json` still cannot be aligned to argv for containers.** `containers.py:330` hardcodes `path="Formulas/Section1.m"` for every `.xlsx`/`.pbix`, so `pq list a.xlsx b.xlsx --json` with both unparseable emits two records whose `"file"` is the identical literal `"Formulas/Section1.m"` — which is the alignment problem this hunk exists to fix. Every other section-level record in this file already uses the container-qualified form (`cli.py:571,582,595,1131,1147,1159`). Fix: `"file": f"{section.container}!{section.path}"`, and the same at the `:530` stderr print.
+
+- **LOW — src/pqtools/cli.py:529 — the `"M_PARSE_ERROR"` default is unreachable and the code actually emitted is `M_CONTAINER_ERROR`.** `MQueryError.code` is defined on the base class, so `getattr` never falls through; `split_shared` wraps the parse failure as `ContainerError` (`containers.py:378`, code `M_CONTAINER_ERROR`). The comment above it and the closeout both read as if `M_PARSE_ERROR` is what a user sees, and the new test at tests/test_end_to_end.py:566 asserts only `"error" in err`, so nothing pins the code either way. Fix: drop the default, and assert the real code in the test.
+
+- **LOW — tests/test_end_to_end.py:587 — `mock.patch("pqtools.core.os.lstat", ...)` patches stdlib `os` process-wide.** `core.os` *is* the `os` module, so this replaces `os.lstat` for every caller in the interpreter for the duration, and the lambda ignores its path argument entirely — any incidental `os.lstat` inside the block gets `target`'s stat. Fix: `lambda p, *a, **k: real_lstat(target) if Path(p) == link else real_lstat(p)`.
+
+- **LOW — evidence/release-gate-2026-09-07-round13-fixes.log:1 — the gate log names no tree.** No commit SHA, no collect count, unlike the sibling `prepush-scan-2026-09-07-a49ed2a.log` which names a49ed2a in both filename and body. This is the same provenance gap as the HIGH this diff was written to close. Fix: header it with `git rev-parse HEAD` plus the `--collect-only -q` total.
+
+Verified and not reported: the `71 passed` claim is arithmetically consistent (the two files collect 66 at a49ed2a, the diff adds 5 tests); `SafeWriteError` is not an `OSError` subclass, so the `pytest.raises(OSError)` discriminator at the end of the symlink test is meaningful; the `named` filter correctly restores plain-text `pq list` and the `elif worst == 0` guard suppresses `no queries found` only when something failed.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

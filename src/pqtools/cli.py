@@ -526,13 +526,32 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
                 # "no queries found" and exited 0. Silently returning a
                 # shorter list is the one thing this package promises never
                 # to do.
-                code = getattr(error, "code", "M_PARSE_ERROR")
-                print(f"{section.path}: error {code}: {error}", file=sys.stderr)
+                # Container-qualified, like every other section-level
+                # record in this file. `read_sections` hardcodes
+                # `path="Formulas/Section1.m"` for every .xlsx/.pbix, so
+                # keying on `section.path` alone gave two different
+                # unparseable workbooks the SAME "file" value - which is the
+                # very alignment this record exists to provide.
+                # `error.code` directly: MQueryError defines `code` on the
+                # base class, so a getattr default here was unreachable, and
+                # the one it named (M_PARSE_ERROR) was not even the code that
+                # arrives - `split_shared` wraps the parse failure as
+                # ContainerError, so a user sees M_CONTAINER_ERROR.
+                # Qualified only for a real container section, which is
+                # this file's convention everywhere else (`_check_diagnostics`,
+                # `_parse_records`): a plain .pq gets a synthetic section
+                # whose container IS its path, and "q.pq!q.pq" helps nobody.
+                where = (
+                    f"{section.container}!{section.path}"
+                    if section.container != section.path
+                    else section.path
+                )
+                print(f"{where}: error {error.code}: {error}", file=sys.stderr)
                 worst = 2
                 records.append(
                     {
-                        "file": section.path,
-                        "error": {"code": code, "message": str(error)},
+                        "file": where,
+                        "error": {"code": error.code, "message": str(error)},
                     }
                 )
                 continue

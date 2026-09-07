@@ -563,7 +563,11 @@ def test_list_refuses_a_section_it_cannot_parse(
     assert main(["list", str(broken)]) == 2, "so list must not call it empty"
     err = capsys.readouterr().err
     assert "no queries found" not in err, err
-    assert "error" in err, err
+    # The code a user actually sees. `split_shared` wraps the parse failure
+    # as ContainerError, so it is M_CONTAINER_ERROR, not M_PARSE_ERROR - the
+    # round-13 comment and closeout both said otherwise and no assertion
+    # pinned it.
+    assert "M_CONTAINER_ERROR" in err, err
 
 
 def test_a_symlink_swapped_in_after_lstat_is_a_write_refusal(
@@ -584,10 +588,119 @@ def test_a_symlink_swapped_in_after_lstat_is_a_write_refusal(
     link.symlink_to(target)
 
     real_lstat = os.lstat
-    with mock.patch("pqtools.core.os.lstat", lambda p, *a, **k: real_lstat(target)):
+
+    # Discriminate on the path. `pqtools.core.os` IS the stdlib `os` module,
+    # so this patch is process-wide for its duration; a lambda that ignored
+    # its argument handed `target`'s stat to every incidental `os.lstat` in
+    # the interpreter, including pytest's own.
+    def only_the_link(candidate, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if Path(candidate) == link:
+            return real_lstat(target)
+        return real_lstat(candidate, *args, **kwargs)
+
+    with mock.patch("pqtools.core.os.lstat", only_the_link):
         with pytest.raises(SafeWriteError, match="regular, non-symlink"):
             _snapshot(link)
 
     # A plain missing file is still an OSError, not a write refusal.
     with pytest.raises(OSError):
         _snapshot(tmp_path / "nope.pq")
+
+
+# ---------------------------------------------------------------------------
+# Round-14 review regressions
+# ---------------------------------------------------------------------------
+
+
+def test_a_symlink_loop_in_a_directory_component_is_an_io_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-14 HIGH, and a regression round 13 introduced.
+
+    `os.lstat` raises ELOOP on its own when a DIRECTORY component of the path
+    is a symlink loop - no `O_NOFOLLOW`, no TOCTOU race. Round 13 wrapped
+    ELOOP for the whole `try`, which caught that case too, so `pq check` - a
+    READ verb, on an ordinary broken path - printed `M_SAFE_WRITE_REFUSED:
+    writes require a regular, non-symlink, single-link file`. That is exactly
+    the false-message class round 12 removed, on a case far more reachable
+    than the race the wrap was aimed at, and it contradicted the README text
+    the same commit added.
+    """
+    from pqtools.cli import main
+
+    loop = tmp_path / "loopdir"
+    loop.symlink_to(loop)  # resolving anything THROUGH it is ELOOP
+
+    assert main(["check", str(loop / "x.pq")]) == 2
+    err = capsys.readouterr().err
+    assert "M_IO_ERROR" in err, err
+    assert "writes require" not in err, err
+
+
+def test_list_json_distinguishes_two_containers_that_both_fail(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-14 MEDIUM: `read_sections` hardcodes
+    `path="Formulas/Section1.m"` for every .xlsx/.pbix, so keying the failure
+    record on `section.path` gave two different unparseable workbooks the
+    identical `"file"` value - defeating the argument-order alignment the
+    record exists to provide.
+    """
+    import base64
+    import io
+    import struct
+    import zipfile
+
+    from pqtools.cli import main
+
+    def workbook(path: Path, m_text: str) -> None:
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, "w") as archive:
+            archive.writestr("Formulas/Section1.m", m_text)
+        out = [struct.pack("<I", 0)]
+        for segment in (
+            inner.getvalue(),
+            b"\xef\xbb\xbf<permissions/>",
+            b"\x00\x00\x00\x00\xef\xbb\xbf<metadata/>",
+            b"\x01\x02\x03\x04binding",
+        ):
+            out.append(struct.pack("<I", len(segment)))
+            out.append(segment)
+        xml = (
+            b'<?xml version="1.0"?><DataMashup xmlns="x">'
+            + base64.b64encode(b"".join(out))
+            + b"</DataMashup>"
+        )
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("xl/workbook.xml", "<workbook/>")
+            archive.writestr("customXml/item1.xml", xml)
+        path.write_bytes(buffer.getvalue())
+
+    first, second = tmp_path / "a.xlsx", tmp_path / "b.xlsx"
+    workbook(first, "section S; shared BrokenA = ( ;")
+    workbook(second, "section S; shared BrokenB = ) ;")
+
+    assert main(["list", str(first), str(second), "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    files = [item["file"] for item in payload]
+    assert len(set(files)) == 2, f"both records claim the same file: {files}"
+    assert files[0].startswith(str(first)), files
+    assert files[1].startswith(str(second)), files
+
+
+def test_a_plain_file_failure_is_not_qualified_against_itself(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The container-qualified form is for container sections only. A plain
+    .pq gets a synthetic section whose container IS its path, so applying it
+    unconditionally would print `q.pq!q.pq`.
+    """
+    from pqtools.cli import main
+
+    broken = tmp_path / "q.pq"
+    broken.write_text("section S;\nshared Broken = ( ;\n", encoding="utf-8")
+    assert main(["list", str(broken)]) == 2
+    err = capsys.readouterr().err
+    assert f"{broken}!{broken}" not in err, err
+    assert str(broken) in err, err

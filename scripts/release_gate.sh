@@ -20,6 +20,18 @@ cd "$(dirname "$0")/.." || exit 2
 PY=.venv/bin/python
 FAILED=0
 
+# Provenance header. A gate log that names no tree cannot be checked against
+# the tree it certifies later - which is exactly how the export-dtypes
+# evidence came to report a pass count from the previous commit. Emitting it
+# here, rather than remembering to paste it in, is the only version that
+# cannot drift.
+printf '# release gate\n'
+printf '# commit:  %s%s\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+  "$(git diff --quiet 2>/dev/null && echo '' || echo ' (working tree DIRTY)')"
+printf '# branch:  %s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+printf '# collect: %s\n' "$($PY -m pytest --collect-only -q 2>/dev/null | tail -1)"
+printf '# date:    %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 step() { printf '\n=== %s ===\n' "$1"; }
 check() {
   if [ "$1" -eq 0 ]; then printf '  PASS  %s\n' "$2"

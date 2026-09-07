@@ -702,6 +702,18 @@ def _snapshot(path: Path) -> FileSnapshot:
             raise SafeWriteError(
                 "writes require a regular, non-symlink, single-link file"
             )
+    except OSError:
+        # `lstat` itself failed: the path is missing, unreadable, or a
+        # DIRECTORY component of it is a symlink loop - which raises ELOOP
+        # here, with no `O_NOFOLLOW` and no race involved. All of those are
+        # "this path does not resolve", none of them are about writing, so
+        # they propagate untouched. Wrapping ELOOP at this level is what
+        # round 13 got wrong: it made `pq check loopdir/x.pq`, a READ verb on
+        # an ordinary broken path, print M_SAFE_WRITE_REFUSED - reintroducing
+        # the false-message class round 12 had just removed, on a case far
+        # more reachable than the race it was aimed at.
+        raise
+    try:
         descriptor = os.open(path, flags)
     except OSError as error:
         # Deliberately NOT re-wrapped as SafeWriteError. This function is the
@@ -715,14 +727,14 @@ def _snapshot(path: Path) -> FileSnapshot:
         # symlink, a non-regular file, more than one hard link - stay
         # SafeWriteError below, because those are exactly about writing.
         #
-        # ELOOP is the exception, and the reason this is not a blanket
-        # `raise`. It is O_NOFOLLOW firing: the path was NOT a symlink when
-        # `lstat` ran and WAS one by the time `os.open` did - the TOCTOU race
-        # the flag exists to close. That is a write-safety refusal in exactly
-        # the sense the lstat branch above is, so it must carry the same
-        # code; leaving it bare reported a swapped-in symlink as
-        # "M_IO_ERROR: Too many levels of symbolic links", which reads like a
-        # broken path rather than a refused write.
+        # ELOOP HERE, and only here, is a write-safety refusal: `lstat` has
+        # already returned and said this is not a symlink, so O_NOFOLLOW
+        # firing means one was swapped in between the two calls - the TOCTOU
+        # race the flag exists to close. Leaving it bare reported a
+        # swapped-in symlink as "M_IO_ERROR: Too many levels of symbolic
+        # links", which reads like a broken path rather than a refused write.
+        # Scoping matters: the identical errno from `lstat` above means
+        # something entirely different and must NOT be wrapped.
         if error.errno == errno.ELOOP:
             raise SafeWriteError(
                 "writes require a regular, non-symlink, single-link file"
