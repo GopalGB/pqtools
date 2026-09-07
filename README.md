@@ -716,9 +716,14 @@ See [Safety model](#safety-model).
 - **Layout is preserved**: UTF-8 encoding, a leading BOM (present in every
   Power Query SDK connector file), newline convention (`\n` vs `\r\n`),
   final-newline state, and file mode all round-trip unchanged.
-- **Refuses symlinks and hardlinks** - writes require a regular, single-link
-  file. This holds for a symlink swapped in *after* the check too: `O_NOFOLLOW`
-  catches that race and it raises `SafeWriteError` like any other symlink.
+- **Refuses symlinks and hardlinks** - a regular, single-link file is
+  required. This holds for a symlink swapped in *after* the check too:
+  `O_NOFOLLOW` catches that race and it raises `SafeWriteError` like any other
+  symlink. Note that **read verbs refuse these as well** - `pq check` on a
+  symlink reports `M_SAFE_WRITE_REFUSED`, because it is a property of the
+  target, and following a symlink to read it is refused for the same reason as
+  following one to write it. Only the lock, size, encoding and
+  changed-under-the-lock refusals are `--write`-only.
 - **A file that will not open raises `OSError`, not `MQueryError`.** Refusals
   are typed `MQueryError` subclasses, but a missing or unreadable file is the
   OS's fact to report, so `FileNotFoundError` / `PermissionError` propagate

@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range b44f459..fcce6c3 (bundle + lockfile shown as stub blobs)
+# staged:  13 files changed, 912 insertions(+), 41 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in b44f459..fcce6c3, not stubbed, not in the diff
+# package-lock.json: unchanged in b44f459..fcce6c3, not stubbed, not in the diff
+# invoked 2026-09-07T12:50:13Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+- **MEDIUM — scripts/release_gate.sh:30 — the DIRTY marker misses a staged tree.** `git diff --quiet` compares worktree vs *index*, so a tree whose only changes are staged (exactly this repo's current `MM`/`AD` state, and the normal shape when gating before a commit) prints the HEAD SHA with no marker — the "log certifies a tree it did not run on" failure the header was added to prevent. Untracked new test files are invisible to both. Fix: `"$(git diff --quiet HEAD 2>/dev/null && [ -z "$(git status --porcelain 2>/dev/null)" ] && echo '' || echo ' (working tree DIRTY)')"`.
+
+- **MEDIUM — src/pqtools/core.py:800 — the ELOOP re-`lstat` loses the typed code in the exact race it exists for.** `_write_refusal` answers "was it O_NOFOLLOW?" by lstat-ing *again*, after `os.open` already failed. Swap symlink in → `os.open` ELOOP → swap it back out → `_final_component_is_a_symlink` returns False → `None` → the genuine TOCTOU refusal degrades to `M_IO_ERROR: Too many levels of symbolic links`. Round 14's code typed that case correctly; the new test only models swap-and-leave, so nothing catches it. At `OPEN_SOURCE` the preceding `lstat` **succeeded**, which already proves no directory component is a loop — the disambiguation is unnecessary there and only opens the window. Fix: return `UNSAFE_TO_WRITE` unconditionally for `(OPEN_SOURCE, ELOOP)` and confine `_final_component_is_a_symlink` to `OPEN_LOCK`, which has no preceding `lstat`.
+
+- **MEDIUM — llms.txt:139 — the rewritten row contradicts the table added in the same commit.** It now reads "`M_SAFE_WRITE_REFUSED` | A `--write` was refused", but `_FS_TAXONOMY` (tests/test_end_to_end.py) asserts `pq check` — a read verb, no `--write` — emits it for `target_is_a_symlink` and `target_is_hard_linked`, because `_snapshot` applies the symlink/`st_nlink` checks on the read path too. Two of six rows make the sentence false. Fix: say the code also reports a write-safety *property of the target* on read verbs, or gate the `S_ISLNK`/`st_nlink` rejections in `_snapshot` on a write flag.
+
+- **LOW — tests/test_end_to_end.py:603 (`racing_lstat`) — `Path(candidate)` raises `TypeError` on a bytes path or an int fd.** The patch is still installed on stdlib `os` process-wide (the comment concedes this); any incidental `os.lstat(b"...")` or `os.lstat(fd)` inside the block turns the test into an unrelated `TypeError` rather than a failure. Fix: `if isinstance(candidate, (str, os.PathLike)) and Path(candidate) == link`.
+
+- **LOW — scripts/release_gate.sh:32 — the collect count is unchecked.** `2>/dev/null | tail -1` with no status test means a collection error prints an empty or garbage `# collect:` line and the run can still end `GATE PASSED`, so the provenance header can be silently blank in exactly the case it matters. Fix: capture the substitution's exit status and `check` it, or emit `unknown` explicitly on non-zero.
+
+Checked and not reported: `error.code` is safe (`MQueryError.code` on the base, `containers.split_shared` raises `ContainerError`); the `container != path` guard is correct because a plain `.pq` gets `container=path=str(path)` (containers.py:329-334) while `read_sections` hardcodes `Formulas/Section1.m` (containers.py:330); the newly-propagating `OSError`s from the lock and `mkstemp` are caught by every CLI handler including `main`'s at cli.py:1224, so no traceback escapes; `SafeWriteError` is not an `OSError` subclass, so the split `try` blocks in `_snapshot` do not self-catch; the empty round-15 wrapper file is honestly recorded as NOT OBTAINED rather than passed off as a review.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

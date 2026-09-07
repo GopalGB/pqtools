@@ -1914,3 +1914,78 @@ filesystem shapes and asserts the code from a READ verb and a WRITE verb for
 each. The first two columns agreeing wherever the problem is the path is the
 property every one of rounds 12-15 broke, each in a different cell, and none
 of the previous tests could see more than one cell at a time.
+
+## Round 16 - the review of the restructuring: FIX-FIRST, five findings
+
+`evidence/opus5-wrapper-round16-b44f459..fcce6c3.txt`, covering the whole
+previously-unreviewed span. All five taken. The sharpest one is a regression
+the round-15 restructuring itself introduced.
+
+### MEDIUM - the ELOOP re-check degraded the race it existed for
+
+Round 15 answered "was this ELOOP `O_NOFOLLOW`?" by `lstat`-ing again, AFTER
+`os.open` had already failed. That re-opens a window inside the very race the
+flag closes: an attacker who swaps the symlink in, lets the open fail, then
+swaps it back out makes the second `lstat` report a regular file, and the
+genuine refusal degrades to `M_IO_ERROR: Too many levels of symbolic links`.
+
+Reproduced by patching `os.lstat` to always report a regular file while
+`os.open` raises ELOOP - i.e. swap-and-swap-back - and watching a
+`SafeWriteError` become an `OSError`. The round-15 test only modelled
+swap-and-leave, so nothing caught it.
+
+The review's diagnosis is the important half: at `OPEN_SOURCE` the check was
+**unnecessary as well as harmful**, because `_snapshot` lstats the path
+immediately before opening it and that lstat SUCCEEDING already proves no
+directory component is a loop. The disambiguation is now confined to
+`_ELOOP_IS_AMBIGUOUS = {OPEN_LOCK}` - the one call with no preceding lstat.
+
+This also costs the "r13 is structurally unreachable" property round 15
+claimed. That is the right trade and is recorded rather than quietly dropped:
+the property was a side effect, it was paid for by degrading a real refusal,
+and the parametrised taxonomy test catches r13's bug directly anyway.
+
+### MEDIUM - the DIRTY marker could not see a staged tree
+
+`git diff --quiet` compares the worktree against the INDEX, so a tree whose
+changes are all STAGED - the normal shape when gating immediately before a
+commit - printed a bare SHA with no marker. That is exactly the "log certifies
+a tree it did not run on" failure the header was added two rounds ago to
+prevent. Verified in an isolated repo: staged-only change gives
+`git diff --quiet` = 0 (clean) and `git diff --quiet HEAD` = 1 (dirty). Now
+compares against HEAD and additionally uses `--porcelain`, so untracked files
+count too.
+
+### MEDIUM - llms.txt contradicted the table added in the same commit
+
+The row read "`M_SAFE_WRITE_REFUSED` | A `--write` was refused", but
+`_FS_TAXONOMY` asserts a READ verb emits it for `target_is_a_symlink` and
+`target_is_hard_linked` - two of its six rows - because `_snapshot` applies
+the symlink and `st_nlink` checks on the read path too. Confirmed live:
+`pq check symlink.pq` exits 2 with `M_SAFE_WRITE_REFUSED`.
+
+Fixed in the DOCS rather than the code, deliberately. Refusing to follow a
+symlink to read is long-standing intended behaviour, asserted by
+`test_write_refuses_symlink_and_hardlink` on the dry-run path since well
+before this audit. The false statement was the sentence, not the refusal.
+README carries the same clarification.
+
+### LOW x2
+
+- `racing_lstat` called `Path(candidate)` unguarded while patched over stdlib
+  `os`; a bytes path or an int fd would have raised `TypeError` and surfaced
+  as an unrelated error rather than a failure. Now isinstance-guarded.
+- The gate's collect count was captured with no status test, so a collection
+  error printed a blank `# collect:` line and the run could still end
+  `GATE PASSED` - blanking the provenance line in exactly the case it matters.
+  Now emits `unknown - COLLECTION FAILED`.
+
+### Controls
+
+Three behavioural, each red with the defect and green after restoring:
+disambiguation applied to `OPEN_SOURCE` too (2 tests) · DIRTY marker comparing
+against the index · collect count unchecked. The two remaining fixes (the
+llms.txt/README sentence, the isinstance guard) have no behavioural control
+and are recorded as such rather than given a fake one - though the BEHAVIOUR
+the doc describes is pinned by `_FS_TAXONOMY`, which is what makes the
+sentence checkable at all.

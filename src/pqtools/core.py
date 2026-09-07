@@ -759,6 +759,20 @@ _WRITE_SAFETY: dict[tuple[_FsCall, int], str] = {
 # it surfaces from _lock_file (flock/msvcrt), which keeps its own message.
 
 
+# Calls that reach a path WITHOUT a preceding lstat on it, so an ELOOP there
+# could be either cause and has to be asked about rather than assumed.
+#
+# OPEN_SOURCE is deliberately NOT here. `_snapshot` lstats the path
+# immediately before opening it, and that lstat SUCCEEDING is already proof
+# that no directory component is a loop - so ELOOP from its `os.open` can
+# only be O_NOFOLLOW. Re-checking it there was worse than redundant: it
+# re-opened a window in the very race the flag exists to close. An attacker
+# who swaps the symlink in, lets `os.open` fail, then swaps it back out makes
+# the second lstat report a regular file, and the genuine refusal degrades to
+# `M_IO_ERROR: Too many levels of symbolic links`. Reproduced before fixing.
+_ELOOP_IS_AMBIGUOUS = frozenset({_FsCall.OPEN_LOCK})
+
+
 def _final_component_is_a_symlink(path: Path) -> bool:
     """Is `path` itself a symlink, as opposed to sitting under a broken one?
 
@@ -784,21 +798,21 @@ def _write_refusal(error: OSError, call: _FsCall, path: Path) -> str | None:
                 raise SafeWriteError(refusal) from error
             raise
 
-    ELOOP is asked about rather than assumed. `os.open` raises it BOTH when
-    O_NOFOLLOW refuses a symlinked final component (a write-safety refusal)
-    and when any DIRECTORY component of the path is a symlink loop (an
-    ordinary broken path). Round 13 conflated those at the source file, and
-    building the behaviour matrix for this rewrite caught the identical
-    conflation still live at the lock file, where - unlike the source file -
-    no preceding `lstat` had already ruled the directory case out. Deciding
-    it from the errno alone is not possible, so we ask the filesystem which
-    of the two it is instead of reasoning about which one "must" have
-    happened.
+    ELOOP is asked about where it is genuinely ambiguous, and only there.
+    `os.open` raises it BOTH when O_NOFOLLOW refuses a symlinked final
+    component (a write-safety refusal) and when any DIRECTORY component is a
+    symlink loop (an ordinary broken path). Which one it was depends on
+    whether a preceding `lstat` on the same path has already succeeded - see
+    `_ELOOP_IS_AMBIGUOUS`, which is the whole of that rule.
     """
     message = _WRITE_SAFETY.get((call, error.errno or 0))
     if message is None:
         return None
-    if error.errno == errno.ELOOP and not _final_component_is_a_symlink(path):
+    if (
+        error.errno == errno.ELOOP
+        and call in _ELOOP_IS_AMBIGUOUS
+        and not _final_component_is_a_symlink(path)
+    ):
         return None
     return message
 

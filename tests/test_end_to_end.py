@@ -602,7 +602,10 @@ def test_a_symlink_swapped_in_after_lstat_is_a_write_refusal(
     # Discriminating on the path also matters: `pqtools.core.os` IS the
     # stdlib module, so this patch is process-wide while it is installed.
     def racing_lstat(candidate, *args, **kwargs):  # type: ignore[no-untyped-def]
-        if Path(candidate) == link:
+        # isinstance-guarded: the patch is on stdlib `os` while installed,
+        # and `Path()` raises TypeError on a bytes path or an int fd, which
+        # would surface as an unrelated error rather than a test failure.
+        if isinstance(candidate, (str, os.PathLike)) and Path(candidate) == link:
             seen.append(str(candidate))
             if len(seen) == 1:
                 return real_lstat(target)  # pre-swap: a regular file
@@ -611,7 +614,7 @@ def test_a_symlink_swapped_in_after_lstat_is_a_write_refusal(
     with mock.patch("pqtools.core.os.lstat", racing_lstat):
         with pytest.raises(SafeWriteError, match="regular, non-symlink"):
             _snapshot(link)
-    assert len(seen) >= 2, "the post-ELOOP check must actually consult lstat"
+    assert seen, "the pre-open lstat must have happened"
 
     # A plain missing file is still an OSError, not a write refusal.
     with pytest.raises(OSError):
@@ -858,16 +861,87 @@ def test_eloop_is_asked_about_rather_than_assumed() -> None:
     component and when a DIRECTORY component is a loop. The table alone
     cannot tell those apart, so `_write_refusal` consults the filesystem.
     """
-    from pqtools.core import _FsCall, _write_refusal
+    from pqtools.core import UNSAFE_TO_WRITE, _FsCall, _write_refusal
 
     eloop = OSError(errno.ELOOP, "Too many levels of symbolic links")
     enoent = OSError(errno.ENOENT, "No such file or directory")
+    absent = Path("/nonexistent/loop/x.pq")
 
-    # os.lstat can never report a write-safety problem, whatever the errno.
-    assert _write_refusal(eloop, _FsCall.RESOLVE, Path("/nonexistent")) is None
-    # A path that is not itself a symlink: the loop is above it, so this is
-    # an I/O fact even though the errno matches a table entry.
-    assert _write_refusal(eloop, _FsCall.OPEN_SOURCE, Path("/nonexistent")) is None
-    # An errno with no entry at all propagates regardless of the call.
-    assert _write_refusal(enoent, _FsCall.OPEN_SOURCE, Path("/nonexistent")) is None
-    assert _write_refusal(enoent, _FsCall.OPEN_LOCK, Path("/nonexistent")) is None
+    # os.lstat can never report a write-safety problem, whatever the errno -
+    # it has no table entry at all.
+    assert _write_refusal(eloop, _FsCall.RESOLVE, absent) is None
+
+    # OPEN_LOCK has no preceding lstat, so ELOOP there is ambiguous and IS
+    # asked about. This path is not a symlink, so it is an I/O fact.
+    assert _write_refusal(eloop, _FsCall.OPEN_LOCK, absent) is None
+
+    # OPEN_SOURCE is NOT asked about, deliberately: `_snapshot` lstats the
+    # path immediately before, and that lstat succeeding already proves no
+    # directory component is a loop. Re-checking degraded the genuine TOCTOU
+    # refusal whenever the symlink was swapped back out.
+    assert _write_refusal(eloop, _FsCall.OPEN_SOURCE, absent) == UNSAFE_TO_WRITE
+
+    # An errno with no entry propagates regardless of the call.
+    assert _write_refusal(enoent, _FsCall.OPEN_SOURCE, absent) is None
+    assert _write_refusal(enoent, _FsCall.OPEN_LOCK, absent) is None
+
+
+def test_the_toctou_refusal_survives_the_symlink_being_swapped_back(
+    tmp_path: Path,
+) -> None:
+    """The round-16 MEDIUM, and a regression the round-15 rewrite introduced.
+
+    Answering "was this ELOOP O_NOFOLLOW?" by lstat-ing again, AFTER
+    `os.open` has already failed, re-opens a window inside the very race the
+    flag exists to close: an attacker who swaps the symlink in, lets the open
+    fail, then swaps it back out makes the second lstat report a regular file
+    and the genuine refusal degrades to `M_IO_ERROR`.
+
+    `_snapshot` lstats the path immediately before opening it, and that lstat
+    succeeding already proves no directory component is a loop - so the
+    re-check was redundant there as well as harmful. It now applies only to
+    the lock file, which has no preceding lstat.
+    """
+    from unittest import mock
+
+    from pqtools.core import SafeWriteError, _snapshot
+
+    target = tmp_path / "real.pq"
+    target.write_text("let a = 1 in a\n", encoding="utf-8")
+    query = tmp_path / "q.pq"
+    query.write_text("let a = 1 in a\n", encoding="utf-8")
+
+    real_lstat, real_open = os.lstat, os.open
+
+    def swapped_back(candidate, *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Every lstat sees a regular file: the symlink is gone again by the
+        # time anyone looks. Only os.open ever witnessed it.
+        if isinstance(candidate, (str, os.PathLike)) and Path(candidate) == query:
+            return real_lstat(target)
+        return real_lstat(candidate, *args, **kwargs)
+
+    def refusing_open(candidate, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if isinstance(candidate, (str, os.PathLike)) and Path(candidate) == query:
+            raise OSError(errno.ELOOP, "Too many levels of symbolic links")
+        return real_open(candidate, *args, **kwargs)
+
+    with (
+        mock.patch("pqtools.core.os.lstat", swapped_back),
+        mock.patch("pqtools.core.os.open", refusing_open),
+    ):
+        with pytest.raises(SafeWriteError, match="regular, non-symlink"):
+            _snapshot(query)
+
+
+def test_the_gate_header_reports_a_staged_only_tree_as_dirty() -> None:
+    """The round-16 MEDIUM: `git diff --quiet` compares the worktree against
+    the INDEX, so a tree whose changes are all STAGED - the normal shape when
+    gating just before a commit - printed a bare SHA with no DIRTY marker.
+    That is the "log certifies a tree it did not run on" failure the header
+    exists to prevent.
+    """
+    gate = Path(__file__).resolve().parent.parent / "scripts" / "release_gate.sh"
+    text = gate.read_text(encoding="utf-8")
+    assert "git diff --quiet HEAD" in text, "must compare against HEAD, not the index"
+    assert "git status --porcelain" in text, "untracked files must count too"
+    assert "COLLECTION FAILED" in text, "a failed collect must not print a blank count"
