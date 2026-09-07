@@ -2415,10 +2415,18 @@ the bug above, so it is now `${gate_add_err%%$'\n'*}` with no pipeline.
 
 ### Controls
 
-Two behavioural, each red with the defect and green after restoring: the
-round-19 gitlink net reintroduced (submodule test red) · `_git_env()` reverted
-to passing the location variables through (location test red, and the
-re-typed variant demonstrably green against the same defect).
+One control and one reintroduction guard - the round-21 review was right that
+calling both "controls" flattens a real difference, and the correction is made
+here in place:
+
+- **A control** over shipped code: `_git_env()` reverted to passing the
+  location variables through - location test red, and the re-typed variant
+  demonstrably green against the same defect.
+- **A reintroduction guard**: the submodule test. The net it guards was
+  deleted in this same commit, so against the shipped script it passes for any
+  implementation that ignores gitlinks. It goes red only against the mutation
+  (the round-19 net reinstated), which is what was measured. "Green" there
+  means "the defect has not come back", not "this code is checked".
 
 **Stated plainly, because the temptation is to claim otherwise: there is NO
 test controlling the SIGPIPE defect itself.** It is fixed by deleting the code
@@ -2429,3 +2437,77 @@ because that is what a non-firing net produces. The new large-tree test
 this file is one to four entries, which is what let the regime error through -
 but it is a regression guard, not a control for the defect, and it is not
 counted as one.
+
+---
+
+## Round 21 - `4b8be7c..332b0d5`, verdict FIX-FIRST, seven findings: three taken, two rejected on evidence, two already true
+
+This round came back from **ox-alpha**, not Opus 5, and several findings were
+hedged requests to verify rather than defects ("the diff as shown does not let
+a reader confirm"). Each was checked against the tree rather than accepted.
+
+### REJECTED - "the deletion may have unbalanced the `fi`s"
+
+Explicitly hedged, and wrong. `bash -n scripts/gate_provenance.sh` passes, the
+script runs clean and exits 0, and the release gate ran 8/8 on it. The reviewer
+noticed `if` and `fi` counts differ, which they do because of `elif`; `bash -n`
+is the authority.
+
+### REJECTED - "the evidence file certifies a tree that is not the staged tree"
+
+The claim was that `collect: 4139` must predate the two tests the commit adds,
+and that the header should read 4141. It rests on assuming 4139 was the
+pre-change baseline. It was not:
+
+    round-19 log:  # collect: 4137 tests collected
+    round-20 log:  # collect: 4139 tests collected      (4137 + 2 = 4139)
+    live collect on the shipped tree: 4139 tests collected
+
+And the identity settles it directly, which is the entire point of the last
+four rounds of work on this line. The round-20 log's `# content: 4b27df68`
+holds `tests/test_end_to_end.py` at blob `b1fc0e93`, byte-identical to
+`git rev-parse 332b0d5:tests/test_end_to_end.py`, and that blob contains both
+new test names. **The artifact certifies exactly the tree that shipped.** Two
+rounds ago this question could not have been answered; now it is one command.
+
+### REJECTED - "other `chmod(0o000)` sites need the same guard"
+
+`grep -rn 'chmod(0o000)\|chmod(0o400)' tests/` returns exactly one line, and it
+is the one that was guarded. There are no siblings.
+
+### TAKEN - `_GIT_ENV` and `_git_env()` had drifted apart
+
+Not "dead state" as described - it was live at five call sites. `_git()` and
+`_provenance()` were switched to `_git_env()` in round 20 while four other
+tests still passed the module-level snapshot, so half the file honoured a
+monkeypatched environment and half did not. The snapshot is deleted and every
+call site now calls the function. Re-controlled: with the filter removed the
+location test is still red.
+
+### TAKEN - 600 was a round number, and the threshold is not a byte count
+
+Worth pushing on, and the answer is more interesting than the question. It is
+not a clean pipe-buffer boundary: an `awk` writing 40 KB returns 0 where
+`git ls-tree` writing 38 KB returns 141, because it depends on how the writer
+flushes. Measured with the real writer, five runs each:
+
+    250 entries  16,642 bytes  ->  0 0 0 0 0
+    300 entries  19,992 bytes  ->  141 141 141 141 141
+    600 entries  40,092 bytes  ->  141 141 141 141 141
+
+The boundary is between 250 and 300 entries; 600 is about twice it, which is
+the margin for a git that lays its output out differently. The measurement and
+the fixture's cost (1.85s) are now in the docstring instead of a bare number.
+
+### TAKEN - the submodule test is a reintroduction guard, not a control
+
+Correct, and the sharpest finding of the round. The net it guards was deleted
+in the same commit, so against the shipped script it passes for any
+implementation that never inspects gitlinks. It is red only against the
+mutation. Both the docstring and the round-20 controls paragraph above now say
+so explicitly, and the count is stated as one control and one guard.
+
+This is the same discipline the audit has been applying to itself since round
+17, arriving from the other direction: round 17 called a string grep a control,
+and here a genuine behavioural test is a guard rather than a control because
+the code it examines no longer exists.

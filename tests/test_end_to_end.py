@@ -978,9 +978,6 @@ def _git_env() -> dict[str, str]:
     }
 
 
-_GIT_ENV = _git_env()
-
-
 def _git(args: list[str], cwd: Path, check: bool = True) -> str:
     result = subprocess.run(
         ["git", *args],
@@ -1155,7 +1152,7 @@ def test_the_gate_refuses_to_run_without_a_provenance_header(tmp_path: Path) -> 
         capture_output=True,
         text=True,
         check=False,
-        env=_GIT_ENV,
+        env=_git_env(),
     )
     assert result.returncode != 0, result.stdout
     assert "GATE PASSED" not in result.stdout, result.stdout
@@ -1308,7 +1305,7 @@ def test_an_unreadable_directory_makes_the_header_refuse(tmp_path: Path) -> None
             capture_output=True,
             text=True,
             check=False,
-            env=_GIT_ENV,
+            env=_git_env(),
         )
     finally:
         locked.chmod(0o755)
@@ -1352,7 +1349,7 @@ def test_a_nested_repository_makes_the_header_refuse(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env=_GIT_ENV,
+        env=_git_env(),
     )
     assert "COULD NOT IDENTIFY THE TREE THAT RAN" in result.stdout, result.stdout
     assert result.returncode != 0, result.stdout
@@ -1376,7 +1373,7 @@ def test_a_failed_collection_reaches_the_caller(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env=_GIT_ENV,
+        env=_git_env(),
     )
     assert "# collect: unknown - COLLECTION FAILED" in result.stdout, result.stdout
     assert result.returncode != 0, result.stdout
@@ -1413,7 +1410,7 @@ def test_the_gate_refuses_a_tree_it_cannot_identify(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env=_GIT_ENV,
+        env=_git_env(),
     )
     assert result.returncode != 0, result.stdout
     assert "GATE PASSED" not in result.stdout, result.stdout
@@ -1435,6 +1432,14 @@ def test_a_declared_submodule_is_not_mistaken_for_a_stray_repository(
     (The review's alternative - reject entries failing `git cat-file -e` -
     would not have worked either: a legitimate submodule's commit is not in the
     superproject's object store, verified, so that test rejects both alike.)
+
+    Read this as a REINTRODUCTION guard, not as a control over shipped code:
+    the net it guards against was deleted in the same commit, so against the
+    current script this test passes for any implementation that does not
+    inspect gitlinks. It earns the word "control" only against the mutation -
+    reinstating the round-19 net makes it red - and the closeout counts it that
+    way and no other. The distinction matters because "green" here means "the
+    defect has not come back", not "this code is checked".
     """
     upstream = tmp_path / "upstream"
     _repo(upstream)
@@ -1493,6 +1498,20 @@ def test_the_identity_holds_for_a_tree_large_enough_to_sigpipe(
     it. This one builds a tree big enough for the writer to block, so any
     future `| grep -q`-shaped check in this script is exercised in the regime
     where it breaks rather than the one where it works.
+
+    600 is not a round number picked for comfort - the threshold was measured
+    with the real writer, because it is not a clean byte count (an `awk`
+    producing 40 KB returns 0 where `git ls-tree` producing 38 KB returns 141;
+    it depends on how the writer flushes, so only `git ls-tree` answers it).
+    Five runs at each size, on this machine:
+
+        250 entries  16,642 bytes  ->  0 0 0 0 0
+        300 entries  19,992 bytes  ->  141 141 141 141 141
+        600 entries  40,092 bytes  ->  141 141 141 141 141
+
+    So the boundary is between 250 and 300 entries and 600 is about twice it,
+    which is the margin for a git whose output is laid out differently. The
+    fixture costs 1.85s.
     """
     repo = tmp_path / "repo"
     _repo(repo)
