@@ -22,7 +22,17 @@ FAILED=0
 
 # Provenance header, in its own script so a test can EXECUTE it rather than
 # grep it. See scripts/gate_provenance.sh for why that distinction mattered.
-bash scripts/gate_provenance.sh "$PY"
+#
+# Status-checked. Unchecked, a rename or a missing file sent the error to
+# stderr and the gate ran on to "GATE PASSED", exit 0, with a header-less log -
+# an unprovenanced pass that reads exactly like a provenanced one. The header
+# is the part of this log that says WHICH tree passed; without it the rest is
+# not evidence.
+bash scripts/gate_provenance.sh "$PY" || {
+  printf 'FATAL: provenance header failed (%s) - refusing to gate an\n' "$?"
+  printf '       unidentifiable tree.\n'
+  exit 2
+}
 
 step() { printf '\n=== %s ===\n' "$1"; }
 check() {

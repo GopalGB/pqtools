@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range c79b676..3264b59 (bundle + lockfile shown as stub blobs)
+# staged:  10 files changed, 446 insertions(+), 79 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in c79b676..3264b59, not stubbed, not in the diff
+# package-lock.json: unchanged in c79b676..3264b59, not stubbed, not in the diff
+# invoked 2026-09-07T13:43:57Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+- **HIGH — scripts/gate_provenance.sh:41-43 — `# content:` claims "the exact tree that ran" but `git stash create` silently omits untracked files, which is precisely what the DIRTY marker was extended to count.** Verified against the artifact this diff ships: `evidence/release-gate-2026-09-07-round17-fixes.log:3` names `295b580c…`, and `git ls-tree -r 295b580c` does **not** contain `scripts/gate_provenance.sh` — while `release_gate.sh:25` in that same tree invokes it. Checking out the "exact tree that ran" and running the gate prints no header at all, so the identity is not reconstructible: the round-16 finding, reproduced one round later by its own fix. The `git diff HEAD` + `--porcelain` fallback at :45-47 is blind the same way (porcelain lists untracked *names*, not contents). Fix: build the identity over tracked **and** untracked in a scratch index — `idx=$(mktemp); GIT_INDEX_FILE=$idx git read-tree HEAD 2>/dev/null; GIT_INDEX_FILE=$idx git add -A; GIT_INDEX_FILE=$idx git write-tree` — and drop the "exact tree" wording unless it is exact.
+
+- **HIGH — tests/test_end_to_end.py:1025-1028 — the control for that line cannot see the defect above.** It asserts only that `# content:` holds a 40-hex string that is not `unknown`; it never resolves the id, so it stays green on an id that omits the very change being certified — which is how the log above shipped. Fix: `git ls-tree -r <id>` and assert the modified path with its new blob is present, and add an untracked-file case (currently the untracked path is asserted only for the DIRTY marker, never for `# content:`).
+
+- **MEDIUM — scripts/release_gate.sh:25 — the extraction left the call site unchecked and now wholly untested.** `bash scripts/gate_provenance.sh "$PY"` ignores its exit status; with the script absent the error goes to stderr and the gate runs on to `GATE PASSED` with exit 0 and a header-less log (simulated: confirmed). `grep -rn release_gate tests/` returns nothing — the deleted grep test at least pinned the strings in that file; the four replacements exercise `gate_provenance.sh` only, so a rename or a non-zero exit is invisible. Fix: `bash scripts/gate_provenance.sh "$PY" || { printf 'provenance header FAILED\n'; exit 2; }`, plus one test that runs `release_gate.sh`'s header line and asserts `# commit:` reaches stdout.
+
+- **LOW — scripts/gate_provenance.sh:51-57 — the comment states the detached-HEAD fallback yields "the abbreviated rev"; it yields the literal `HEAD`.** `git rev-parse --abbrev-ref --verify HEAD` on a detached head prints `HEAD` (verified) — and gate runs happen in detached worktrees (`mq-gate-wt-*`), so the branch field is uninformative in exactly the case the fallback exists for. The four new tests cover staged/untracked/clean/unborn/collect-fail, not detached. Fix: `gate_branch=$(git rev-parse --short HEAD 2>/dev/null) || gate_branch='unknown'` in that branch, plus a detached test.
+
+- **LOW — tests/test_end_to_end.py:951-957 — `_repo` inherits the developer's global git config.** A global `commit.gpgsign`, `core.hooksPath` (this estate installs commit hooks broadly) or `init.templateDir` makes the `check=True` commits fail or run estate hooks inside a fixture repo. None are set on this machine (verified), so this is fragility rather than a live failure. Fix: pass `env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}` and commit with `--no-verify`.
+
+Checked and not reported: the README:722-728 / llms.txt:139 rewrite is now consistent with `core.py:862` and `:870` (both size checks raise `SafeWriteError` on the read path) and is pinned by `test_the_size_cap_is_reported_by_read_verbs_too`, including the invalid-UTF-8 half; the `# collect:` status check survives the extraction because `set -uo pipefail` is re-declared at gate_provenance.sh:13, so `tail`'s zero exit does not mask a failing pytest; dropping `git diff --quiet HEAD` is correct — `--porcelain` alone covers staged, unstaged and untracked, and the unborn-HEAD 128 is gone; `git stash create` writes objects only and never touches `refs/stash`, so it is safe against the shared stash stack in these worktrees.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

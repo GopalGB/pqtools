@@ -2073,3 +2073,135 @@ the first left the test green. Recorded because the first reading of that
 result - "the test is not load-bearing" - was wrong, and the difference
 between a weak test and an incomplete control is exactly what this round is
 about.
+
+---
+
+## Round 18 - `c79b676..3264b59`, verdict FIX-FIRST, five findings, all taken
+
+The round-17 fix for the round-16 finding reproduced the round-16 defect. That
+is the third consecutive round in which the previous round's fix was the bug,
+and unlike the earlier two this one shipped a piece of evidence that was
+already false when it was committed.
+
+### HIGH - `git stash create` omits untracked files, so `# content:` certified a tree without the script that printed it
+
+`# content:` was added in round 17 to give a DIRTY log a checkable identity.
+It used `git stash create`, which stashes **tracked** changes only - silently
+dropping untracked files, the exact class `git status --porcelain` counts as
+dirty eighteen lines above it in the same script.
+
+Measured, not argued. `evidence/release-gate-2026-09-07-round17-fixes.log`
+names `295b580c` as "the exact tree that ran", and:
+
+    $ git ls-tree -r 295b580cf15d1f026a34cdbd224a15beb20ec9aa | grep -c gate_provenance
+    0
+    $ git show 295b580c:scripts/release_gate.sh | grep -n gate_provenance
+    25:bash scripts/gate_provenance.sh "$PY"
+
+The certified tree calls a script the certified tree does not contain, because
+that script was still untracked when the gate ran. Checking out "the exact
+tree that ran" and running it prints no header at all. The identity was not
+reconstructible, which is the whole and only property it existed to have.
+
+The old fallback was blind the same way: with **only** untracked changes
+`git stash create` prints nothing (verified - it produces no stash at all), so
+the fallback fired, and it hashed `git diff HEAD` plus `git status
+--porcelain` - and porcelain lists untracked *names*, not contents.
+
+Now built in a scratch index: `read-tree HEAD`, then `add -A` over the
+worktree, then `write-tree`. Same side effect as stash create - blobs and
+trees in the object store, never a ref - and it covers tracked and untracked
+alike. Ignored files stay out, which is what `--porcelain` counted, so the
+DIRTY marker and the identity agree on what "dirty" means. When it cannot be
+computed the line now says `unknown - COULD NOT IDENTIFY THE TREE THAT RAN`
+rather than printing an approximation: an identity that omits part of what ran
+reads as checkable and is not, which is worse than none.
+
+Verified end-to-end on this repo: the id it now prints contains
+`scripts/gate_provenance.sh` at the **worktree** blob
+(`1d871e85…`), not HEAD's (`22f1c54a…`).
+
+### HIGH - the control written alongside it could not see the defect
+
+`test_a_dirty_gate_header_still_identifies_the_tree_that_ran` asserted that the
+line held a 40-hex string that was not `unknown`. It never resolved the id, and
+the only dirty shape it built was a tracked modification - the one shape
+`git stash create` does capture. So it was green throughout, including on the
+run that produced the false log above.
+
+It now resolves the id with `git ls-tree -r`, asserts both a tracked
+modification and an untracked file are present, and compares each blob against
+`git hash-object` of the working file - so the assertion is about content, not
+about the shape of a string.
+
+This is the second round running in which a control was weaker than the
+sentence describing it. Round 17's was a string grep reported as behavioural;
+this one executed the right code and inspected the wrong property.
+
+### MEDIUM - extracting the header created an unchecked call site, and nothing tested it
+
+`bash scripts/gate_provenance.sh "$PY"` ignored its exit status. With the file
+renamed or absent the error went to stderr and the gate ran on to `GATE
+PASSED`, exit 0, with a header-less log - an unprovenanced pass indistinguishable
+from a provenanced one. `grep -rn release_gate tests/` returned nothing: the
+round-17 extraction deleted the grep test that at least pinned that file's
+strings, and the four replacements drive `gate_provenance.sh` only.
+
+Now `|| { … exit 2; }`, plus a test that copies `release_gate.sh` into a temp
+directory **without** `gate_provenance.sh` and asserts non-zero exit and no
+`GATE PASSED`.
+
+### LOW - the detached-HEAD fallback returned the literal string `HEAD`
+
+`git rev-parse --abbrev-ref --verify HEAD` prints `HEAD` when detached
+(verified), and gate runs happen in detached worktrees (`mq-gate-wt-*`) - so
+the branch field was uninformative in precisely the case the fallback existed
+for. Now `--short`, reported as `detached at <rev>`.
+
+### LOW - the fixture repos inherited the developer's global git config
+
+`_repo` ran `git init` with the ambient environment, so a global
+`core.hooksPath` (this estate installs commit hooks across ~105 repos),
+`commit.gpgsign` or `init.templateDir` would fail the `check=True` commits or
+run estate hooks inside a throwaway fixture. None are set on this machine, so
+this was latent fragility rather than a live failure - but a test whose result
+depends on who runs it is not a control. Now `GIT_CONFIG_GLOBAL` and
+`GIT_CONFIG_SYSTEM` are pinned to `os.devnull` for every git call in these
+tests, including the ones the provenance script makes.
+
+### Controls
+
+Five behavioural, each red with the defect and green after restoring:
+identity reverted to `git stash create` · detached fallback reverted to
+`--abbrev-ref` · `|| exit` dropped from the call site · clean/dirty branches
+inverted · unborn-HEAD `||` moved back inside the substitution.
+
+**Two of the five were mis-specified on the first attempt, and both are worth
+recording because a control that cannot go red is not evidence.**
+
+The detached-HEAD mutation silently failed to apply - a quoting error in the
+one-liner meant the file was never edited, and the `grep -c abbrev-ref` I used
+to confirm it matched the *comment* describing the old behaviour rather than
+the code. It was re-run with an asserted replacement (`assert old in s`) and
+then went red.
+
+### CORRECTION - round 17 credited the wrong half of its own unborn-HEAD fix
+
+The fifth control was first written as "drop `--verify` from `rev-parse`",
+which is what the round-17 commit message says fixed the unborn-HEAD case. It
+stayed **green**. The reason is that round 17 changed two things at once:
+
+    before:  "$(git rev-parse HEAD 2>/dev/null || echo unknown)"     # || INSIDE
+    after:   $(git rev-parse --verify HEAD 2>/dev/null) || gate_commit='unknown'
+
+The load-bearing half is the `||` moving **outside** the substitution, where it
+*replaces* the value; inside, it *appended* "unknown" to the "HEAD" that
+`rev-parse` prints to stdout before failing, which is what made the field two
+lines long. `--verify` alone is defence in depth. Demonstrated directly:
+
+    inside  : [HEAD\nunknown]
+    outside : [unknown]
+
+The faithful control restores the inside-form, and it goes red. The comment in
+`gate_provenance.sh` has been corrected in place; the round-17 commit message
+is immutable and is corrected here instead.

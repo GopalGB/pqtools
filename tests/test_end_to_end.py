@@ -935,6 +935,31 @@ def test_the_toctou_refusal_survives_the_symlink_being_swapped_back(
             _snapshot(query)
 
 
+# The round-18 LOW: these fixtures ran git with the DEVELOPER'S global config
+# inherited. A global `core.hooksPath` (this estate installs commit hooks across
+# ~105 repos), `commit.gpgsign`, or `init.templateDir` would either fail the
+# check=True commits or run estate hooks inside a throwaway fixture. None are
+# set on this machine, so it was latent fragility rather than a live failure -
+# but a test whose result depends on who is running it is not a control.
+_GIT_ENV = {
+    **os.environ,
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
+}
+
+
+def _git(args: list[str], cwd: Path, check: bool = True) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=check,
+        capture_output=True,
+        text=True,
+        env=_GIT_ENV,
+    )
+    return result.stdout
+
+
 def _provenance(cwd: Path, python: str = "") -> str:
     """Run the real provenance script in `cwd` and return what it printed."""
     script = Path(__file__).resolve().parent.parent / "scripts" / "gate_provenance.sh"
@@ -944,18 +969,25 @@ def _provenance(cwd: Path, python: str = "") -> str:
         capture_output=True,
         text=True,
         check=False,
+        env=_GIT_ENV,
     )
     return result.stdout
 
 
 def _repo(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    for command in (
-        ["git", "init", "-q", "."],
-        ["git", "config", "user.email", "t@example.invalid"],
-        ["git", "config", "user.name", "t"],
-    ):
-        subprocess.run(command, cwd=path, check=True, capture_output=True)
+    _git(["init", "-q", "."], path)
+    _git(["config", "user.email", "t@example.invalid"], path)
+    _git(["config", "user.name", "t"], path)
+
+
+def _content_id(header: str) -> str:
+    """The object id from the header's `# content:` line, or ''."""
+    for line in header.splitlines():
+        if line.startswith("# content:"):
+            match = re.search(r"\b[0-9a-f]{40}\b", line)
+            return match.group(0) if match else ""
+    return ""
 
 
 def test_the_gate_header_reports_a_staged_only_tree_as_dirty(tmp_path: Path) -> None:
@@ -971,10 +1003,8 @@ def test_the_gate_header_reports_a_staged_only_tree_as_dirty(tmp_path: Path) -> 
     repo = tmp_path / "repo"
     _repo(repo)
     (repo / "f.txt").write_text("one\n", encoding="utf-8")
-    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True
-    )
+    _git(["add", "f.txt"], repo)
+    _git(["commit", "-qm", "init"], repo)
 
     clean = _provenance(repo)
     assert "(working tree DIRTY)" not in clean, clean
@@ -983,17 +1013,12 @@ def test_the_gate_header_reports_a_staged_only_tree_as_dirty(tmp_path: Path) -> 
     # HEAD. This is the normal shape when gating just before a commit, and it
     # is what `git diff --quiet` called clean.
     (repo / "f.txt").write_text("two\n", encoding="utf-8")
-    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True, capture_output=True)
+    _git(["add", "f.txt"], repo)
     staged = _provenance(repo)
     assert "(working tree DIRTY)" in staged, staged
 
     # And an untracked file alone counts too.
-    subprocess.run(
-        ["git", "restore", "--staged", "f.txt"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
+    _git(["restore", "--staged", "f.txt"], repo)
     (repo / "f.txt").write_text("one\n", encoding="utf-8")
     assert "(working tree DIRTY)" not in _provenance(repo)
     (repo / "untracked.txt").write_text("x\n", encoding="utf-8")
@@ -1009,23 +1034,99 @@ def test_a_dirty_gate_header_still_identifies_the_tree_that_ran(
     Not hypothetical - `evidence/release-gate-2026-09-07-round16-fixes.log`
     names `89367cd`, an autocommit holding two evidence files, while every
     change it certifies sat uncommitted in the worktree.
+
+    The round-18 HIGH is that the FIX for that had the same hole, and the
+    version of this test written alongside it could not see it: it asserted the
+    line held a 40-hex string that was not "unknown", never resolved it, and
+    exercised only a tracked modification - the one shape `git stash create`
+    does capture. So it stayed green while the round-17 gate log certified
+    295b580c, a tree that does not contain the script that printed the line.
+    This version resolves the id and reads the blobs out of it.
     """
     repo = tmp_path / "repo"
     _repo(repo)
     (repo / "f.txt").write_text("one\n", encoding="utf-8")
-    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True
-    )
+    _git(["add", "f.txt"], repo)
+    _git(["commit", "-qm", "init"], repo)
     assert "# content:" not in _provenance(repo), "clean trees need no content line"
 
+    # A tracked modification AND an untracked file - the second is what the
+    # header counts as dirty and what `git stash create` silently dropped.
     (repo / "f.txt").write_text("two\n", encoding="utf-8")
+    (repo / "untracked.txt").write_text("only-in-the-worktree\n", encoding="utf-8")
     dirty = _provenance(repo)
     assert "# content:" in dirty, dirty
-    identity = [line for line in dirty.splitlines() if line.startswith("# content:")][0]
-    # A real object id, not a placeholder.
-    assert "unknown" not in identity, identity
-    assert re.search(r"\b[0-9a-f]{40}\b", identity), identity
+    identity = _content_id(dirty)
+    assert identity, dirty
+
+    # Resolve it. An id that does not name a readable tree is not an identity.
+    listing = _git(["ls-tree", "-r", identity], repo)
+    paths = {line.split("\t", 1)[1] for line in listing.splitlines() if "\t" in line}
+    assert "untracked.txt" in paths, listing
+    assert "f.txt" in paths, listing
+
+    # And the CONTENT is the new content, not HEAD's.
+    blobs = {
+        line.split("\t", 1)[1]: line.split()[2]
+        for line in listing.splitlines()
+        if "\t" in line
+    }
+    assert blobs["f.txt"] == _git(["hash-object", "f.txt"], repo).strip(), listing
+    assert (
+        blobs["untracked.txt"] == _git(["hash-object", "untracked.txt"], repo).strip()
+    ), listing
+
+
+def test_the_gate_header_names_a_detached_head_by_rev(tmp_path: Path) -> None:
+    """The round-18 LOW: the detached fallback was `rev-parse --abbrev-ref`,
+    which prints the literal string "HEAD" when detached.
+
+    Gate runs happen in detached worktrees (`mq-gate-wt-*`), so the branch
+    field was uninformative in exactly the case the fallback existed for.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    _git(["add", "f.txt"], repo)
+    _git(["commit", "-qm", "init"], repo)
+    _git(["checkout", "-q", "--detach"], repo)
+
+    header = _provenance(repo)
+    branch = [ln for ln in header.splitlines() if ln.startswith("# branch:")][0]
+    assert branch.split(":", 1)[1].strip() != "HEAD", branch
+    short = _git(["rev-parse", "--short", "HEAD"], repo).strip()
+    assert short in branch, (branch, short)
+
+
+def test_the_gate_refuses_to_run_without_a_provenance_header(tmp_path: Path) -> None:
+    """The round-18 MEDIUM: `bash scripts/gate_provenance.sh "$PY"` ignored its
+    exit status.
+
+    With the script renamed or absent the error went to stderr and the gate ran
+    on to `GATE PASSED` with exit 0 and a header-less log - an unprovenanced
+    pass that reads exactly like a provenanced one. Extracting the header into
+    its own file created this failure mode; nothing referenced release_gate.sh
+    from the suite, so nothing could see it.
+    """
+    scripts = tmp_path / "scripts"
+    scripts.mkdir(parents=True)
+    real = Path(__file__).resolve().parent.parent / "scripts" / "release_gate.sh"
+    (scripts / "release_gate.sh").write_text(
+        real.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    # gate_provenance.sh is deliberately NOT copied.
+
+    result = subprocess.run(
+        ["bash", "scripts/release_gate.sh"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_GIT_ENV,
+    )
+    assert result.returncode != 0, result.stdout
+    assert "GATE PASSED" not in result.stdout, result.stdout
+    assert "provenance header failed" in result.stdout, result.stdout
 
 
 def test_the_gate_header_survives_a_repo_with_no_commits(tmp_path: Path) -> None:
