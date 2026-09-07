@@ -199,23 +199,60 @@ diff = update_file(path, format_source, write=True)  # atomic write
 
 ## Diagnostics
 
-| Code | Severity | Meaning |
-|---|---|---|
-| `M_PARSE_ERROR` | error | source does not parse |
-| `M001` | error | duplicate `let` binding name |
-| `M002` | warning | `Web.Contents` called with a non-literal (dynamic) URL |
-| `M003` | warning | credential-like literal (`password`/`token`/`secret` = `"..."`) |
-| `M004` | warning | `let` binding unreachable from the result |
-| `M005` | warning | unresolved unqualified reference |
-| `M006` | info | source-function inventory (`*.Contents` dependency) |
+| Code | Severity | In plain English | The precise rule |
+|---|---|---|---|
+| `M_PARSE_ERROR` | error | this is not valid Power Query | source does not parse |
+| `M001` | error | two steps share one name, so one is thrown away | duplicate `let` binding name |
+| `M002` | warning | the web address is built, not written out, so you cannot tell what it downloads | `Web.Contents` called with a non-literal (dynamic) URL |
+| `M003` | warning | a password or key is typed into the query, where anyone can read it | credential-like literal (`password`/`token`/`secret` = `"..."`) |
+| `M004` | warning | nothing uses this step | `let` binding unreachable from the result |
+| `M005` | warning | a name nothing defines - usually a typo | unresolved unqualified reference |
+| `M006` | info | where the data comes in (not a problem) | source-function inventory (`*.Contents` dependency) |
+
+Ask for the long version, including what to do about it:
+
+```bash
+pq explain M003
+```
+```
+M003 (warning) - a password or key is typed into the query
+
+What it means: Something named like a password, token or secret has its
+               value typed straight into the query text. Anyone who can open
+               this file can read it, and it travels with the file into git.
+What to do:    Take the value out of the query and pass it from the
+               environment instead.
+```
 
 `M002` and `M003` are token-based checks over the parsed source, so they no
 longer fire inside comments or strings. Every matching occurrence is
 reported, one diagnostic per call site or literal.
 
-`check --json` emits stable objects; `check` without `--json` prints
-`file:line:column: severity code: message` per diagnostic. The CLI exits `2`
-when any diagnostic has severity `error`, `0` otherwise.
+### What `pq check` prints
+
+`check --json` emits stable objects and is unchanged. `check` without `--json`
+prints `file:line:column: severity code: message` per diagnostic - the same
+machine-parseable line it always did, so `pq check 'src/**/*.pq' | grep error`
+still means what it looks like it means - and under the **first** finding of
+each code, one indented plain sentence saying what that code means:
+
+```
+messy.pq:2:5: error M001: duplicate let binding: Source
+    Two steps in this query are called the same thing. Power Query keeps one
+    of them, so the other step's work is thrown away.
+messy.pq:3:5: error M001: duplicate let binding: Source
+messy.pq:4:5: warning M004: unreachable let binding: unused
+    This step's result is never used by the query's answer or by any other
+    step that is.
+messy.pq:5:5: warning M004: unreachable let binding: token
+```
+
+Once per code, not once per finding: a file with five unused steps repeating
+the same sentence five times is output people learn to skip, which costs more
+than the jargon it replaced. The sentence is indented, so nothing that counts
+lines or greps for `: error ` can mistake it for a finding.
+
+The CLI exits `2` when any diagnostic has severity `error`, `0` otherwise.
 
 ## Running M
 

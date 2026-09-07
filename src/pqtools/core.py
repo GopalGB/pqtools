@@ -14,10 +14,11 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import textwrap
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -117,6 +118,151 @@ class Diagnostic:
 
     def as_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
+
+
+# ---------------------------------------------------------------------------
+# What a diagnostic MEANS, in words a person who does not write M can act on
+# ---------------------------------------------------------------------------
+#
+# `sales.pq:1:1: info M006: source function: File.Contents` is precise and
+# tells a reader nothing. The code and the terse message are kept - CI greps
+# them, and `pq check | grep error` has to keep meaning what it looks like it
+# means - and a plain sentence is printed under it.
+#
+# `means` is what is true. `fix` is what to do about it, and is deliberately
+# allowed to say "nothing": an inventory line is not a defect, and pretending
+# otherwise trains people to ignore the output.
+
+
+@dataclass(frozen=True)
+class DiagnosticHelp:
+    title: str
+    means: str
+    fix: str
+
+
+DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
+    "M001": DiagnosticHelp(
+        title="two steps share one name",
+        means=(
+            "Two steps in this query are called the same thing. Power Query "
+            "keeps one of them, so the other step's work is thrown away."
+        ),
+        fix="Rename one of them.",
+    ),
+    "M002": DiagnosticHelp(
+        title="the web address is built, not written out",
+        means=(
+            "This query fetches a web address that is assembled from a "
+            "variable instead of being written out in full, so what it "
+            "actually downloads cannot be known by reading the query."
+        ),
+        fix=(
+            "Write the address out in full where you can. If it genuinely "
+            "has to vary, be sure nothing outside the query controls it."
+        ),
+    ),
+    "M003": DiagnosticHelp(
+        title="a password or key is typed into the query",
+        means=(
+            "Something named like a password, token or secret has its value "
+            "typed straight into the query text. Anyone who can open this "
+            "file can read it, and it travels with the file into git."
+        ),
+        fix=(
+            "Take the value out of the query and pass it from the environment instead."
+        ),
+    ),
+    "M004": DiagnosticHelp(
+        title="nothing uses this step",
+        means=(
+            "This step's result is never used by the query's answer or by "
+            "any other step that is."
+        ),
+        fix=("Delete it, or connect it to the chain. As written it changes nothing."),
+    ),
+    "M005": DiagnosticHelp(
+        title="a name nothing defines",
+        means=(
+            "The query refers to a name that no step defines and that is not "
+            "a built-in function."
+        ),
+        fix=(
+            "Usually a misspelled step name, or a step that was deleted. "
+            "Check the spelling against the step it should point at."
+        ),
+    ),
+    "M006": DiagnosticHelp(
+        title="where the data comes in",
+        means=(
+            "This is a place the query reaches outside itself for data - a "
+            "file, a web address, a database."
+        ),
+        fix=(
+            "Nothing. This is an inventory line, not a problem: it is here "
+            "so every source a query touches is visible in one list."
+        ),
+    ),
+}
+
+
+# The severity each code is emitted with, so `pq explain M003` can say
+# "warning" without the reader having to produce one first. Kept beside the
+# help table on purpose: a code that gains an entry in one and not the other
+# is caught by test_every_emitted_diagnostic_code_is_explained.
+DIAGNOSTIC_SEVERITY: dict[str, str] = {
+    "M001": "error",
+    "M002": "warning",
+    "M003": "warning",
+    "M004": "warning",
+    "M005": "warning",
+    "M006": "info",
+}
+
+
+def diagnostic_help(code: str) -> DiagnosticHelp | None:
+    """The plain-English entry for a diagnostic code, if there is one."""
+    return DIAGNOSTIC_HELP.get(code)
+
+
+def render_diagnostics(items: Sequence[Diagnostic]) -> list[str]:
+    """The human-readable form of a run's diagnostics, one string per line.
+
+    ONE renderer. It was three identical f-strings at three call sites in
+    cli.py, which is the shape that let a single OSError decision drift at
+    four sites across four review rounds. A reader should not have to work
+    out which of three copies produced the line in front of them.
+
+    Each finding keeps its machine-parseable first line unchanged, so
+    `pq check | grep error` still means what it looks like it means. The
+    plain sentence is printed under the FIRST finding of each code only.
+    Repeating it is not thoroughness: a file with five unused steps printed
+    the same sentence five times, and output that repeats itself is output
+    people learn to skip - which costs more than the jargon it replaced.
+    """
+    lines: list[str] = []
+    explained: set[str] = set()
+    for item in items:
+        lines.append(
+            f"{item.file}:{item.line}:{item.column}: "
+            f"{item.severity} {item.code}: {item.message}"
+        )
+        help_entry = diagnostic_help(item.code)
+        if help_entry is not None and item.code not in explained:
+            explained.add(item.code)
+            # Wrapped, not one long line. A terminal wraps an over-long line
+            # at column 0, where the continuation sits flush against the next
+            # finding and reads like one - the opposite of the point. 76 keeps
+            # the indent inside 80 columns.
+            lines.extend(
+                textwrap.fill(
+                    help_entry.means,
+                    width=76,
+                    initial_indent="    ",
+                    subsequent_indent="    ",
+                ).splitlines()
+            )
+    return lines
 
 
 @dataclass(frozen=True)

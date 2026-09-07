@@ -143,6 +143,30 @@ same classes are raised, each carrying the code as `.code`.
 | `M_EXPORT_REFUSED` | `to_pandas()` / `to_arrow()` / `to_parquet()` declined rather than produce a frame that would read as data. Either an optional library is absent (the message names the extra to install), or a value has no lossless column type: an unread lazy table, a record, a nested list or table, a type or function value, ragged rows, a column mixing two M types, an integer past 64 bits, or a number column holding both `null` and `#nan`, which pandas cannot tell apart. | The message names the column and what to do - usually expand or select in M first, then export. Never fill the gap yourself: a NaN where a refusal was raised is the wrong answer, not a missing one. |
 | `MQUERY_ERROR` | The base code: any other typed failure. | Read the message. |
 
+### Lint diagnostic codes (`pq check`)
+
+Separate from the `M_*` failure codes above: these are findings ABOUT a query,
+not failures of pqtools. `pq check` exits 2 if any has severity `error`.
+
+| Code | Severity | Means |
+|---|---|---|
+| `M_PARSE_ERROR` | error | the source is not valid Power Query M |
+| `M001` | error | two `let` steps share one name, so one is discarded |
+| `M002` | warning | `Web.Contents` is called with a built (non-literal) URL, so what it fetches cannot be read off the source |
+| `M003` | warning | a credential-like literal (`password`/`token`/`secret` = `"..."`) is in the query text |
+| `M004` | warning | a `let` binding is unreachable from the result |
+| `M005` | warning | an unqualified reference resolves to nothing - usually a typo |
+| `M006` | info | inventory of where the query reads from (`*.Contents`). Not a defect |
+
+`pq explain M003` prints what the code means and what to do, as JSON with
+`--json` (`{"code", "severity", "title", "means", "fix"}`). `pq explain` takes
+either a diagnostic code or an M function name.
+
+Human-readable `pq check` output prints the machine-parseable
+`file:line:column: severity code: message` line for every finding, plus one
+indented plain-English sentence under the FIRST finding of each code. Parse the
+`file:line:column:` lines, or use `--json`, which is unaffected.
+
 ## Credentials
 
 Database credentials come from the environment and only from the environment:

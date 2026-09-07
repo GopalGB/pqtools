@@ -13,6 +13,7 @@ import json
 import os
 import stat
 import sys
+import textwrap
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,14 +22,17 @@ from . import catalog, containers
 from .builtins._shared import _DeferredRows, _type_name
 from .containers import ContainerError
 from .core import (
+    DIAGNOSTIC_SEVERITY,
     Diagnostic,
     MQueryError,
     _snapshot,
     check,
     dependencies,
+    diagnostic_help,
     format_source,
     parse,
     rename,
+    render_diagnostics,
     replace_source,
     update_file,
 )
@@ -649,11 +653,8 @@ def _run_check_batch(files: list[Path], args: argparse.Namespace) -> int:
         if args.json:
             json_diagnostics.extend(item.as_dict() for item in diagnostics)
         elif diagnostics:
-            for item in diagnostics:
-                print(
-                    f"{item.file}:{item.line}:{item.column}: "
-                    f"{item.severity} {item.code}: {item.message}"
-                )
+            for line in render_diagnostics(diagnostics):
+                print(line)
         else:
             print(f"{path}: OK")
     if args.json:
@@ -842,6 +843,43 @@ def _run_explain(args: argparse.Namespace) -> int:
     second source of truth to reconcile.)
     """
     name: str = args.file
+
+    # A diagnostic code is the other thing a person holds when they type
+    # `pq explain`: `pq check` just printed `M003` at them. Answering only
+    # for function names would send them to the README for the codes and to
+    # the CLI for the functions, which is one lookup too many.
+    code_help = diagnostic_help(name.upper())
+    if code_help is not None:
+        code = name.upper()
+        severity = DIAGNOSTIC_SEVERITY.get(code, "")
+        if args.json:
+            _print(
+                {
+                    "code": code,
+                    "severity": severity,
+                    "title": code_help.title,
+                    "means": code_help.means,
+                    "fix": code_help.fix,
+                },
+                True,
+            )
+        else:
+            print(f"{code} ({severity}) - {code_help.title}")
+            print()
+            for label, text in (
+                ("What it means:", code_help.means),
+                ("What to do:   ", code_help.fix),
+            ):
+                print(
+                    textwrap.fill(
+                        text,
+                        width=76,
+                        initial_indent=f"{label} ",
+                        subsequent_indent=" " * (len(label) + 1),
+                    )
+                )
+        return 0
+
     if name in BUILTINS:
         message = f"{name} is implemented by pqtools - it is not refused."
         supported = True
@@ -1153,11 +1191,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.json:
                     _print([item.as_dict() for item in diagnostics], True)
                 else:
-                    for item in diagnostics:
-                        print(
-                            f"{item.file}:{item.line}:{item.column}: "
-                            f"{item.severity} {item.code}: {item.message}"
-                        )
+                    for line in render_diagnostics(diagnostics):
+                        print(line)
                 return 2 if any(item.severity == "error" for item in diagnostics) else 0
             if args.command == "parse":
                 _print(
@@ -1191,11 +1226,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.json:
                 _print([item.as_dict() for item in diagnostics], True)
             else:
-                for item in diagnostics:
-                    print(
-                        f"{item.file}:{item.line}:{item.column}: "
-                        f"{item.severity} {item.code}: {item.message}"
-                    )
+                for line in render_diagnostics(diagnostics):
+                    print(line)
             return 2 if any(item.severity == "error" for item in diagnostics) else 0
         if args.command == "dependencies":
             _print(dependencies(_source(args.file)), True)

@@ -1529,3 +1529,122 @@ def test_the_identity_holds_for_a_tree_large_enough_to_sigpipe(
     listing = _git(["ls-tree", "-r", identity], repo)
     assert len(listing.splitlines()) > 600, len(listing.splitlines())
     assert "marker.txt" in listing
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics a person can act on
+# ---------------------------------------------------------------------------
+#
+# `sales.pq:1:1: info M006: source function: File.Contents` is precise and
+# tells a reader nothing about what to do. These pin the plain-English layer
+# without loosening the machine-readable one CI depends on.
+
+_ALL_SIX = (
+    "let A = 1, A = 2, Dead = 3, "
+    'Source = Web.Contents(Url), Password = "secret" in Missing'
+)
+
+
+def test_every_diagnostic_code_that_can_be_emitted_has_an_explanation() -> None:
+    """The drift guard.
+
+    A seventh code added later with no entry would print a bare jargon line
+    and nothing would notice. This derives the codes from `check()` itself
+    rather than from a hand-kept list, so the two cannot separate.
+    """
+    from pqtools.core import DIAGNOSTIC_HELP, DIAGNOSTIC_SEVERITY, check
+
+    emitted = {item.code for item in check(_ALL_SIX, "query.pq")}
+    assert emitted, "fixture stopped producing diagnostics"
+    missing = sorted(code for code in emitted if code not in DIAGNOSTIC_HELP)
+    assert not missing, f"emitted with no plain-English entry: {missing}"
+
+    # The severity table is consulted by `pq explain`, which never sees a
+    # Diagnostic object, so it can drift out of the help table independently.
+    assert set(DIAGNOSTIC_HELP) == set(DIAGNOSTIC_SEVERITY)
+    for code in emitted:
+        actual = {
+            item.severity for item in check(_ALL_SIX, "query.pq") if item.code == code
+        }
+        assert DIAGNOSTIC_SEVERITY[code] in actual, (code, actual)
+
+    for code, entry in DIAGNOSTIC_HELP.items():
+        assert entry.means.endswith("."), code
+        assert entry.fix.endswith("."), code
+        assert entry.title == entry.title.lower(), code
+
+
+def test_the_explanation_is_printed_once_per_code_not_once_per_finding() -> None:
+    """Repeating it is not thoroughness.
+
+    A file with five unused steps printed the same sentence five times, and
+    output that repeats itself is output people learn to skip - which costs
+    more than the jargon it replaced.
+    """
+    from pqtools.core import Diagnostic, diagnostic_help, render_diagnostics
+
+    four_of_one_code = [
+        Diagnostic("q.pq", n, 5, "M004", "warning", f"unreachable let binding: b{n}")
+        for n in range(1, 5)
+    ]
+    lines = render_diagnostics(four_of_one_code)
+    help_entry = diagnostic_help("M004")
+    assert help_entry is not None
+    # Normalise whitespace: the sentence is wrapped across lines, so counting
+    # exact-match lines would count the wrapping, not the repetition.
+    flat = " ".join(" ".join(lines).split())
+    assert flat.count(" ".join(help_entry.means.split())) == 1, lines
+    # ...and every finding still gets its own machine line.
+    assert len([line for line in lines if line.startswith("q.pq:")]) == 4, lines
+
+
+def test_the_machine_readable_line_is_untouched_by_the_explanation() -> None:
+    """`pq check | grep error` has to keep meaning what it looks like.
+
+    The explanation is indented, so a line-counting or grep-anchored CI step
+    cannot mistake it for a finding.
+    """
+    from pqtools.core import Diagnostic, render_diagnostics
+
+    item = Diagnostic("q.pq", 2, 5, "M001", "error", "duplicate let binding: Source")
+    lines = render_diagnostics([item])
+    assert lines[0] == "q.pq:2:5: error M001: duplicate let binding: Source"
+    assert lines[1].startswith("    ") and not lines[1].startswith("    q.pq")
+    assert len([line for line in lines if ": error " in line]) == 1
+
+
+def test_pq_explain_answers_for_a_diagnostic_code(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A person typing `pq explain` is holding whatever `pq check` printed.
+
+    Answering only for function names would send them to the README for the
+    codes and to the CLI for the functions - one lookup too many.
+    """
+    from pqtools.cli import main
+
+    assert main(["explain", "M003"]) == 0
+    out = capsys.readouterr().out
+    assert "M003 (warning)" in out, out
+    assert "What it means:" in out and "What to do:" in out, out
+    assert "password" in out.lower(), out
+
+    # lower-case too - people retype what they saw, not always exactly
+    assert main(["explain", "m003"]) == 0
+    assert "M003 (warning)" in capsys.readouterr().out
+
+    # and the function-name path still works
+    assert main(["explain", "Table.FuzzyNestedJoin"]) == 0
+    assert "approximate" in capsys.readouterr().out.lower()
+
+
+def test_pq_explain_json_carries_the_code_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from pqtools.cli import main
+
+    assert main(["explain", "M006", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["code"] == "M006"
+    assert payload["severity"] == "info"
+    assert payload["fix"].startswith("Nothing")
