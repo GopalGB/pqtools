@@ -12,9 +12,31 @@ cd "$REPO" || exit 1
 # deleted with it - a 15-minute review with nothing to show for it
 # (round 9). Anchor it to the repo before the first cd away.
 [[ "$OUT" = /* ]] || OUT="$REPO/$OUT"
+# A killed run used to leave its worktree registered and on disk. Two such -
+# both at b44f459, from the OOM kills around round 13 - were still there at
+# round 22, and a reviewer inspecting one of them reported an empty index and
+# BASE-era files, then withdrew findings it could not verify. Clean up on any
+# exit, not just the happy one.
+cleanup() { cd "$REPO" 2>/dev/null && git worktree remove --force "$WT" 2>/dev/null; }
+trap cleanup EXIT INT TERM
 git worktree add -q "$WT" "$BASE" || exit 1
 cd "$WT" || exit 1
 git read-tree "$HEAD"
+
+# The index now holds HEAD while the FILES on disk still hold BASE, which is
+# what `git diff --cached` needs (the worktree's HEAD commit is BASE, so the
+# staged diff is exactly BASE..HEAD). But a reviewer that opens a file reads
+# the BASE version, and round 22 said so plainly: "I cannot verify the diff's
+# own edits against a real tree from this session."
+#
+# Materialise HEAD's files too. This does not disturb the staged diff - that
+# is computed from the worktree's HEAD COMMIT (still BASE) against the INDEX
+# (still HEAD), neither of which the working files participate in.
+git checkout-index -a -f
+# checkout-index only writes; paths deleted between BASE and HEAD would linger.
+git diff --name-only --diff-filter=D "$BASE" "$HEAD" | while IFS= read -r gone; do
+  [ -n "$gone" ] && rm -f -- "$gone"
+done
 STUB_BRIDGE=$(printf '// vendored esbuild bundle of @microsoft/powerquery-parser 2.0.0 + powerquery-formatter 1.0.0 (2.6 MB, committed; excluded from review diff, reproducible via `npm run bundle`)\n' | git hash-object -w --stdin)
 STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3, pins parser 2.0.0 / formatter 1.0.0 / esbuild 0.28.2); excluded from review diff" }\n' | git hash-object -w --stdin)
 # The package was renamed mquery_toolkit -> pqtools in 0.2.0. This line kept the

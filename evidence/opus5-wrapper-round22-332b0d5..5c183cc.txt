@@ -1,0 +1,44 @@
+# Exact claude-opus-5 wrapper review - range 332b0d5..5c183cc (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 178 insertions(+), 12 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 332b0d5..5c183cc, not stubbed, not in the diff
+# package-lock.json: unchanged in 332b0d5..5c183cc, not stubbed, not in the diff
+# invoked 2026-09-07T14:53:57Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Correction to my previous review: I reasoned from the diff text as if it described this tree. It does not. Verified state of `/private/tmp/mq-gate-wt-27490`:
+
+```
+=== HEAD ===            332b0d5
+=== status --porcelain ===      (empty)
+=== staged name-status ===      (empty)
+=== staged stat ===             (empty)
+```
+
+The diff I was handed is **not present in this worktree** — working tree clean, index empty:
+
+```
+=== worktree file: Round 21 present? ===   (absent in worktree)
+=== worktree: _GIT_ENV ===                 7        <- diff claims all 5 call sites converted + definition deleted
+=== evidence files present? ===            round20 only; no round21 files
+```
+
+So the code deletions, the audit's Round-21 section, and both new evidence files exist only in the main checkout, not here. **I cannot verify the diff's own edits against a real tree from this session.** What follows separates what I verified from what I could not.
+
+**Verified against HEAD 332b0d5 (the tree the diff builds on):**
+
+- The audit's load-bearing REJECTED argument holds. `git rev-parse 332b0d5:tests/test_end_to_end.py` = `b1fc0e9340ad630a…`, matching the `b1fc0e93` cited, and that blob does contain both new tests (`def test_a_declared_submodule_is_not_mistaken_for_a_stray_repository` at :1424, `def test_the_identity_holds_for_a_tree_large_enough_to_sigpipe` at :1482). The round-20 log's header reads `content: 4b27df681dd65672…` / `collect: 4139` as quoted. The rebuttal to "the evidence certifies a tree that is not the staged tree" is correct.
+- REJECTED #1 is correct: `bash -n scripts/gate_provenance.sh` → `SYNTAX OK`.
+- REJECTED #3 is correct: `grep -rn 'chmod(0o000)\|chmod(0o400)' tests/` returns exactly one line, `tests/test_end_to_end.py:1300`.
+
+**Findings that stand, verifiable from the diff text alone:**
+
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md, Round 21 heading — the tally contradicts the section it introduces.** Heading says "seven findings: three taken, two rejected on evidence, two already true"; the body contains three `### REJECTED` and three `### TAKEN` subsections and no "already true" subsection — 6 documented, split 3/3/0. Fix: make the heading "three taken, three rejected on evidence, one already true" (the seventh upstream bullet, the "two behavioural" reword, is folded into the submodule TAKEN) or write up the missing entry. A file whose subject is not miscounting its own controls should not miscount its own findings.
+
+**Withdrawn from my previous review** (they assumed the diff was this tree, and the `4139` reasoning was inference, not measurement): the `_GIT_ENV` completeness note and the two evidence-header observations. The `_GIT_ENV` deletion in particular I cannot check — the staged blob available to me still has all 7 occurrences.
+
+**Not verifiable from here, and the reason to re-run before landing:** whether the edited `tests/test_end_to_end.py` imports and collects, whether `evidence/release-gate-2026-09-07-round21-fixes.log`'s `content: ab6a767273d265fa…` actually resolves to a tree holding the post-edit blob, and whether the 291s suite figure is that tree's. Run from the checkout that holds the changes: `git ls-tree -r ab6a767 -- tests/test_end_to_end.py` should print the post-edit blob, and `--collect-only -q` should print 4139.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

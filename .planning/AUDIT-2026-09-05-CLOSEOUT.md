@@ -2440,7 +2440,7 @@ counted as one.
 
 ---
 
-## Round 21 - `4b8be7c..332b0d5`, verdict FIX-FIRST, seven findings: three taken, two rejected on evidence, two already true
+## Round 21 - `4b8be7c..332b0d5`, verdict FIX-FIRST, seven findings: four taken, three rejected on evidence
 
 This round came back from **ox-alpha**, not Opus 5, and several findings were
 hedged requests to verify rather than defects ("the diff as shown does not let
@@ -2511,3 +2511,97 @@ This is the same discipline the audit has been applying to itself since round
 17, arriving from the other direction: round 17 called a string grep a control,
 and here a genuine behavioural test is a guard rather than a control because
 the code it examines no longer exists.
+
+### TAKEN - the round-20 controls paragraph said "two behavioural"
+
+The seventh finding, and it is the same one as the sixth seen from the other
+end: with the submodule test reclassified, the round-20 tally of "two
+behavioural controls" was wrong. Corrected in place above, in the Round 20
+Controls section, to one control and one reintroduction guard.
+
+### CORRECTION - this section's own heading miscounted it
+
+Round 22 caught it: the heading read "seven findings: three taken, two rejected
+on evidence, two already true", while the body holds three REJECTED and three
+TAKEN, and the seventh (immediately above) had been folded into the sixth
+without being written up. The real split is four taken, three rejected. Both
+are fixed here.
+
+A file whose subject is miscounted controls has no business miscounting its own
+findings, which is exactly how the finding was phrased.
+
+---
+
+## Round 22 - `332b0d5..5c183cc`, verdict FIX-FIRST, one finding taken, plus a harness defect the review exposed
+
+This round opened by retracting most of its own previous review, because it
+discovered it had been reasoning from diff text as though it described the tree
+on disk. That retraction is the useful part of the round.
+
+### CONFIRMED - all three round-21 rejections were right
+
+Independently re-derived at HEAD `332b0d5`: `bash -n` passes; `grep -rn` finds
+exactly one `chmod(0o000)` in the suite; and
+`git rev-parse 332b0d5:tests/test_end_to_end.py` is `b1fc0e93…`, the blob the
+round-20 log's `# content:` names, and it contains both new test names. The
+"evidence certifies the wrong tree" claim is dead.
+
+### TAKEN (LOW) - the Round 21 heading miscounted its own findings
+
+The heading read "seven findings: three taken, two rejected on evidence, two
+already true"; the body held three REJECTED and three TAKEN, and the seventh
+finding had been folded into the sixth without being written up. The true split
+is four taken, three rejected. The heading is corrected, the seventh is now its
+own subsection, and the miscount is recorded above rather than quietly fixed.
+
+The finding's phrasing is the right one: a file whose subject is miscounted
+controls has no business miscounting its own findings.
+
+### The verification round 22 asked for, run from the checkout that holds the changes
+
+    round-21 log # content: ab6a7672…
+      tests/test_end_to_end.py in it : 5cd0c1510fbc607cdfe7f4a0e6b29cc6d5a19162
+      at shipped HEAD 5c183cc        : 5cd0c1510fbc607cdfe7f4a0e6b29cc6d5a19162
+      pre-edit at 332b0d5            : b1fc0e9340ad630a61a1fd21c271bd9e9cc76b40
+      _GIT_ENV occurrences in the certified blob: 1   (7 before the edit)
+      collect on the shipped tree: 4139
+
+The certified tree is the shipped tree, and it holds the post-edit blob.
+
+### The harness defect underneath the retraction
+
+The reviewer reported an empty index and BASE-era files and concluded it could
+not verify anything. Investigated rather than accepted, because it would
+invalidate every round if true.
+
+The wrapper is sound. Reproduced by building a worktree exactly the way
+`run-opus-gate.sh` does: HEAD commit `332b0d5`, `git status --porcelain` four
+lines, the staged diff exactly the four expected files, index blob at the HEAD
+version and worktree file at the BASE version. `DRY_RUN` reports the same
+`4 files changed, 178 insertions(+), 12 deletions(-)` the review's own header
+quotes.
+
+What the reviewer almost certainly inspected was debris: **two abandoned
+worktrees, both at `b44f459`, left on disk and still registered since the
+OOM-killed runs around round 13.** A worktree at an old commit with a clean
+index is precisely the state it described. They have been removed and pruned.
+
+Two harness fixes, neither of which touches the product:
+
+- **A cleanup trap.** `run-opus-gate.sh` removed its worktree only on the happy
+  path, so every killed run leaked one. Now `trap cleanup EXIT INT TERM`.
+- **The worktree's FILES now hold HEAD.** The index held HEAD while the files
+  held BASE, so a reviewer opening a file read the pre-change version - the
+  concrete reason it said "I cannot verify the diff's own edits against a real
+  tree from this session". `git checkout-index -a -f` after the `read-tree`,
+  plus removing paths deleted between BASE and HEAD.
+
+  This cannot disturb the staged diff, and that was verified rather than
+  asserted: `git diff --cached` is computed from the worktree's HEAD *commit*
+  (still BASE) against the *index* (still HEAD), and the working files
+  participate in neither. Measured before and after: `4 files changed, 178
+  insertions(+), 12 deletions(-)` both times, same four paths.
+
+The audit has been correcting the evidence a gate log certifies since round 16.
+This is the same failure one level out: the review harness was showing the
+reviewer a tree that was not the tree under review.
