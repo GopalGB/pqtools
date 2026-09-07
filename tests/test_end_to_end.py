@@ -22,6 +22,7 @@ the export layer exists to prevent.
 from __future__ import annotations
 
 import datetime as dt
+import errno
 import json
 import os
 from pathlib import Path
@@ -588,19 +589,29 @@ def test_a_symlink_swapped_in_after_lstat_is_a_write_refusal(
     link.symlink_to(target)
 
     real_lstat = os.lstat
+    seen: list[str] = []
 
-    # Discriminate on the path. `pqtools.core.os` IS the stdlib `os` module,
-    # so this patch is process-wide for its duration; a lambda that ignored
-    # its argument handed `target`'s stat to every incidental `os.lstat` in
-    # the interpreter, including pytest's own.
-    def only_the_link(candidate, *args, **kwargs):  # type: ignore[no-untyped-def]
+    # Model the race, do not just disable the check. The FIRST lstat is the
+    # one `_snapshot` makes before opening, and it must see a regular file -
+    # that is what makes O_NOFOLLOW's ELOOP a surprise. Every later lstat
+    # happens AFTER the swap, so it must see reality: a symlink. An earlier
+    # version of this test returned `target`'s stat unconditionally, which
+    # modelled a swap that then un-swapped itself, and it failed the moment
+    # the code started asking the filesystem which kind of ELOOP it had.
+    #
+    # Discriminating on the path also matters: `pqtools.core.os` IS the
+    # stdlib module, so this patch is process-wide while it is installed.
+    def racing_lstat(candidate, *args, **kwargs):  # type: ignore[no-untyped-def]
         if Path(candidate) == link:
-            return real_lstat(target)
+            seen.append(str(candidate))
+            if len(seen) == 1:
+                return real_lstat(target)  # pre-swap: a regular file
         return real_lstat(candidate, *args, **kwargs)
 
-    with mock.patch("pqtools.core.os.lstat", only_the_link):
+    with mock.patch("pqtools.core.os.lstat", racing_lstat):
         with pytest.raises(SafeWriteError, match="regular, non-symlink"):
             _snapshot(link)
+    assert len(seen) >= 2, "the post-ELOOP check must actually consult lstat"
 
     # A plain missing file is still an OSError, not a write refusal.
     with pytest.raises(OSError):
@@ -704,3 +715,159 @@ def test_a_plain_file_failure_is_not_qualified_against_itself(
     err = capsys.readouterr().err
     assert f"{broken}!{broken}" not in err, err
     assert str(broken) in err, err
+
+
+def test_a_write_to_an_unresolvable_path_is_an_io_error_not_a_lock_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Found by testing the case a review raised and I had declined.
+
+    `_atomic_write` turned every `OSError` from opening the lock file into
+    `M_SAFE_WRITE_REFUSED: unable to acquire safe source lock`. For a path
+    that cannot resolve - a component that is a regular file, or a missing
+    parent - that describes a contended lock which was never contended, while
+    `pq check` on the identical path correctly said "Not a directory". Same
+    defect class as the `_snapshot` thread: a true refusal with a false
+    reason.
+    """
+    from pqtools.cli import main
+
+    real = tmp_path / "real.pq"
+    real.write_text("let a = 1 in a\n", encoding="utf-8")
+    through_a_file = real / "child.pq"
+
+    assert main(["check", str(through_a_file)]) == 2
+    read_err = capsys.readouterr().err
+    assert "M_IO_ERROR" in read_err, read_err
+
+    assert main(["format", str(through_a_file), "--write"]) == 2
+    write_err = capsys.readouterr().err
+    assert "M_IO_ERROR" in write_err, write_err
+    assert "acquire safe source lock" not in write_err, write_err
+
+
+def test_a_symlinked_lock_file_is_still_a_write_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The other half: `O_NOFOLLOW` rejecting a symlinked lock file IS a
+    refusal to take the lock, and must keep the typed code. Without this the
+    fix above could be "widened" into dropping the lock refusal entirely.
+    """
+    from pqtools.cli import main
+
+    query = tmp_path / "q.pq"
+    query.write_text("let a  =  1 in a\n", encoding="utf-8")
+    (tmp_path / ".q.pq.lock").symlink_to(tmp_path / "elsewhere")
+
+    assert main(["format", str(query), "--write"]) == 2
+    err = capsys.readouterr().err
+    assert "M_SAFE_WRITE_REFUSED" in err, err
+    # The precise message, not the old catch-all. Opening the lock cannot
+    # report contention - flock does - so "unable to acquire safe source
+    # lock" was never the right thing to say about a symlinked lock file.
+    assert "source lock must be a regular single-link file" in err, err
+
+
+# ---------------------------------------------------------------------------
+# The filesystem errno taxonomy, as one table
+# ---------------------------------------------------------------------------
+
+
+def _fs_case(tmp_path: Path, kind: str) -> Path:
+    """Build one filesystem shape and return the path to act on."""
+    root = tmp_path / kind
+    root.mkdir()
+    if kind == "missing":
+        return root / "nope.pq"
+    if kind == "loop_in_directory":
+        loop = root / "loopdir"
+        loop.symlink_to(loop)
+        return loop / "x.pq"
+    if kind == "through_a_regular_file":
+        real = root / "real.pq"
+        real.write_text("let a  =  1 in a\n", encoding="utf-8")
+        return real / "child.pq"
+    query = root / "q.pq"
+    query.write_text("let a  =  1 in a\n", encoding="utf-8")
+    if kind == "target_is_a_symlink":
+        link = root / "link.pq"
+        link.symlink_to(query)
+        return link
+    if kind == "target_is_hard_linked":
+        os.link(query, root / "second.pq")
+        return query
+    if kind == "lock_is_a_symlink":
+        (root / ".q.pq.lock").symlink_to(root / "elsewhere")
+        return query
+    raise AssertionError(f"unknown case {kind}")
+
+
+# (shape, code from a READ verb, code from a WRITE verb).
+#
+# The point of the table is the FIRST TWO COLUMNS AGREEING wherever the
+# problem is the path rather than the write. Rounds 12-14 each broke one cell
+# here, in a different place each time, and each fix was written without a
+# test that could see the other cells.
+_FS_TAXONOMY = [
+    ("missing", "M_IO_ERROR", "M_IO_ERROR"),
+    ("loop_in_directory", "M_IO_ERROR", "M_IO_ERROR"),
+    ("through_a_regular_file", "M_IO_ERROR", "M_IO_ERROR"),
+    ("target_is_a_symlink", "M_SAFE_WRITE_REFUSED", "M_SAFE_WRITE_REFUSED"),
+    ("target_is_hard_linked", "M_SAFE_WRITE_REFUSED", "M_SAFE_WRITE_REFUSED"),
+    # Only the write path takes a lock, so the read verb succeeds here.
+    ("lock_is_a_symlink", None, "M_SAFE_WRITE_REFUSED"),
+]
+
+
+@pytest.mark.parametrize(("kind", "read_code", "write_code"), _FS_TAXONOMY)
+def test_the_filesystem_errno_taxonomy_holds(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    read_code: str | None,
+    write_code: str,
+) -> None:
+    """One table pinning every cell of `core._WRITE_SAFETY` end to end.
+
+    A path problem must read as `M_IO_ERROR` from BOTH a read verb and a
+    write verb - they are the same fact about the same path, and any round
+    that makes them disagree has reintroduced the bug this taxonomy exists to
+    prevent. Only a genuine write-safety property may differ between them.
+    """
+    from pqtools.cli import main
+
+    target = _fs_case(tmp_path, kind)
+
+    if read_code is None:
+        assert main(["check", str(target)]) == 0
+        capsys.readouterr()
+    else:
+        assert main(["check", str(target)]) == 2
+        err = capsys.readouterr().err
+        assert read_code in err, f"read verb: {err}"
+
+    assert main(["format", str(target), "--write"]) == 2
+    err = capsys.readouterr().err
+    assert write_code in err, f"write verb: {err}"
+
+
+def test_eloop_is_asked_about_rather_than_assumed() -> None:
+    """The unit-level statement of the same thing.
+
+    `os.open` raises ELOOP both when O_NOFOLLOW refuses a symlinked final
+    component and when a DIRECTORY component is a loop. The table alone
+    cannot tell those apart, so `_write_refusal` consults the filesystem.
+    """
+    from pqtools.core import _FsCall, _write_refusal
+
+    eloop = OSError(errno.ELOOP, "Too many levels of symbolic links")
+    enoent = OSError(errno.ENOENT, "No such file or directory")
+
+    # os.lstat can never report a write-safety problem, whatever the errno.
+    assert _write_refusal(eloop, _FsCall.RESOLVE, Path("/nonexistent")) is None
+    # A path that is not itself a symlink: the loop is above it, so this is
+    # an I/O fact even though the errno matches a table entry.
+    assert _write_refusal(eloop, _FsCall.OPEN_SOURCE, Path("/nonexistent")) is None
+    # An errno with no entry at all propagates regardless of the call.
+    assert _write_refusal(enoent, _FsCall.OPEN_SOURCE, Path("/nonexistent")) is None
+    assert _write_refusal(enoent, _FsCall.OPEN_LOCK, Path("/nonexistent")) is None

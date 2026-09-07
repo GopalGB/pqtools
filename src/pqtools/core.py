@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import enum
 import errno
 import importlib
 import json
@@ -678,6 +679,130 @@ def check(source: str, file: str = "<string>") -> list[Diagnostic]:
     return diagnostics
 
 
+# ---------------------------------------------------------------------------
+# The filesystem errno taxonomy - one table, one decision
+# ---------------------------------------------------------------------------
+#
+# Every filesystem call on the write path can fail in two ways that must never
+# be confused:
+#
+#   * the path does not resolve, or the OS refused the operation - an I/O
+#     FACT. The OSError propagates untouched and the CLI renders it as
+#     M_IO_ERROR carrying the OS's own reason.
+#   * the file resolves but is unsafe to WRITE - a symlink, a non-regular
+#     file, more than one hard link - a REFUSAL. SafeWriteError, which the
+#     CLI renders as M_SAFE_WRITE_REFUSED.
+#
+# This is not cosmetic. `M_SAFE_WRITE_REFUSED: writes require a regular,
+# non-symlink, single-link file` printed for `pq check missing.pq` describes
+# something the user did not do, and it goes into the --json that consumers
+# parse.
+#
+# It was got wrong in four consecutive review rounds because the decision was
+# made inline at each call site, with fresh reasoning every time:
+#
+#   r12  wrapped EVERY failed open as a write refusal, so a missing file read
+#        as one.
+#   r13  fixed that, then wrapped ELOOP across a whole try block - which
+#        caught os.lstat's ELOOP, i.e. a symlink loop in a DIRECTORY
+#        component: an ordinary broken path, reported as a write refusal.
+#   r14  scoped that to os.open, and left os.open on the LOCK file reporting
+#        ENOTDIR as "unable to acquire safe source lock" - a contended lock
+#        that was never contended.
+#   now  the decision is made once, in the table below.
+#
+# The key is (call site, errno) and NOT errno alone. That is the trap all
+# three previous fixes fell into: ELOOP means "a directory component is a
+# symlink loop" when os.lstat raises it, and "the final component is a
+# symlink that O_NOFOLLOW refused to follow" when os.open does. Same number,
+# opposite verdicts. An errno-only table cannot express that and would have
+# re-created the r13 bug by construction.
+
+
+class _FsCall(enum.Enum):
+    """Which call raised - the half of the key that errno alone cannot carry."""
+
+    RESOLVE = "os.lstat"
+    OPEN_SOURCE = "os.open with O_NOFOLLOW, on the source file"
+    OPEN_LOCK = "os.open with O_CREAT|O_NOFOLLOW, on the lock file"
+    CREATE_TEMP = "tempfile.mkstemp, in the source's directory"
+
+
+UNSAFE_TO_WRITE = "writes require a regular, non-symlink, single-link file"
+LOCK_UNSAFE = "source lock must be a regular single-link file"
+
+# (call, errno) -> the refusal message. ANYTHING NOT LISTED IS AN I/O FACT and
+# propagates untouched. The table is deliberately tiny and closed: adding an
+# entry means claiming that failure is about write-safety rather than about
+# the path, and that claim needs a reason written next to it.
+_WRITE_SAFETY: dict[tuple[_FsCall, int], str] = {
+    # O_NOFOLLOW refused the final component. os.lstat has already returned
+    # and said it was not a symlink, so one appeared between the two calls -
+    # exactly the TOCTOU race the flag exists to close.
+    (_FsCall.OPEN_SOURCE, errno.ELOOP): UNSAFE_TO_WRITE,
+    # The same, for the lock file: a symlinked lock is not one we will follow.
+    (_FsCall.OPEN_LOCK, errno.ELOOP): LOCK_UNSAFE,
+}
+
+# _FsCall.RESOLVE and _FsCall.CREATE_TEMP appear in NO entry, and that is the
+# point rather than an omission:
+#   RESOLVE      - os.lstat cannot report a write-safety problem. It either
+#                  resolves the path or it does not, and every way it fails
+#                  (ENOENT, ENOTDIR, ELOOP on a directory component, EACCES)
+#                  is a fact about the path. This is the r13 bug, expressed
+#                  as an empty row that cannot be filled in by accident.
+#   CREATE_TEMP  - mkstemp fails when the DIRECTORY will not take a new file.
+#                  "Permission denied: /dir/.q.pq.ab12.tmp" is the true
+#                  reason; "unable to create temporary file" restated the
+#                  call without adding anything the OS had not said.
+# Lock CONTENTION is not here either, because os.open does not report it:
+# it surfaces from _lock_file (flock/msvcrt), which keeps its own message.
+
+
+def _final_component_is_a_symlink(path: Path) -> bool:
+    """Is `path` itself a symlink, as opposed to sitting under a broken one?
+
+    `os.lstat` does not follow the final component, so it answers exactly
+    that question and nothing else. A failure here means the path does not
+    resolve at all, which is not a symlink - False is the right answer, and
+    the caller then propagates the original OSError.
+    """
+    try:
+        return stat.S_ISLNK(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def _write_refusal(error: OSError, call: _FsCall, path: Path) -> str | None:
+    """The refusal message if this failure is about write-safety, else None.
+
+    None means "let the OSError through untouched". Callers are uniform:
+
+        except OSError as error:
+            refusal = _write_refusal(error, _FsCall.OPEN_SOURCE, path)
+            if refusal is not None:
+                raise SafeWriteError(refusal) from error
+            raise
+
+    ELOOP is asked about rather than assumed. `os.open` raises it BOTH when
+    O_NOFOLLOW refuses a symlinked final component (a write-safety refusal)
+    and when any DIRECTORY component of the path is a symlink loop (an
+    ordinary broken path). Round 13 conflated those at the source file, and
+    building the behaviour matrix for this rewrite caught the identical
+    conflation still live at the lock file, where - unlike the source file -
+    no preceding `lstat` had already ruled the directory case out. Deciding
+    it from the errno alone is not possible, so we ask the filesystem which
+    of the two it is instead of reasoning about which one "must" have
+    happened.
+    """
+    message = _WRITE_SAFETY.get((call, error.errno or 0))
+    if message is None:
+        return None
+    if error.errno == errno.ELOOP and not _final_component_is_a_symlink(path):
+        return None
+    return message
+
+
 def _snapshot(path: Path) -> FileSnapshot:
     # O_BINARY is REQUIRED on Windows: os.open there defaults to TEXT mode, which
     # translates \r\n and treats 0x1A as end-of-file. Reading a .pbix or .xlsx that
@@ -699,53 +824,27 @@ def _snapshot(path: Path) -> FileSnapshot:
             getattr(info, "st_file_attributes", 0)
             & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
         ):
-            raise SafeWriteError(
-                "writes require a regular, non-symlink, single-link file"
-            )
-    except OSError:
-        # `lstat` itself failed: the path is missing, unreadable, or a
-        # DIRECTORY component of it is a symlink loop - which raises ELOOP
-        # here, with no `O_NOFOLLOW` and no race involved. All of those are
-        # "this path does not resolve", none of them are about writing, so
-        # they propagate untouched. Wrapping ELOOP at this level is what
-        # round 13 got wrong: it made `pq check loopdir/x.pq`, a READ verb on
-        # an ordinary broken path, print M_SAFE_WRITE_REFUSED - reintroducing
-        # the false-message class round 12 had just removed, on a case far
-        # more reachable than the race it was aimed at.
+            raise SafeWriteError(UNSAFE_TO_WRITE)
+    except OSError as error:
+        refusal = _write_refusal(error, _FsCall.RESOLVE, path)
+        if refusal is not None:  # pragma: no cover - RESOLVE has no entries
+            raise SafeWriteError(refusal) from error
         raise
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
-        # Deliberately NOT re-wrapped as SafeWriteError. This function is the
-        # read path too (`cli._source`, `export`, `containers`), and a file
-        # that will not open is missing or unreadable - not a file that is
-        # unsafe to WRITE. Reporting `pq check missing.pq` as
-        # "M_SAFE_WRITE_REFUSED: writes require a regular, non-symlink,
-        # single-link file" told the reader nothing true. The OSError carries
-        # the OS's own reason, and every caller already catches it; the CLI
-        # renders it as M_IO_ERROR. The genuine write-safety refusals - a
-        # symlink, a non-regular file, more than one hard link - stay
-        # SafeWriteError below, because those are exactly about writing.
-        #
-        # ELOOP HERE, and only here, is a write-safety refusal: `lstat` has
-        # already returned and said this is not a symlink, so O_NOFOLLOW
-        # firing means one was swapped in between the two calls - the TOCTOU
-        # race the flag exists to close. Leaving it bare reported a
-        # swapped-in symlink as "M_IO_ERROR: Too many levels of symbolic
-        # links", which reads like a broken path rather than a refused write.
-        # Scoping matters: the identical errno from `lstat` above means
-        # something entirely different and must NOT be wrapped.
-        if error.errno == errno.ELOOP:
-            raise SafeWriteError(
-                "writes require a regular, non-symlink, single-link file"
-            ) from error
+        # This function is the READ path too (`cli._source`, `export`,
+        # `containers`), so a file that will not open is missing or
+        # unreadable - not a file that is unsafe to write. The table decides;
+        # see the taxonomy above it for why the call site is half the key.
+        refusal = _write_refusal(error, _FsCall.OPEN_SOURCE, path)
+        if refusal is not None:
+            raise SafeWriteError(refusal) from error
         raise
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise SafeWriteError(
-                "writes require a regular, non-symlink, single-link file"
-            )
+            raise SafeWriteError(UNSAFE_TO_WRITE)
         if info.st_size > MAX_BYTES:
             raise SafeWriteError("input exceeds 10 MiB")
         data = bytearray()
@@ -825,12 +924,18 @@ def _atomic_write(
     try:
         lock_fd = os.open(lock, lock_flags, 0o600)
     except OSError as error:
-        raise SafeWriteError("unable to acquire safe source lock") from error
+        # Opening the lock file cannot report CONTENTION - flock does, below.
+        # So the only refusal here is a symlinked lock; everything else is a
+        # fact about the directory and reads better in the OS's own words.
+        refusal = _write_refusal(error, _FsCall.OPEN_LOCK, lock)
+        if refusal is not None:
+            raise SafeWriteError(refusal) from error
+        raise
     acquired = False
     try:
         lock_info = os.fstat(lock_fd)
         if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1:
-            raise SafeWriteError("source lock must be a regular single-link file")
+            raise SafeWriteError(LOCK_UNSAFE)
         try:
             _lock_file(lock_fd)
         except OSError as error:
@@ -847,7 +952,12 @@ def _atomic_write(
                 dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
             )
         except OSError as error:
-            raise SafeWriteError("unable to create temporary file") from error
+            # No table entry: mkstemp fails when the DIRECTORY will not take
+            # a new file, and the OS says why better than we can.
+            refusal = _write_refusal(error, _FsCall.CREATE_TEMP, path.parent)
+            if refusal is not None:  # pragma: no cover - no entries
+                raise SafeWriteError(refusal) from error
+            raise
         temporary = Path(name)
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(updated)

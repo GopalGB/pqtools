@@ -1791,3 +1791,126 @@ and green after restoring: ELOOP wrap unscoped again · failure record keyed on
 `section.path` only · `split_shared` raising a different code. The other two
 (the mock's blast radius, the log header) have no behavioural control, and are
 recorded as such rather than given a fake one.
+
+## Verification on the final tree, tenth pass (the round-14 fixes)
+
+| Check | Result |
+|---|---|
+| Release gate, 8 steps | **GATE PASSED** (exit 0) - 4115 passed in 684.84s (0:11:24), 953 worked examples exact, ruff + mypy strict clean, coverage current; `evidence/release-gate-2026-09-07-round14-fixes.log` |
+| Positive controls | ELOOP wrap unscoped again · failure record keyed on `section.path` only · `split_shared` raising a different code - each red with the defect, green after restoring. The mock-blast-radius and log-header fixes have NO behavioural control and are recorded as such |
+| Live reproductions, re-run after the fix | `pq check loopdir/x.pq` -> `M_IO_ERROR: [Errno 62]` (was `M_SAFE_WRITE_REFUSED`); two broken workbooks -> `a.xlsx!Formulas/Section1.m` and `b.xlsx!Formulas/Section1.m` (both were `Formulas/Section1.m`) |
+| Pre-push scan on `b44f459..1f6682f` | gitleaks clean, in-house clean, 9 files; `evidence/prepush-scan-2026-09-07-1f6682f.log` |
+| Pushed | `1f6682fec96d41e032cb8a3a74797e83f87380ac`, verified against `git ls-remote` |
+
+Three autocommit sweeps (`5118ec9`, `7c66403`, `70d0658`) absorbed with
+`git reset --soft b44f459`. The staged tree was checked for leaked control
+mutations first; none.
+
+### A note on the environment, not the code
+
+The gate was killed twice by the harness for system memory before completing.
+`vm.swapusage` showed 4 GB of 5 GB in use with ~63 Chrome processes holding
+~1.7 GB; the machine was thrashing independently of this work. It passed on
+the next attempt with nothing else of mine running. Splitting the suite across
+processes was deliberately NOT used as a substitute: this repo has a known
+cross-file failure (the corpus BRIDGE_FAILURE that appears only after
+`test_core.py`), so a chunked "4115 passed" would assert less than a single
+run while looking identical.
+
+### Round 15 - NOT OBTAINED
+
+The review of `b44f459..1f6682f` was launched and killed by the same memory
+pressure before the model returned; only the wrapper's 6-line header was
+written. **The round-14 fixes are therefore gate-verified but NOT
+review-verified.** That is a real gap in the chain every prior round closed,
+and it is recorded here rather than left implicit.
+
+## Round 15 - the errno taxonomy, restructured rather than patched again
+
+G's call, after four consecutive rounds each introduced a defect in the same
+decision: "restructure the errno mapping properly".
+
+### What was wrong with the shape, not the code
+
+`core.py` answered one question - *is this `OSError` a fact about the path, or
+a refusal to write?* - inline, at four call sites, with fresh reasoning each
+time. The reasoning was written as comments, and comments do not compose:
+
+| round | the fix | what it broke |
+|---|---|---|
+| 12 | stop wrapping every failed open as a write refusal | left `O_NOFOLLOW`'s genuine refusal untyped |
+| 13 | type it, by wrapping `ELOOP` | wrapped the whole `try`, catching `os.lstat`'s ELOOP - a symlink loop in a DIRECTORY component, i.e. an ordinary broken path |
+| 14 | scope the wrap to `os.open` | left `os.open` on the LOCK file reporting `ENOTDIR` as "unable to acquire safe source lock" |
+| (mine, unreviewed) | propagate `ENOENT`/`ENOTDIR` at the lock | still assumed `ELOOP` at the lock meant a symlinked lock |
+
+### The restructuring
+
+One table, keyed by **(call site, errno)** - because errno alone cannot carry
+the decision, which is the trap all four fixes fell into:
+
+    _WRITE_SAFETY = {
+        (_FsCall.OPEN_SOURCE, errno.ELOOP): UNSAFE_TO_WRITE,
+        (_FsCall.OPEN_LOCK,   errno.ELOOP): LOCK_UNSAFE,
+    }
+
+Anything not listed is an I/O fact and propagates. `_FsCall.RESOLVE` and
+`_FsCall.CREATE_TEMP` appear in no entry, and the comment says that is the
+point rather than an omission. All four sites now read identically:
+
+    except OSError as error:
+        refusal = _write_refusal(error, _FsCall.OPEN_SOURCE, path)
+        if refusal is not None:
+            raise SafeWriteError(refusal) from error
+        raise
+
+The duplicated message literals became `UNSAFE_TO_WRITE` / `LOCK_UNSAFE`, so
+the same refusal cannot drift between the three places that raise it.
+
+### The fifth bug, found by building the matrix
+
+Writing the behaviour matrix immediately exposed a live defect that no review
+round had reached, and that my own unreviewed lock fix did not cover:
+
+    pq check  loopdir/x.pq          -> M_IO_ERROR            correct
+    pq format loopdir/x.pq --write  -> M_SAFE_WRITE_REFUSED  WRONG
+
+`os.open` raises `ELOOP` for **two different reasons**: `O_NOFOLLOW` refusing
+a symlinked final component (a write-safety refusal) and a symlink loop in a
+directory component (a broken path). At the source file a preceding `lstat`
+had already ruled the second out, so round 14's reasoning held there by
+accident of ordering. The lock file has no preceding `lstat`, so the same
+assumption was simply false.
+
+Deciding this from the errno is not possible. `_write_refusal` now **asks the
+filesystem** - `_final_component_is_a_symlink()` - instead of reasoning about
+which cause "must" have occurred. That also makes round 13's bug structurally
+unreachable: adding a `(RESOLVE, ELOOP)` entry to the table now changes
+nothing, because the disambiguation rejects it first.
+
+### Controls
+
+Each historical bug was reintroduced against the new structure:
+
+| control | verdict |
+|---|---|
+| r12: every failed open is a write refusal | RED |
+| r13: `lstat`'s ELOOP treated as a refusal | **could not be made red - DISCARDED** |
+| r14: ELOOP assumed rather than asked about | RED (3 tests) |
+| TOCTOU refusal dropped from the table | RED |
+| symlinked-lock refusal dropped from the table | RED (2 tests) |
+| `(RESOLVE, ENOENT)` -> refusal (replacement for the discarded one) | RED (4 tests) |
+
+The discarded control is recorded rather than counted: `(RESOLVE, ELOOP)`
+returns `None` even when present, because the ELOOP disambiguation rejects it
+before the table is consulted. Verified directly rather than assumed. A
+control that cannot go red proves nothing, so it was replaced with
+`(RESOLVE, ENOENT)`, which the disambiguation does not guard and which does
+go red.
+
+### The regression test is the table
+
+`test_the_filesystem_errno_taxonomy_holds` is parametrised over six
+filesystem shapes and asserts the code from a READ verb and a WRITE verb for
+each. The first two columns agreeing wherever the problem is the path is the
+property every one of rounds 12-15 broke, each in a different cell, and none
+of the previous tests could see more than one cell at a time.
