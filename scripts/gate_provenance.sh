@@ -13,6 +13,15 @@
 set -uo pipefail
 PY="${1:-}"
 
+# The header is printed in full even when a field cannot be determined - a
+# partial header is still evidence - but the script then EXITS NON-ZERO so the
+# caller can refuse. Round 18 added a guard in release_gate.sh whose message
+# said "refusing to gate an unidentifiable tree"; this script had no `exit` in
+# it and its last command was a printf, so it always returned 0 and the
+# unidentifiable-tree case was the one case the guard could NOT see. The guard
+# fired only when bash could not execute the file at all.
+gate_status=0
+
 printf '# release gate\n'
 
 # `git status --porcelain` alone: it already reports staged, unstaged AND
@@ -57,25 +66,60 @@ if [ -n "$gate_dirty" ]; then
   # which lists untracked NAMES, not contents. Blind the same way.)
   #
   # Build the identity in a scratch index instead: read HEAD, then `add -A` over
-  # the worktree. Same side effect as stash create - blobs and trees in the
-  # object store, never a ref - and it covers tracked AND untracked. Ignored
-  # files stay out, which is what --porcelain counted, so the two agree.
+  # the worktree. It covers tracked AND untracked; ignored files stay out,
+  # which is what --porcelain counted, so the two agree.
+  #
+  # NOT "the same side effect as stash create", which is what this comment used
+  # to claim: stash create never wrote untracked CONTENT to the object store,
+  # and `add -A` does. Every dirty gate run therefore stores a blob of every
+  # untracked non-ignored file. They are unreachable and gc-prunable and are
+  # never pushed - but they are on disk, and the pre-push secret scan looks at
+  # commits, so it would not see them. Worth naming given this repo's
+  # no-secret-value invariant. `.samples/` and everything else gitignored stays
+  # out, which is where such material is meant to live.
   gate_tmp=$(mktemp -d 2>/dev/null) || gate_tmp=''
   gate_tree=''
+  gate_why=''
   if [ -n "$gate_tmp" ]; then
     GIT_INDEX_FILE="$gate_tmp/index" git read-tree HEAD 2>/dev/null
-    GIT_INDEX_FILE="$gate_tmp/index" git add -A 2>/dev/null
-    gate_tree=$(GIT_INDEX_FILE="$gate_tmp/index" git write-tree 2>/dev/null) \
-      || gate_tree=''
+    # `git add -A` DROPS PATHS WHILE EXITING 0. An unreadable directory makes it
+    # print "warning: could not open directory" to stderr and return success,
+    # and the resulting tree is byte-identical to one where the directory was
+    # never there (reproduced). An exit-status check does not catch that, so
+    # capture stderr and treat any of it as fatal to the identity.
+    gate_add_err=$(GIT_INDEX_FILE="$gate_tmp/index" git add -A 2>&1 >/dev/null)
+    if [ -n "$gate_add_err" ]; then
+      # Quote what git actually said rather than guessing which case it was -
+      # an unreadable directory and an embedded repository both land here.
+      gate_why="git add -A: $(printf '%s' "$gate_add_err" | head -1)"
+    else
+      gate_tree=$(GIT_INDEX_FILE="$gate_tmp/index" git write-tree 2>/dev/null) \
+        || { gate_tree=''; gate_why='git write-tree failed'; }
+    fi
+    # A nested repository (a stray clone, or a `git worktree` - and gate runs
+    # DO happen in mq-gate-wt-*) is recorded as a `160000 commit` gitlink whose
+    # object lives in the OTHER repo's store, so it cannot be read back here
+    # while `git status --porcelain` counted it dirty. That is the marker and
+    # the identity disagreeing, which is the thing this line exists to prevent.
+    if [ -n "$gate_tree" ] \
+       && git ls-tree -r "$gate_tree" 2>/dev/null | grep -q '^160000'; then
+      gate_tree=''
+      gate_why='the worktree contains a nested repository (unreadable gitlink)'
+    fi
     rm -rf "$gate_tmp"
+  else
+    gate_why='could not create a scratch index'
   fi
   if [ -n "$gate_tree" ]; then
     printf '# content: %s (tracked + untracked; read it with git ls-tree -r)\n' \
       "$gate_tree"
   else
     # An identity that omits part of what ran is worse than none: it reads as
-    # checkable and is not. Refuse instead of approximating.
-    printf '# content: unknown - COULD NOT IDENTIFY THE TREE THAT RAN\n'
+    # checkable and is not. Refuse instead of approximating, and make the
+    # refusal reach the caller as a non-zero status.
+    printf '# content: unknown - COULD NOT IDENTIFY THE TREE THAT RAN (%s)\n' \
+      "$gate_why"
+    gate_status=3
   fi
 fi
 
@@ -86,9 +130,17 @@ fi
 # DO happen in detached worktrees (mq-gate-wt-*). Use the short rev.
 gate_branch=$(git branch --show-current 2>/dev/null)
 if [ -z "$gate_branch" ]; then
-  gate_branch=$(git rev-parse --short --verify HEAD 2>/dev/null) \
-    && gate_branch="detached at $gate_branch" \
-    || gate_branch='unknown'
+  # Empty does not imply detached: on git < 2.22 `--show-current` does not
+  # exist and errors to the suppressed stderr, which would have labelled every
+  # ordinary branch "detached at <sha>". Ask git directly instead.
+  if git symbolic-ref -q HEAD >/dev/null 2>&1; then
+    gate_branch=$(git symbolic-ref --short -q HEAD 2>/dev/null) \
+      || gate_branch='unknown'
+  elif gate_branch=$(git rev-parse --short --verify HEAD 2>/dev/null); then
+    gate_branch="detached at $gate_branch"
+  else
+    gate_branch='unknown'
+  fi
 fi
 printf '# branch:  %s\n' "$gate_branch"
 
@@ -100,7 +152,10 @@ if [ -n "$PY" ]; then
     printf '# collect: %s\n' "$gate_collect"
   else
     printf '# collect: unknown - COLLECTION FAILED\n'
+    gate_status=3
   fi
 fi
 
 printf '# date:    %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+exit "$gate_status"

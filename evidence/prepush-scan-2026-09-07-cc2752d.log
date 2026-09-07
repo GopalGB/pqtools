@@ -1,0 +1,29 @@
+[1m[0;34m╔══════════════════════════════════════════════════════════════════╗[0m
+[1m[0;34m║       MAX HQ — Pre-Push Sensitive-Info Gate                      ║[0m
+[1m[0;34m╚══════════════════════════════════════════════════════════════════╝[0m
+[2mRemote:[0m origin  [2mURL:[0m https://github.com/GopalGB/pqtools.git
+[2mCommits going out:[0m [1m1[0m   [2mFiles touched:[0m [1m7[0m   [2mTags:[0m [1m0[0m
+
+[1m[0;36m── COMMITS ──────────────────────────────────────────────────────[0m
+  [1;33mcc2752d[0m  fix(gate,tests): the round-18 review - the round-17 fix reproduced round-16's bug  Gopal Bagaswar, 0 seconds ago
+
+[1m[0;36m── FILES ────────────────────────────────────────────────────────[0m
+  .planning/AUDIT-2026-09-05-CLOSEOUT.md
+  evidence/opus5-wrapper-round18-c79b676..3264b59.txt
+  evidence/prepush-scan-2026-09-07-3264b59.log
+  evidence/release-gate-2026-09-07-round18-fixes.log
+  scripts/gate_provenance.sh
+  scripts/release_gate.sh
+  tests/test_end_to_end.py
+
+[1m[0;36m── SECRET SCAN ──────────────────────────────────────────────────[0m
+  [2mgitleaks:[0m /opt/homebrew/bin/gitleaks
+  [2mruleset:[0m MAX HQ (/Users/gopalmacbook/Desktop/Max HQ/pqtools/security/gitleaks.toml)
+  [0;32mgitleaks: clean[0m
+  [0;32min-house scan: clean[0m
+
+[1m[0;32m✅ Scan clean.[0m 1 commit(s), 7 file(s) ready to push to [1morigin[0m.
+
+[1;33m⚠️  No controlling terminal, so the confirmation cannot be read.[0m
+[2m   Re-run the same command from Terminal.app or iTerm and answer y.[0m
+[2m   (GIT_PUSH_BYPASS skips the secret scan and is not the remedy for this.)[0m

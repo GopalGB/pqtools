@@ -941,8 +941,27 @@ def test_the_toctou_refusal_survives_the_symlink_being_swapped_back(
 # check=True commits or run estate hooks inside a throwaway fixture. None are
 # set on this machine, so it was latent fragility rather than a live failure -
 # but a test whose result depends on who is running it is not a control.
+#
+# The round-19 LOW: pinning the CONFIG was not enough, because git also takes
+# its LOCATION from the environment. With `GIT_DIR` set, `git rev-parse
+# --git-dir` run inside the fixture directory resolves to the caller's repo
+# (reproduced) - so `git init` / `add` / `commit` would operate on the caller's
+# repository and index instead of tmp_path. Every git hook runs with GIT_DIR
+# and GIT_INDEX_FILE exported, and `git -c x=y` exports
+# GIT_CONFIG_PARAMETERS, so "run the suite from a hook" is enough to hit it.
+_GIT_LEAKS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_TEMPLATE_DIR",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+)
 _GIT_ENV = {
-    **os.environ,
+    **{k: v for k, v in os.environ.items() if k not in _GIT_LEAKS},
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_SYSTEM": os.devnull,
 }
@@ -1189,3 +1208,200 @@ def test_the_size_cap_is_reported_by_read_verbs_too(
     assert main(["format", str(invalid), "--write"]) == 2
     write_err = capsys.readouterr().err
     assert "M_SAFE_WRITE_REFUSED" in write_err, write_err
+
+
+def test_the_fixture_repos_ignore_an_inherited_git_location(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The round-19 LOW: `_GIT_ENV` pinned the config but not the LOCATION.
+
+    With `GIT_DIR` exported - which is true inside every git hook - git run in
+    the fixture directory resolves to the CALLER's repository, so the fixture
+    would build its history in someone else's repo. Verified directly: with
+    `GIT_DIR` set, `git rev-parse --git-dir` inside a fresh directory returns
+    the host repo's path.
+    """
+    host = tmp_path / "host"
+    _repo(host)
+    (host / "h.txt").write_text("host\n", encoding="utf-8")
+    _git(["add", "h.txt"], host)
+    _git(["commit", "-qm", "host"], host)
+    host_head = _git(["rev-parse", "HEAD"], host).strip()
+
+    # Exactly what a git hook exports.
+    monkeypatch.setenv("GIT_DIR", str(host / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(host / ".git" / "index"))
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.hooksPath=/nonexistent'")
+
+    # _GIT_ENV is built at import time, so rebuild it the way the module does
+    # to prove the CONSTRUCTION drops these, not that they happened to be unset.
+    env = {
+        **{k: v for k, v in os.environ.items() if k not in _GIT_LEAKS},
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    for leaked in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_CONFIG_PARAMETERS"):
+        assert leaked in os.environ, leaked
+        assert leaked not in env, leaked
+
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    subprocess.run(["git", "init", "-q", "."], cwd=fixture, check=True, env=env)
+    (fixture / "f.txt").write_text("fixture\n", encoding="utf-8")
+    for command in (["add", "f.txt"], ["commit", "-qm", "fixture"]):
+        subprocess.run(["git", *command], cwd=fixture, check=True, env=env)
+
+    own = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=fixture,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+    assert own != host_head, "the fixture committed into the host repository"
+    assert (fixture / ".git").is_dir()
+
+
+def test_an_unreadable_directory_makes_the_header_refuse(tmp_path: Path) -> None:
+    """The round-19 MEDIUM: `git add -A` DROPS PATHS WHILE EXITING 0.
+
+    An unreadable directory makes it print `warning: could not open directory`
+    to stderr and return success, and the tree it then writes is byte-identical
+    to one where the directory never existed (reproduced side by side). An
+    exit-status check cannot see this, so the script reads stderr.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    _git(["add", "f.txt"], repo)
+    _git(["commit", "-qm", "init"], repo)
+    # Dirty it independently: an unreadable directory is invisible to
+    # `git status --porcelain` too, so on its own it would not even be DIRTY.
+    (repo / "marker.txt").write_text("dirty\n", encoding="utf-8")
+
+    locked = repo / "locked"
+    locked.mkdir()
+    (locked / "inside.txt").write_text("content\n", encoding="utf-8")
+    locked.chmod(0o000)
+    try:
+        script = (
+            Path(__file__).resolve().parent.parent / "scripts" / "gate_provenance.sh"
+        )
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_GIT_ENV,
+        )
+    finally:
+        locked.chmod(0o755)
+
+    assert "COULD NOT IDENTIFY THE TREE THAT RAN" in result.stdout, result.stdout
+    assert "could not open directory" in result.stdout, result.stdout
+    # And it must reach the caller, not just the log.
+    assert result.returncode != 0, result.stdout
+    # The rest of the header is still printed - a partial header is evidence.
+    assert "# commit:" in result.stdout, result.stdout
+    assert "# date:" in result.stdout, result.stdout
+
+
+def test_a_nested_repository_makes_the_header_refuse(tmp_path: Path) -> None:
+    """The round-19 MEDIUM, second case: a nested repo becomes a `160000
+    commit` gitlink whose object lives in the OTHER repo's store.
+
+    `git status --porcelain` counts it dirty while the identity cannot be read
+    back - the marker and the identity disagreeing, which is exactly what the
+    content line exists to prevent. Realistic here: gate runs happen inside
+    `git worktree` directories (`mq-gate-wt-*`).
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    _git(["add", "f.txt"], repo)
+    _git(["commit", "-qm", "init"], repo)
+
+    nested = repo / "nested"
+    _repo(nested)
+    (nested / "n.txt").write_text("inner\n", encoding="utf-8")
+    _git(["add", "n.txt"], nested)
+    _git(["commit", "-qm", "inner"], nested)
+
+    assert "nested" in _git(["status", "--porcelain"], repo), "precondition: dirty"
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "gate_provenance.sh"
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_GIT_ENV,
+    )
+    assert "COULD NOT IDENTIFY THE TREE THAT RAN" in result.stdout, result.stdout
+    assert result.returncode != 0, result.stdout
+
+
+def test_a_failed_collection_reaches_the_caller(tmp_path: Path) -> None:
+    """The round-19 MEDIUM: the script had no `exit` in it at all.
+
+    Its last command was `printf '# date: …'`, so it always returned 0. Both
+    `unknown` branches printed their refusal and the gate ran on to
+    `GATE PASSED`, exit 0. The round-18 guard's message said it was "refusing
+    to gate an unidentifiable tree"; the unidentifiable-tree case was precisely
+    the one case it could not see.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    script = Path(__file__).resolve().parent.parent / "scripts" / "gate_provenance.sh"
+    result = subprocess.run(
+        ["bash", str(script), "/nonexistent/python"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_GIT_ENV,
+    )
+    assert "# collect: unknown - COLLECTION FAILED" in result.stdout, result.stdout
+    assert result.returncode != 0, result.stdout
+
+
+def test_the_gate_refuses_a_tree_it_cannot_identify(tmp_path: Path) -> None:
+    """The round-19 MEDIUM, end to end: release_gate.sh must actually refuse.
+
+    The round-18 test only covered the script being ABSENT (exit 127). This
+    covers the case the FATAL message names - a header that printed, but could
+    not identify the tree.
+    """
+    scripts = tmp_path / "scripts"
+    scripts.mkdir(parents=True)
+    source = Path(__file__).resolve().parent.parent / "scripts"
+    for name in ("release_gate.sh", "gate_provenance.sh"):
+        (scripts / name).write_text(
+            (source / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+    _repo(tmp_path)
+    (tmp_path / "f.txt").write_text("one\n", encoding="utf-8")
+    _git(["add", "f.txt"], tmp_path)
+    _git(["commit", "-qm", "init"], tmp_path)
+    nested = tmp_path / "nested"
+    _repo(nested)
+    (nested / "n.txt").write_text("inner\n", encoding="utf-8")
+    _git(["add", "n.txt"], nested)
+    _git(["commit", "-qm", "inner"], nested)
+
+    result = subprocess.run(
+        ["bash", "scripts/release_gate.sh"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_GIT_ENV,
+    )
+    assert result.returncode != 0, result.stdout
+    assert "GATE PASSED" not in result.stdout, result.stdout
+    assert "provenance header failed" in result.stdout, result.stdout
+    assert "COULD NOT IDENTIFY THE TREE THAT RAN" in result.stdout, result.stdout

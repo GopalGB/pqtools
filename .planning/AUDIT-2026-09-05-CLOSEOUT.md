@@ -2205,3 +2205,109 @@ lines long. `--verify` alone is defence in depth. Demonstrated directly:
 The faithful control restores the inside-form, and it goes red. The comment in
 `gate_provenance.sh` has been corrected in place; the round-17 commit message
 is immutable and is corrected here instead.
+
+---
+
+## Round 19 - `3264b59..cc2752d`, verdict FIX-FIRST, five findings, all taken
+
+Two MEDIUM, three LOW, all in the round-18 fix. The pattern from rounds 16-18
+holds: the code was right about the case it was written for and wrong about
+the adjacent one, and the sentence describing it claimed the general property.
+
+### MEDIUM - `git add -A` drops paths while exiting 0
+
+The round-18 identity replaced `git stash create` because it silently omitted
+untracked files. `git add -A` omits paths too, and does it while returning
+success, so the exit-status check that would seem to cover it does not.
+
+Two cases, both reproduced against the shipped script:
+
+**An unreadable directory.** `add -A` prints `warning: could not open
+directory 'locked/': Permission denied` to stderr and exits 0. Measured side
+by side, dirtying the tree independently so the line is always emitted:
+
+    unreadable : 9d4f3a6f30cfacf32221dfc29f9e99ae5c8030d7
+    readable   : 5eb221d545ce31c6cc6200689bfab4f3a00eb30a
+    absent     : 9d4f3a6f30cfacf32221dfc29f9e99ae5c8030d7
+
+The id for "present but unreadable" is identical to "not there at all", and
+differs from the truth. Note `git status --porcelain` cannot see it either, so
+here the marker and the identity are blind *together* - the review framed both
+cases as the marker and identity disagreeing, which is accurate for the second
+case only.
+
+**A nested repository.** Written as `160000 commit <sha>`, whose object lives
+in the other repo's store and cannot be read back here, while `--porcelain`
+does count it dirty. That is the marker and the identity genuinely
+disagreeing. Realistic in this repo: gate runs happen inside `git worktree`
+directories (`mq-gate-wt-*`).
+
+Now stderr is captured (`2>&1 >/dev/null`) and any output is fatal to the
+identity, with a second net rejecting any tree containing a `160000` entry.
+The refusal quotes what git actually said rather than guessing which case it
+was, because both land in the same branch:
+
+    # content: unknown - COULD NOT IDENTIFY THE TREE THAT RAN
+              (git add -A: warning: could not open directory 'locked/': Permission denied)
+    # content: unknown - COULD NOT IDENTIFY THE TREE THAT RAN
+              (git add -A: warning: adding embedded git repository: nested)
+
+### MEDIUM - the guard's message named the one case the guard could not see
+
+`scripts/release_gate.sh` refuses when the header fails, and its message says
+"refusing to gate an unidentifiable tree". But `gate_provenance.sh` contained
+no `exit` at all and its last command was `printf '# date: …'`, so it always
+returned 0. Both `unknown` branches - `COULD NOT IDENTIFY THE TREE THAT RAN`
+and `COLLECTION FAILED` - printed their refusal and the gate ran on to `GATE
+PASSED`, exit 0. The `||` fired only when bash could not execute the file
+(127), which is the single case the round-18 test covered.
+
+The script now tracks `gate_status` and exits 3 from both branches, after
+printing the whole header - a partial header is still evidence, an
+unprovenanced pass is not. End to end, `release_gate.sh` in a repo with a
+nested clone now exits 2 and never prints `GATE PASSED`.
+
+### LOW - the fixture env pinned git's config but not its location
+
+Round 18 pinned `GIT_CONFIG_GLOBAL`/`SYSTEM`. Git also takes its *location*
+from the environment, and `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+`GIT_OBJECT_DIRECTORY`, `GIT_TEMPLATE_DIR` and `GIT_CONFIG_PARAMETERS` were
+still inherited. Verified: with `GIT_DIR` exported, `git rev-parse --git-dir`
+inside a fresh directory returns the host repo's path, so the fixtures would
+build history in the caller's repository. Every git hook runs with `GIT_DIR`
+and `GIT_INDEX_FILE` exported, so "run the suite from a hook" reaches it.
+Nine such variables are now stripped, and the test asserts the *construction*
+drops them while they are set, not that they happened to be unset.
+
+### LOW - the fallback asserted "detached" without testing for it
+
+It fired whenever `git branch --show-current` printed nothing, which includes
+git < 2.22 where the option does not exist and errors to suppressed stderr -
+so on an old git every ordinary branch would have been labelled `detached at
+<sha>`. Latent here (git 2.40.0 supports it). Now gated on `git symbolic-ref
+-q HEAD` failing, which is the actual question.
+
+### LOW - "same side effect as stash create" was not accurate
+
+`stash create` never wrote untracked *content* to the object store; `add -A`
+does. Every dirty gate run now stores a blob of each untracked non-ignored
+file. They are unreachable and gc-prunable and are never pushed - but they are
+on disk, and the pre-push secret scan reads commits, so it would not see them.
+Named in the comment given this repo's no-secret-value invariant. Everything
+gitignored, `.samples/` included, stays out.
+
+### Controls
+
+Seven behavioural, each red with the defect and green after restoring: stderr
+capture reverted to `2>/dev/null` · the gitlink net removed as well · both
+nets removed together · `gate_status=3` dropped from the content branch ·
+dropped from the collect branch · the final `exit` removed entirely ·
+`_GIT_ENV` reverted to passing the location variables through.
+
+One was mis-specified: the collect-branch mutation failed to apply on the
+first attempt (a `\n` escaping error in the shell heredoc that built the
+search string) and reported "2 passed", which is not a green - it is no
+measurement. Re-run with an asserted replacement, then red. The two nets were
+also controlled *separately*, which established that the gitlink check is
+independently load-bearing: with the stderr check removed the nested-repository
+case still refuses.
