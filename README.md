@@ -1,5 +1,66 @@
 # pqtools - run, lint and format Power Query M without Power BI
 
+## In plain English
+
+Power Query is the part of Excel and Power BI that cleans up your data - load a
+CSV, drop a column, filter the rows, group and total it. Those steps are saved
+as code in a language called **M**, and normally the only way to run them is to
+open Excel or Power BI and click through the app.
+
+**pqtools runs them from your terminal instead.**
+
+```bash
+pip install pqtools
+pq eval sales.pq
+```
+
+That is the whole idea. It reads the query, fetches the CSV the query asks for,
+does the work, and prints the answer as JSON or CSV. No Power BI, no Excel, no
+Windows required.
+
+### What you can do with it
+
+| You want to... | Command |
+| --- | --- |
+| See which queries are inside a report file | `pq list report.pbix` |
+| Run one of them and see the rows | `pq eval report.pbix --member Sales` |
+| Run a standalone query file | `pq eval sales.pq` |
+| Catch mistakes before they ship | `pq check sales.pq` |
+| Tidy the formatting | `pq format sales.pq --write` |
+| Read a query without running it | `pq show report.pbix --member Sales` |
+| See what changed between two versions | `pq diff before.pq after.pq` |
+| Find out why something is refused | `pq explain Table.FuzzyNestedJoin` |
+
+### Why people use it
+
+- **Look inside a report without opening it.** A `.pbix` or `.xlsx` is a sealed
+  box; `pq list` tells you what queries are in there in about a second.
+- **Catch broken queries automatically.** `pq check` works like a spellchecker
+  for your data steps, so a mistake fails your build instead of failing in
+  front of a client.
+- **Stop arguing about formatting.** `pq format` lays every query out the same
+  way, so two people's versions stop differing over spacing.
+- **Test with fake data.** Point a query at a small sample file instead of the
+  real database and check the answer is what you expected - from a normal
+  Python test.
+- **Edit a report and save it back.** Change a query inside an `.xlsx` or
+  `.pbix` and write it back into the file.
+
+### What it will *not* do
+
+It will not guess. If your query uses something pqtools cannot handle, it stops
+and tells you exactly which piece it could not do - it never quietly returns
+half your rows or a number that is subtly wrong. A clear "I can't do this" is
+the point.
+
+It is also **not made by Microsoft** and not a copy of their engine. The one
+big thing their engine does that this does not is *query folding* - pushing the
+work down into your database instead of downloading the rows first. You get the
+same answers here, just more data over the wire.
+
+---
+
+
 **pqtools runs a Power Query `.pq` query end to end - fetching its own data
 from a CSV, a web URL or a SQL database - in pure Python, with no Power BI and
 no Excel.** It is also a linter, a formatter and a safe renamer for M source -

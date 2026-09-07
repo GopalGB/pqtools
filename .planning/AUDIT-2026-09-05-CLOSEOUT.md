@@ -2605,3 +2605,75 @@ Two harness fixes, neither of which touches the product:
 The audit has been correcting the evidence a gate log certifies since round 16.
 This is the same failure one level out: the review harness was showing the
 reviewer a tree that was not the tree under review.
+
+---
+
+## Round 23 - `5c183cc..a1b8de2`, verdict FIX-FIRST, five findings, all taken
+
+The first round the reviewer could read the post-change tree, and it used that
+immediately: it verified the gate log's `content:` tree holds the exact staged
+blobs, confirmed `checkout-index` works as claimed, and then found four defects
+in the harness fix itself.
+
+### HIGH - the trap cannot fire for the failure it was written for
+
+Round 22 blamed the two leaked worktrees on "the OOM kills around round 13" and
+then fixed it with `trap cleanup EXIT INT TERM`. **An OOM kill is SIGKILL,
+which is untrappable.** Verified directly: a handler on `EXIT INT TERM` does
+not run on `kill -9`, and does run on `kill -TERM`. So the exact leak that
+motivated the fix would happen identically with the fix in place.
+
+This is the "because clause needs its counter-case" failure from this project's
+own memory, in its purest form: the reason given for the fix was the one case
+the fix excludes.
+
+Two further facts, both measured rather than assumed:
+
+- `$$` wraps (`kern.maxproc` is 2000 here), so a leaked `/tmp/mq-gate-wt-<pid>`
+  is eventually the name the next run wants, and `git worktree add` then aborts
+  with `fatal: ... already exists`.
+- `git worktree prune` would not have cleaned them either: it only drops
+  registrations whose directory is **gone**, and these were on disk. Verified -
+  a stale worktree survives a prune, still registered.
+
+Fixed with a startup `sweep()` that removes every `/tmp/mq-gate-wt-<pid>` whose
+pid is not alive, then prunes. It skips `$$` and any pid that is still running,
+so a concurrent review is never destroyed.
+
+### MEDIUM - the INT/TERM handler never exited, so the script ran on inside a deleted worktree
+
+Bash resumes after a signal handler returns - verified with a probe that prints
+after the handler. So Ctrl-C during the 900-second review would remove the
+worktree and then still write the footer and `tail` the file, producing a
+**truncated `$OUT` in `evidence/` that reads like a completed review**. Now
+`trap 'cleanup; exit 130' INT` and `exit 143` for TERM, with the bare handler
+only on EXIT.
+
+### MEDIUM - the deletion sweep missed two path classes
+
+`git diff --name-only` C-quotes non-ASCII paths - verified: `src/café.py` comes
+back as `"src/caf\303\251.py"`, which names no file, and `rm -f` swallows the
+ENOENT. And `rm -f` refuses a directory (`is a directory`, and exit 0 under
+`-f`), so a deleted submodule or directory survived. Either way a BASE-only
+path lingers in the tree the reviewer reads, which is precisely the staleness
+that block exists to prevent. Now `-z` with `read -r -d ''`, and `rm -rf`.
+
+### MEDIUM - the round-22 write-up asserted the leak was closed without its counter-case
+
+"every killed run leaked one. Now `trap cleanup EXIT INT TERM`" reads as
+complete while the cited cause is the signal the trap cannot see. Rewritten to
+name SIGKILL explicitly and to say that the sweep, not the trap, is what covers
+the OOM case.
+
+### LOW - two owners of teardown
+
+The EXIT trap owns cleanup, so the explicit `git worktree remove` in the
+DRY_RUN branch and at the end just ran it twice. Both dropped.
+
+### Note on controls
+
+The sweep's own failure path is **not** covered by an automated control, and
+that is stated rather than glossed: exercising it means `kill -9`-ing a real
+900-second review and starting another, which is not something the suite can
+own. It was verified by hand instead - the two stale worktrees were removed,
+and `DRY_RUN` after the change leaves no worktree registered.

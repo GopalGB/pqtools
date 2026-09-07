@@ -12,13 +12,47 @@ cd "$REPO" || exit 1
 # deleted with it - a 15-minute review with nothing to show for it
 # (round 9). Anchor it to the repo before the first cd away.
 [[ "$OUT" = /* ]] || OUT="$REPO/$OUT"
-# A killed run used to leave its worktree registered and on disk. Two such -
-# both at b44f459, from the OOM kills around round 13 - were still there at
-# round 22, and a reviewer inspecting one of them reported an empty index and
-# BASE-era files, then withdrew findings it could not verify. Clean up on any
-# exit, not just the happy one.
+# A killed run leaves its worktree registered and on disk. Two such - both at
+# b44f459, from the OOM kills around round 13 - were still there at round 22,
+# and a reviewer inspecting one reported an empty index and BASE-era files,
+# then withdrew findings it could not verify.
+#
+# The trap below is NOT what fixes that case, and round 22's write-up was wrong
+# to imply it was. An OOM kill is SIGKILL, which is untrappable - verified: a
+# handler on EXIT INT TERM does not run on `kill -9`, and does run on
+# `kill -TERM`. So the leak those two worktrees came from would happen
+# identically today with the trap in place. The startup sweep is what covers
+# it; the trap only covers the signals a process can see.
+#
+# The sweep is also not optional hygiene. `$$` wraps (kern.maxproc is 2000
+# here), so a leaked /tmp/mq-gate-wt-<pid> is eventually the name the next run
+# wants, and `git worktree add` aborts with "fatal: ... already exists"
+# (verified). `git worktree prune` alone does not help: it only drops
+# registrations whose directory is GONE, and these are on disk (verified - a
+# stale worktree stays registered across a prune).
+sweep() {
+  local dir pid
+  for dir in /tmp/mq-gate-wt-* /private/tmp/mq-gate-wt-*; do
+    [ -d "$dir" ] || continue
+    pid="${dir##*-}"
+    case "$pid" in (*[!0-9]*|'') continue;; esac
+    [ "$pid" = "$$" ] && continue
+    # A live run owns its directory - never touch a concurrent review.
+    kill -0 "$pid" 2>/dev/null && continue
+    git worktree remove --force "$dir" 2>/dev/null
+    rm -rf -- "$dir"
+  done
+  git worktree prune 2>/dev/null
+}
 cleanup() { cd "$REPO" 2>/dev/null && git worktree remove --force "$WT" 2>/dev/null; }
-trap cleanup EXIT INT TERM
+# Bash RESUMES after a signal handler returns (verified), so a bare `cleanup`
+# on INT/TERM would delete the worktree and then let the script write its
+# footer and `tail` the file - producing a truncated $OUT in evidence/ that
+# reads like a completed review. Exit from the handler.
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+sweep
 git worktree add -q "$WT" "$BASE" || exit 1
 cd "$WT" || exit 1
 git read-tree "$HEAD"
@@ -34,9 +68,16 @@ git read-tree "$HEAD"
 # (still HEAD), neither of which the working files participate in.
 git checkout-index -a -f
 # checkout-index only writes; paths deleted between BASE and HEAD would linger.
-git diff --name-only --diff-filter=D "$BASE" "$HEAD" | while IFS= read -r gone; do
-  [ -n "$gone" ] && rm -f -- "$gone"
-done
+# -z, because `git diff --name-only` C-QUOTES a non-ASCII path - verified:
+# `src/café.py` comes back as `"src/caf\303\251.py"`, which names no file, and
+# `rm -f` swallows the ENOENT silently. And -rf, because `rm -f` refuses a
+# directory ("is a directory", exit 0 under the -f) so a deleted submodule or
+# directory would survive. Either way a BASE-only path lingers in the tree the
+# reviewer reads, which is the staleness this block exists to prevent.
+git diff -z --name-only --diff-filter=D "$BASE" "$HEAD" \
+  | while IFS= read -r -d '' gone; do
+      [ -n "$gone" ] && rm -rf -- "$gone"
+    done
 STUB_BRIDGE=$(printf '// vendored esbuild bundle of @microsoft/powerquery-parser 2.0.0 + powerquery-formatter 1.0.0 (2.6 MB, committed; excluded from review diff, reproducible via `npm run bundle`)\n' | git hash-object -w --stdin)
 STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3, pins parser 2.0.0 / formatter 1.0.0 / esbuild 0.28.2); excluded from review diff" }\n' | git hash-object -w --stdin)
 # The package was renamed mquery_toolkit -> pqtools in 0.2.0. This line kept the
@@ -67,7 +108,7 @@ stub package-lock.json "$STUB_LOCK"
 STAT=$(git diff --cached --stat | tail -1)
 if [ -n "${DRY_RUN:-}" ]; then
   printf '%b' "$NOTES"; echo "DRY_RUN staged: $STAT"
-  cd "$REPO" && git worktree remove --force "$WT"; exit 0
+  exit 0
 fi
 {
   echo "# Exact claude-opus-5 wrapper review - range $BASE..$HEAD (bundle + lockfile shown as stub blobs)"
@@ -80,5 +121,7 @@ fi
   echo
   echo "# wrapper exit: $RC (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)"
 } > "$OUT" 2>&1
-cd "$REPO" && git worktree remove --force "$WT"
+# Teardown has ONE owner, the EXIT trap. The explicit removals that used to sit
+# here and in the DRY_RUN branch just ran it twice.
+cd "$REPO" || exit 1
 tail -3 "$OUT"

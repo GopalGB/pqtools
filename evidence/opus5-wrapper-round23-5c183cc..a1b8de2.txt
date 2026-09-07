@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range 5c183cc..a1b8de2 (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 201 insertions(+), 1 deletion(-)
+# src/pqtools/_bridge.cjs: unchanged in 5c183cc..a1b8de2, not stubbed, not in the diff
+# package-lock.json: unchanged in 5c183cc..a1b8de2, not stubbed, not in the diff
+# invoked 2026-09-07T15:07:36Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified against this session's own worktree (`/private/tmp/mq-gate-wt-54492`, HEAD `5c183cc`, index = the staged tree), so the harness fix is testable from here.
+
+**Confirmed, not findings:** the gate log's `content: 247a97c` tree holds the exact staged blobs for `run-opus-gate.sh` (`84e208d`), the audit (`ad79409`) and the wrapper evidence (`632a8da`) — the evidence certifies the tree it ships. `332b0d5:tests/test_end_to_end.py` = `b1fc0e93…`; `ab6a767` holds `5cd0c151…` = `5c183cc`'s blob; `_GIT_ENV` count 7→1 and the survivor is prose in a docstring (`:1227`), not a call site. Round-21 body is 3 REJECTED + 4 TAKEN, matching the corrected heading. `checkout-index -a -f` works as claimed: this worktree's files carry the staged content (audit line 2535 present on disk) while `git diff --cached` is still exactly the four paths. `bash -n` passes.
+
+Findings:
+
+- **HIGH — evidence/run-opus-gate.sh:21 — the trap cannot fire for the failure it cites.** Lines 15-19 blame "the OOM kills around round 13" for the two leaked worktrees; an OOM kill is SIGKILL, which is untrappable, so those two runs would leak identically today. Worse, `WT="/tmp/mq-gate-wt-$$"` (:9) plus PID reuse means a leaked directory eventually collides and aborts the next run at `git worktree add` (:22). `git worktree prune` alone would not have helped either — those two were *on disk*, and prune only drops registrations for missing dirs. Fix: before :22, sweep stale runs — for each `/tmp/mq-gate-wt-<pid>` whose pid is not alive, `git worktree remove --force` it, then `git worktree prune`. And positive-control it: `kill -9` a run mid-review and confirm the next run starts clean; nothing in this diff exercises the kill path.
+- **MEDIUM — evidence/run-opus-gate.sh:21 — the INT/TERM handler never exits, so the script runs on inside a deleted worktree.** Bash resumes after the handler returns. Ctrl-C during the 900s review at :78 removes `$WT`, then :79-:82 still write the footer and :83-:84 still run, producing a *truncated* `$OUT` that reads like a finished review and lands in `evidence/`. Fix: `trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM;` keep bare `cleanup` only on EXIT.
+- **MEDIUM — evidence/run-opus-gate.sh:37-39 — the deletion sweep silently misses two path classes.** `git diff --name-only` C-quotes non-ASCII paths (`"src/caf\303\251.py"`), so `rm -f --` targets a name that does not exist and `-f` swallows the ENOENT; and `rm -f` cannot remove a deleted gitlink/directory (round 20 was about gitlinks). Either way a BASE-only path lingers in the tree the reviewer reads — the exact staleness this block exists to prevent. Fix: `git diff -z --name-only --diff-filter=D "$BASE" "$HEAD" | while IFS= read -r -d '' gone; do rm -rf -- "$gone"; done`.
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:2591 — the write-up asserts the leak is closed without its counter-case.** "every killed run leaked one. Now `trap cleanup EXIT INT TERM`" reads as complete, while the cited cause (OOM, :2585-2587) is precisely the signal the trap cannot see. Name SIGKILL and the startup sweep, per this file's own round-9-onward standard.
+- **LOW — evidence/run-opus-gate.sh:70,83 — the explicit removals are now dead weight.** The EXIT trap owns cleanup; :70's `cd "$REPO" && git worktree remove --force "$WT"; exit 0` and :83 just make it run twice (second suppressed). Drop both bodies to `exit 0` / let :84 stand, so there is one owner of teardown.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
