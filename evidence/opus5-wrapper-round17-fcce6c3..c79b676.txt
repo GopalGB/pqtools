@@ -1,0 +1,21 @@
+# Exact claude-opus-5 wrapper review - range fcce6c3..c79b676 (bundle + lockfile shown as stub blobs)
+# staged:  9 files changed, 306 insertions(+), 29 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in fcce6c3..c79b676, not stubbed, not in the diff
+# package-lock.json: unchanged in fcce6c3..c79b676, not stubbed, not in the diff
+# invoked 2026-09-07T13:13:46Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+- **MEDIUM — llms.txt:139 / README.md:725 — the replacement sentence repeats the defect it fixes: the 10 MiB cap is NOT `--write`-only.** Both new texts list "the input exceeds 10 MiB" (README: "Only the lock, size, encoding and changed-under-the-lock refusals are `--write`-only") among the write-only cases, but the size check lives in `_snapshot` (src/pqtools/core.py:848-849 and 856-857, `raise SafeWriteError("input exceeds 10 MiB")`), which its own comment at core.py:838-841 states "is the READ path too (`cli._source`, `export`, `containers`)". `SafeWriteError.code = "M_SAFE_WRITE_REFUSED"` (core.py:74-76), and `cli._source` (cli.py:52) is what `pq check` uses — so `pq check big.pq` on an 11 MiB file exits 2 with `M_SAFE_WRITE_REFUSED` from a read verb. Same class of false statement as the row being replaced, introduced by the fix. Fix: move "the input exceeds 10 MiB" out of the `--write`-only list into the read-verbs-too sentence (with the non-regular/`st_nlink` cases), in both files; the encoding case is fine — read hits a bare `UnicodeDecodeError` and renders `M_IO_ERROR`.
+
+- **MEDIUM — tests/test_end_to_end.py:940-950 — `test_the_gate_header_reports_a_staged_only_tree_as_dirty` is a string grep, not the behavioural control the audit claims.** It never runs `release_gate.sh` and never creates a staged-only tree; it asserts three substrings exist in the file, so an inverted condition (`&&`→`||`, branches swapped) still passes, while a correct rewrite to the single sufficient check fails it. `.planning/AUDIT-2026-09-05-CLOSEOUT.md:1980-1984` lists it under "Three behavioural, each red with the defect". It also asserts `COLLECTION FAILED`, which belongs to a different fix and will report under this test's name. Fix: `git init` a tmp repo, commit, stage one edit, run the header block, assert `(working tree DIRTY)` — and split the collect assertion into its own test.
+
+- **MEDIUM — evidence/release-gate-2026-09-07-round16-fixes.log:2 — the log certifies a commit that contains none of the changes it is evidence for.** `89367cd` is the autocommit `chore(auto): session commit 2026-09-07 — 2 file(s)` (only the two evidence files, on top of `fcce6c3`), and the header says `(working tree DIRTY)` — so the SHA identifies neither the tree that ran nor the tree being shipped, which is the exact failure the header was added to prevent. Fix: when DIRTY, also print a tree identity for the actual content, e.g. `git write-tree` (or `git diff HEAD | git hash-object --stdin`), so a DIRTY log is still checkable.
+
+- **LOW — scripts/release_gate.sh:36 — `git diff --quiet HEAD` is redundant and misfires on an unborn HEAD.** `git status --porcelain` already reports staged, unstaged and untracked; the extra `git diff HEAD` adds nothing and errors (→ always DIRTY) in a repo with no commits. Fix: keep only `[ -z "$(git status --porcelain 2>/dev/null)" ]`.
+
+Checked and not reported: the `# collect:` status test does work — `set -uo pipefail` at release_gate.sh:17 means `tail`'s zero exit does not mask pytest's, so a collection error reaches the `COLLECTION FAILED` branch. `_ELOOP_IS_AMBIGUOUS` is sound: `_FsCall.OPEN_SOURCE` has exactly one live call site (core.py:840, the docstring at :782 is prose), and its `os.lstat` at :822 immediately precedes it, so the "lstat succeeded ⇒ no directory loop" premise holds; `OPEN_LOCK` (:930) genuinely has none. The weakened `assert seen` still fails if the pre-open lstat disappears. The residual mislabel — a directory component turned into a loop *between* the lstat and the open now reads `M_SAFE_WRITE_REFUSED` — is race-only, refuses either way, and is recorded as the accepted trade.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

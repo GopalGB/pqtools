@@ -722,8 +722,10 @@ See [Safety model](#safety-model).
   symlink. Note that **read verbs refuse these as well** - `pq check` on a
   symlink reports `M_SAFE_WRITE_REFUSED`, because it is a property of the
   target, and following a symlink to read it is refused for the same reason as
-  following one to write it. Only the lock, size, encoding and
-  changed-under-the-lock refusals are `--write`-only.
+  following one to write it. The same is true of the 10 MiB cap: `pq check` on
+  an 11 MiB file reports it too. Only the lock, the encoding check and
+  changed-under-the-lock are genuinely `--write`-only - a read verb on
+  invalid UTF-8 gets a bare decode error and reports `M_IO_ERROR`.
 - **A file that will not open raises `OSError`, not `MQueryError`.** Refusals
   are typed `MQueryError` subclasses, but a missing or unreadable file is the
   OS's fact to report, so `FileNotFoundError` / `PermissionError` propagate

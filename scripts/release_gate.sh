@@ -20,34 +20,9 @@ cd "$(dirname "$0")/.." || exit 2
 PY=.venv/bin/python
 FAILED=0
 
-# Provenance header. A gate log that names no tree cannot be checked against
-# the tree it certifies later - which is exactly how the export-dtypes
-# evidence came to report a pass count from the previous commit. Emitting it
-# here, rather than remembering to paste it in, is the only version that
-# cannot drift.
-printf '# release gate\n'
-# `git diff --quiet` compares the worktree against the INDEX, so a tree whose
-# changes are all STAGED - the normal shape when gating just before a commit -
-# looked clean and printed a bare SHA. That is precisely the "log certifies a
-# tree it did not run on" failure this header was added to prevent. Compare
-# against HEAD, and use --porcelain so untracked files count too.
-if git diff --quiet HEAD 2>/dev/null && [ -z "$(git status --porcelain 2>/dev/null)" ]; then
-  gate_dirty=''
-else
-  gate_dirty=' (working tree DIRTY)'
-fi
-printf '# commit:  %s%s\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)" "$gate_dirty"
-printf '# branch:  %s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-# Status-checked: a collection error otherwise printed an empty or garbage
-# count and the run could still end GATE PASSED, blanking the provenance line
-# in exactly the case it matters most.
-if gate_collect=$($PY -m pytest --collect-only -q 2>/dev/null | tail -1) \
-   && [ -n "$gate_collect" ]; then
-  printf '# collect: %s\n' "$gate_collect"
-else
-  printf '# collect: unknown - COLLECTION FAILED\n'
-fi
-printf '# date:    %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Provenance header, in its own script so a test can EXECUTE it rather than
+# grep it. See scripts/gate_provenance.sh for why that distinction mattered.
+bash scripts/gate_provenance.sh "$PY"
 
 step() { printf '\n=== %s ===\n' "$1"; }
 check() {

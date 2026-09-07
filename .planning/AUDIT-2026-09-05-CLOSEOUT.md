@@ -1982,10 +1982,94 @@ README carries the same clarification.
 
 ### Controls
 
-Three behavioural, each red with the defect and green after restoring:
-disambiguation applied to `OPEN_SOURCE` too (2 tests) · DIRTY marker comparing
-against the index · collect count unchecked. The two remaining fixes (the
+Three were listed as behavioural, each red with the defect and green after
+restoring: disambiguation applied to `OPEN_SOURCE` too (2 tests) · DIRTY
+marker comparing against the index · collect count unchecked.
+
+**CORRECTION (round 17).** Two of those three were NOT behavioural controls.
+The test backing them grepped `release_gate.sh` for three substrings instead
+of running it, so it went red only because my mutation happened to change a
+grepped string. Inverting the clean/dirty branches - making the header report
+every clean tree as DIRTY and every dirty tree as clean, i.e. exactly
+backwards - leaves that test GREEN. Verified. The sentence above was false
+when written, and the count of "three behavioural" was really one. The header
+now lives in `scripts/gate_provenance.sh` so a test can execute it, and four
+tests drive it in real temp repos. The two remaining fixes (the
 llms.txt/README sentence, the isinstance guard) have no behavioural control
 and are recorded as such rather than given a fake one - though the BEHAVIOUR
 the doc describes is pinned by `_FS_TAXONOMY`, which is what makes the
 sentence checkable at all.
+
+## Round 17 - the review of the round-16 fixes: FIX-FIRST, four findings
+
+`evidence/opus5-wrapper-round17-fcce6c3..c79b676.txt`. All four taken. Two of
+them are about MY OWN verification claims being weaker than stated, which
+makes this the most useful round of the audit.
+
+### MEDIUM - a control I called behavioural was a string grep
+
+`test_the_gate_header_reports_a_staged_only_tree_as_dirty` never ran
+`release_gate.sh`. It asserted three substrings existed in the file. It went
+red under my round-16 control only because that mutation happened to change
+one of the grepped strings.
+
+**Proved by inverting the branches** so the header reports every clean tree as
+DIRTY and every dirty tree as clean - the header exactly backwards - and the
+test still PASSED. The round-16 closeout listed it among "three behavioural,
+each red with the defect"; the real count was one. That sentence has been
+corrected in place rather than left standing.
+
+The header now lives in `scripts/gate_provenance.sh` precisely so a test can
+EXECUTE it, and four tests drive it in real temp repos: staged-only, untracked
+only, clean, unborn HEAD, and a failed collection (split into its own test -
+it had been asserted inside the staged-tree test, so a failure would have
+reported under an unrelated name).
+
+Writing those immediately found a bug in my own script: on an unborn HEAD
+`git rev-parse HEAD` prints the literal "HEAD" to STDOUT and then fails, so
+`|| echo unknown` appended to it and produced a two-line commit field. Now
+`--verify`, which prints nothing on failure.
+
+### MEDIUM - the sentence written to fix a false claim repeated it
+
+Round 16 corrected llms.txt for listing read-verb refusals as `--write`-only.
+The replacement listed "the input exceeds 10 MiB" among the `--write`-only
+cases - and the size check is in `_snapshot`, which is the read path too.
+Confirmed: `pq check` on an 11.2 MB file exits 2 with
+`M_SAFE_WRITE_REFUSED: input exceeds 10 MiB`.
+
+Both docs now put the size cap with the target-property refusals. The other
+half was verified rather than assumed: invalid UTF-8 genuinely IS write-only
+(`pq check` gets a bare decode error and reports `M_IO_ERROR`), and both
+halves are now pinned by a test so the sentence is checkable.
+
+### MEDIUM - the round-16 gate log certifies a tree containing none of its changes
+
+`evidence/release-gate-2026-09-07-round16-fixes.log` names `89367cd` - an
+autocommit holding two evidence files - with `(working tree DIRTY)`, while
+every change it is evidence for sat uncommitted. The SHA identifies neither
+the tree that ran nor the tree shipped: the exact failure the header was added
+to prevent, two rounds after adding it.
+
+A DIRTY header now also prints `# content:`, a real object id for the tree
+that actually ran (`git stash create`, falling back to hashing the diff).
+
+### LOW - `git diff --quiet HEAD` was redundant and misfired
+
+`git status --porcelain` already covers staged, unstaged and untracked, and
+`git diff --quiet HEAD` exits 128 on an unborn HEAD - so an empty repo was
+always "dirty". Dropped.
+
+### Controls
+
+Five behavioural, each red with the defect and green after restoring:
+clean/dirty branches inverted (**the control the old grep test could not
+see**) · content identity dropped when dirty · `rev-parse` without `--verify`
+· collect status check removed · both size checks disabled.
+
+The size-cap control was mis-specified on the first attempt: `_snapshot` has
+TWO size checks (`st_size`, and the streaming `len(data)`), and disabling only
+the first left the test green. Recorded because the first reading of that
+result - "the test is not load-bearing" - was wrong, and the difference
+between a weak test and an incomplete control is exactly what this round is
+about.

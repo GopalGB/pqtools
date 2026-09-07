@@ -25,6 +25,8 @@ import datetime as dt
 import errno
 import json
 import os
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -933,15 +935,156 @@ def test_the_toctou_refusal_survives_the_symlink_being_swapped_back(
             _snapshot(query)
 
 
-def test_the_gate_header_reports_a_staged_only_tree_as_dirty() -> None:
-    """The round-16 MEDIUM: `git diff --quiet` compares the worktree against
-    the INDEX, so a tree whose changes are all STAGED - the normal shape when
-    gating just before a commit - printed a bare SHA with no DIRTY marker.
-    That is the "log certifies a tree it did not run on" failure the header
-    exists to prevent.
+def _provenance(cwd: Path, python: str = "") -> str:
+    """Run the real provenance script in `cwd` and return what it printed."""
+    script = Path(__file__).resolve().parent.parent / "scripts" / "gate_provenance.sh"
+    result = subprocess.run(
+        ["bash", str(script), python],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout
+
+
+def _repo(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for command in (
+        ["git", "init", "-q", "."],
+        ["git", "config", "user.email", "t@example.invalid"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(command, cwd=path, check=True, capture_output=True)
+
+
+def test_the_gate_header_reports_a_staged_only_tree_as_dirty(tmp_path: Path) -> None:
+    """The round-17 MEDIUM: the previous version of this test GREPPED the
+    script for three substrings instead of running it.
+
+    Inverting the clean/dirty branches - so every clean tree reported DIRTY
+    and every dirty tree reported clean, i.e. the header exactly backwards -
+    left that test green, because all three substrings were still present.
+    The closeout listed it as one of "three behavioural" controls. It was not
+    one, and this is the replacement that actually executes the thing.
     """
-    gate = Path(__file__).resolve().parent.parent / "scripts" / "release_gate.sh"
-    text = gate.read_text(encoding="utf-8")
-    assert "git diff --quiet HEAD" in text, "must compare against HEAD, not the index"
-    assert "git status --porcelain" in text, "untracked files must count too"
-    assert "COLLECTION FAILED" in text, "a failed collect must not print a blank count"
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True
+    )
+
+    clean = _provenance(repo)
+    assert "(working tree DIRTY)" not in clean, clean
+
+    # Staged only: the worktree matches the index, the index differs from
+    # HEAD. This is the normal shape when gating just before a commit, and it
+    # is what `git diff --quiet` called clean.
+    (repo / "f.txt").write_text("two\n", encoding="utf-8")
+    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True, capture_output=True)
+    staged = _provenance(repo)
+    assert "(working tree DIRTY)" in staged, staged
+
+    # And an untracked file alone counts too.
+    subprocess.run(
+        ["git", "restore", "--staged", "f.txt"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    assert "(working tree DIRTY)" not in _provenance(repo)
+    (repo / "untracked.txt").write_text("x\n", encoding="utf-8")
+    assert "(working tree DIRTY)" in _provenance(repo)
+
+
+def test_a_dirty_gate_header_still_identifies_the_tree_that_ran(
+    tmp_path: Path,
+) -> None:
+    """The round-17 MEDIUM: a DIRTY log's SHA identifies neither the tree that
+    ran nor the tree being shipped.
+
+    Not hypothetical - `evidence/release-gate-2026-09-07-round16-fixes.log`
+    names `89367cd`, an autocommit holding two evidence files, while every
+    change it certifies sat uncommitted in the worktree.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True
+    )
+    assert "# content:" not in _provenance(repo), "clean trees need no content line"
+
+    (repo / "f.txt").write_text("two\n", encoding="utf-8")
+    dirty = _provenance(repo)
+    assert "# content:" in dirty, dirty
+    identity = [line for line in dirty.splitlines() if line.startswith("# content:")][0]
+    # A real object id, not a placeholder.
+    assert "unknown" not in identity, identity
+    assert re.search(r"\b[0-9a-f]{40}\b", identity), identity
+
+
+def test_the_gate_header_survives_a_repo_with_no_commits(tmp_path: Path) -> None:
+    """The round-17 LOW: `git diff --quiet HEAD` exits 128 on an unborn HEAD,
+    so the header called an empty repo dirty. `git status --porcelain` alone
+    already covers staged, unstaged and untracked, and is correct here.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    header = _provenance(repo)
+    assert "(working tree DIRTY)" not in header, header
+    assert "# commit:  unknown" in header, header
+
+
+def test_a_failed_collection_is_named_not_blanked(tmp_path: Path) -> None:
+    """The other round-16 LOW, split into its own test - it was previously
+    asserted inside the staged-tree test, so a failure reported under an
+    unrelated name.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    header = _provenance(repo, python="/nonexistent/python")
+    assert "# collect: unknown - COLLECTION FAILED" in header, header
+
+
+def test_the_size_cap_is_reported_by_read_verbs_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-17 MEDIUM: the sentence written to fix the read/write
+    contradiction repeated it.
+
+    Both docs listed "the input exceeds 10 MiB" among the `--write`-only
+    cases, but the size check lives in `_snapshot`, which is the read path
+    too - so `pq check` on an oversized file exits 2 with
+    `M_SAFE_WRITE_REFUSED`. This test is what makes that sentence checkable
+    rather than merely re-asserted.
+    """
+    from pqtools.core import MAX_BYTES
+
+    oversized = tmp_path / "big.pq"
+    oversized.write_text("let a = 1 in a\n" + "// pad\n" * ((MAX_BYTES // 7) + 16))
+    assert oversized.stat().st_size > MAX_BYTES
+
+    from pqtools.cli import main
+
+    assert main(["check", str(oversized)]) == 2
+    err = capsys.readouterr().err
+    assert "M_SAFE_WRITE_REFUSED" in err, err
+    assert "10 MiB" in err, err
+
+    # ...while invalid UTF-8 really IS write-only: a read verb gets a bare
+    # decode error and reports M_IO_ERROR. That is the half of the sentence
+    # that was right, and it needs pinning too or the correction could drift
+    # back the other way.
+    invalid = tmp_path / "bad.pq"
+    invalid.write_bytes(b"let a = \xff\xfe in a\n")
+    assert main(["check", str(invalid)]) == 2
+    read_err = capsys.readouterr().err
+    assert "M_IO_ERROR" in read_err, read_err
+    assert main(["format", str(invalid), "--write"]) == 2
+    write_err = capsys.readouterr().err
+    assert "M_SAFE_WRITE_REFUSED" in write_err, write_err

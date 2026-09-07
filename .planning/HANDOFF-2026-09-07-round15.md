@@ -1,46 +1,45 @@
-# Handoff, 2026-09-07 - one outstanding gap
+# Handoff, 2026-09-07 - the review chain is closed again
 
-## Resolved since the first version of this file
+## State
 
-Everything this file originally described as blocked is done. The
-`core._atomic_write` lock fix is committed, and the errno decision it was
-patching has been restructured into one table rather than patched a fifth
-time (see `AUDIT-2026-09-05-CLOSEOUT.md`, "Round 15 - the errno taxonomy").
+| | |
+|---|---|
+| Tip | `c79b676`, pushed and verified against `git ls-remote` |
+| Gate | 8/8 PASSED, 4126 tests, 953 worked examples exact - `evidence/release-gate-2026-09-07-round16-fixes.log` |
+| Reviews | rounds 9-14 and 16 obtained and dispositioned in `AUDIT-2026-09-05-CLOSEOUT.md` |
 
-Gate on the restructured tree: **8/8 PASSED**, 4124 tests, 953 worked
-examples exact - `evidence/release-gate-2026-09-07-round15-errno-taxonomy.log`.
+## The gap that existed, and how it closed
 
-## The one thing still open
+For a stretch, `b44f459..fcce6c3` was gate-verified but NOT review-verified:
+`evidence/run-opus-gate.sh` was killed by the harness for system memory on
+every attempt (`vm.swapusage used = 4045-4562M / 5120M`, ~63 Chrome processes
+holding ~1.65 GB), and the documented light fallback
+`.max/tools/duet.py --glm-only --free-only` was down the same day
+(`clinepass#1:500, clinepass#2:403, clinepass#3:500, cf:403`).
 
-**No independent review was obtained for `b44f459..1f6682f`, nor for the
-errno restructuring on top of it.** Every round from 9 to 14 closed the
-review-the-fix loop; this stretch did not.
+It closed once memory freed: the round-16 review covered the WHOLE span in one
+pass and returned FIX-FIRST with five findings, all reproduced and fixed in
+`c79b676`. So the chain has no hole in it now - it was recorded as open while
+it was open, and closed by a real review rather than by declaring it fine.
 
-Why, measured at the time:
+**The lesson worth keeping:** the review is not optional assurance. The
+round-16 review caught a regression the round-15 RESTRUCTURING introduced -
+the ELOOP re-check degrading the exact TOCTOU refusal it was meant to protect.
+Gate + positive controls did not catch it, because the test written alongside
+the change modelled only the case the author had in mind.
 
-- `evidence/run-opus-gate.sh` was killed by the harness for system memory on
-  every attempt. `vm.swapusage` read `used = 4045-4562M / 5120M` with ~63
-  Chrome processes holding ~1.65 GB. The wrapper spawns a full `claude -p`.
-- The documented light fallback, `.max/tools/duet.py --glm-only --free-only`,
-  was down the same day: `clinepass#1:500, clinepass#2:403, clinepass#3:500,
-  cf:403`.
+## Outstanding
 
-So the round-14 fixes and the round-15 restructuring are **gate-verified and
-control-verified, but not review-verified**. That is a weaker chain than
-rounds 9-14 and is stated here rather than left implicit.
-
-## To close it
-
-1. Free memory first - this is the blocker, not the code. Closing browser
-   windows is G's call; do not kill them unasked.
-2. `bash evidence/run-opus-gate.sh 1f6682f <tip> "$(pwd)/evidence/opus5-wrapper-round16-1f6682f..<tip>.txt"`
-3. Reproduce every finding against the committed tree before fixing anything,
-   dispose of each in the closeout, positive-control each behavioural fix.
+Round 17 - the review of `fcce6c3..c79b676` (the round-16 fixes). Same
+discipline: reproduce every finding against the committed tree first, dispose
+of each in the closeout, positive-control each behavioural fix, and record any
+control that cannot be made red rather than counting it.
 
 ## Standing
 
 Tag and PyPI publish remain G's explicit call and were not touched.
-Do NOT chunk the test suite to get under the memory limit: this repo has a
-cross-file failure (the corpus BRIDGE_FAILURE that appears only after
-`test_core.py`), so a chunked "N passed" asserts strictly less than one run
-while printing an identical number.
+Run the gate on an idle machine; check `sysctl vm.swapusage` first. Do NOT
+chunk the suite to get under the limit - this repo has a cross-file failure
+(the corpus BRIDGE_FAILURE that appears only after `test_core.py`), so a
+chunked "N passed" asserts strictly less than one run while printing an
+identical number.
