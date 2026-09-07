@@ -1,0 +1,20 @@
+# Exact claude-opus-5 wrapper review - range cc2752d..4b8be7c (bundle + lockfile shown as stub blobs)
+# staged:  6 files changed, 477 insertions(+), 12 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in cc2752d..4b8be7c, not stubbed, not in the diff
+# package-lock.json: unchanged in cc2752d..4b8be7c, not stubbed, not in the diff
+# invoked 2026-09-07T14:16:19Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+- **HIGH — scripts/gate_provenance.sh:104-105 — the gitlink net never fires in this repo: `grep -q` under `set -o pipefail` returns 141, not 0.** `grep -q` exits on first match; `git ls-tree -r` is still writing, takes SIGPIPE, and `pipefail` propagates 141, so the `&&` condition is false and the unresolvable-gitlink tree is certified anyway. Reproduced with the exact staged shape against this repo's real tree (229 entries, 20 KB) — `NET DID NOT FIRE (status 141)`, 5/5 runs, while `100644` entries certainly exist. Fix: drop `-q` so grep drains its input — `git ls-tree -r "$gate_tree" 2>/dev/null | grep '^160000' >/dev/null` (verified: `NET FIRED`).
+- **MEDIUM — scripts/gate_provenance.sh:104 / tests/test_end_to_end.py:1311 — the `160000` branch has no test coverage, and the AUDIT's claim that it is "independently load-bearing" was measured in the one regime where the bug cannot appear.** In both nested-repo tests the stderr net fires first (`warning: adding embedded git repository`) and sets `gate_tree=''`, so `[ -n "$gate_tree" ]` is false and the gitlink branch is never executed. The separate control the AUDIT describes ran in a 3-entry fixture — `seq 1 3 | grep -q '^1$'` returns 0 there, 141 at real size. Fix: after the pipefail fix, add a control with the stderr net satisfied (`git -c advice.addEmbeddedRepo=false add -A`, or a gitlink already in HEAD) **in a tree large enough to SIGPIPE**.
+- **MEDIUM — scripts/gate_provenance.sh:104-108 — once the pipefail bug is fixed, the net refuses every legitimate submodule.** `git read-tree HEAD` loads an existing submodule's `160000` entry into the scratch index and `add -A` emits no warning for it, so any dirty gate run in a repo with a real submodule would print `COULD NOT IDENTIFY THE TREE THAT RAN` and exit 3. The stated defect is an *unresolvable* gitlink, not the presence of one. Fix: reject only entries that fail `git cat-file -e "$sha"`, or only those absent from HEAD.
+- **LOW — tests/test_end_to_end.py:1238 — the control asserts against a re-typed copy of `_GIT_ENV`, not the construction at :963.** A later edit to `_GIT_ENV`'s comprehension leaves this test green while the fixtures leak again — the "a control that cannot see behaviour is not a control" case the file's own header warns about. Fix: make it `def _git_env()` and have both `_GIT_ENV` and the test call it.
+- **LOW — tests/test_end_to_end.py:1286 — `locked.chmod(0o000)` does not block root**, so in any root container `git add -A` succeeds, no stderr is produced, and the three assertions fail. Fix: `pytest.mark.skipif(os.geteuid() == 0)`.
+- **LOW — scripts/gate_provenance.sh:94 — `printf '%s' "$gate_add_err" | head -1` is the same pipefail/SIGPIPE shape** (status 141, currently unchecked and harmless). Fix: `gate_why="git add -A: ${gate_add_err%%$'\n'*}"`, no pipeline.
+
+Checked and not reported: the round-19 evidence log's `# content: d71e65b2` resolves, and its blobs for `gate_provenance.sh`, `release_gate.sh` and `test_end_to_end.py` are byte-identical to the staged index — the artifact does certify the tree it claims. `$?` at release_gate.sh:32 expands to the child's real 3 before `printf` runs. `2>&1 >/dev/null` at :90 is the correct order. The `symbolic-ref` rework at :131-144 is right, and the collect branch's `gate_status=3` reaches the caller. No CRLF false-positive on the stderr net here: `core.safecrlf` is unset, so `* text=auto eol=lf` produces no `add` warning.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

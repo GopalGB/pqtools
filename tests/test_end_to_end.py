@@ -960,11 +960,25 @@ _GIT_LEAKS = (
     "GIT_COMMON_DIR",
     "GIT_NAMESPACE",
 )
-_GIT_ENV = {
-    **{k: v for k, v in os.environ.items() if k not in _GIT_LEAKS},
-    "GIT_CONFIG_GLOBAL": os.devnull,
-    "GIT_CONFIG_SYSTEM": os.devnull,
-}
+
+
+def _git_env() -> dict[str, str]:
+    """The environment the fixture repos run under.
+
+    A FUNCTION, not a module-level literal, because the round-20 LOW was that
+    the control asserting this behaviour re-typed the construction instead of
+    calling it - so editing the real one would have left the control green
+    while the fixtures leaked again. Same failure mode as the round-17 string
+    grep, one level up.
+    """
+    return {
+        **{k: v for k, v in os.environ.items() if k not in _GIT_LEAKS},
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+
+
+_GIT_ENV = _git_env()
 
 
 def _git(args: list[str], cwd: Path, check: bool = True) -> str:
@@ -974,7 +988,7 @@ def _git(args: list[str], cwd: Path, check: bool = True) -> str:
         check=check,
         capture_output=True,
         text=True,
-        env=_GIT_ENV,
+        env=_git_env(),
     )
     return result.stdout
 
@@ -988,7 +1002,7 @@ def _provenance(cwd: Path, python: str = "") -> str:
         capture_output=True,
         text=True,
         check=False,
-        env=_GIT_ENV,
+        env=_git_env(),
     )
     return result.stdout
 
@@ -1233,13 +1247,9 @@ def test_the_fixture_repos_ignore_an_inherited_git_location(
     monkeypatch.setenv("GIT_INDEX_FILE", str(host / ".git" / "index"))
     monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.hooksPath=/nonexistent'")
 
-    # _GIT_ENV is built at import time, so rebuild it the way the module does
-    # to prove the CONSTRUCTION drops these, not that they happened to be unset.
-    env = {
-        **{k: v for k, v in os.environ.items() if k not in _GIT_LEAKS},
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_SYSTEM": os.devnull,
-    }
+    # Call the real construction rather than re-typing it: a copy here would
+    # stay green while the thing the fixtures actually use started leaking.
+    env = _git_env()
     for leaked in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_CONFIG_PARAMETERS"):
         assert leaked in os.environ, leaked
         assert leaked not in env, leaked
@@ -1263,6 +1273,10 @@ def test_the_fixture_repos_ignore_an_inherited_git_location(
     assert (fixture / ".git").is_dir()
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores the permission bits, so add -A succeeds and writes no warning",
+)
 def test_an_unreadable_directory_makes_the_header_refuse(tmp_path: Path) -> None:
     """The round-19 MEDIUM: `git add -A` DROPS PATHS WHILE EXITING 0.
 
@@ -1405,3 +1419,94 @@ def test_the_gate_refuses_a_tree_it_cannot_identify(tmp_path: Path) -> None:
     assert "GATE PASSED" not in result.stdout, result.stdout
     assert "provenance header failed" in result.stdout, result.stdout
     assert "COULD NOT IDENTIFY THE TREE THAT RAN" in result.stdout, result.stdout
+
+
+def test_a_declared_submodule_is_not_mistaken_for_a_stray_repository(
+    tmp_path: Path,
+) -> None:
+    """The round-20 MEDIUM: the round-19 gitlink net refused every submodule.
+
+    `git read-tree HEAD` loads a declared submodule's `160000` entry into the
+    scratch index and `git add -A` emits no warning for it, so any dirty gate
+    run in a repo that uses submodules would have printed `COULD NOT IDENTIFY
+    THE TREE THAT RAN` and exited 3. The stated defect was an UNDECLARED
+    nested repository, not the presence of a gitlink.
+
+    (The review's alternative - reject entries failing `git cat-file -e` -
+    would not have worked either: a legitimate submodule's commit is not in the
+    superproject's object store, verified, so that test rejects both alike.)
+    """
+    upstream = tmp_path / "upstream"
+    _repo(upstream)
+    (upstream / "s.txt").write_text("sub\n", encoding="utf-8")
+    _git(["add", "s.txt"], upstream)
+    _git(["commit", "-qm", "sub"], upstream)
+
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "f.txt").write_text("one\n", encoding="utf-8")
+    _git(["add", "f.txt"], repo)
+    _git(["commit", "-qm", "init"], repo)
+    added = subprocess.run(
+        [
+            "git",
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            str(upstream),
+            "sub",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=_git_env(),
+        check=False,
+    )
+    if added.returncode != 0:
+        pytest.skip(f"this git refuses local submodules: {added.stderr.strip()}")
+    _git(["commit", "-qm", "add submodule"], repo)
+    assert "160000" in _git(["ls-tree", "-r", "HEAD"], repo), "precondition"
+
+    (repo / "marker.txt").write_text("dirty\n", encoding="utf-8")
+    header = _provenance(repo)
+    assert "COULD NOT IDENTIFY" not in header, header
+    identity = _content_id(header)
+    assert identity, header
+    # And the submodule is present in it, recorded the way HEAD records it.
+    listing = _git(["ls-tree", "-r", identity], repo)
+    assert "160000" in listing, listing
+
+
+def test_the_identity_holds_for_a_tree_large_enough_to_sigpipe(
+    tmp_path: Path,
+) -> None:
+    """The round-20 HIGH was a SIGPIPE bug that only appears at real size.
+
+    `grep -q` exits on the first match while `git ls-tree` is still writing;
+    under `set -o pipefail` the 141 propagates, so a MATCH reported the same
+    status as no-match. It returns 0 in a 3-entry fixture - the regime the
+    round-19 control ran in - and 141 on this repo's own 233-entry tree.
+
+    Every fixture above is tiny, which is exactly why none of them could see
+    it. This one builds a tree big enough for the writer to block, so any
+    future `| grep -q`-shaped check in this script is exercised in the regime
+    where it breaks rather than the one where it works.
+    """
+    repo = tmp_path / "repo"
+    _repo(repo)
+    bulk = repo / "bulk"
+    bulk.mkdir()
+    for index in range(600):
+        (bulk / f"f{index:04d}.txt").write_text(f"{index}\n", encoding="utf-8")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-qm", "bulk"], repo)
+    (repo / "marker.txt").write_text("dirty\n", encoding="utf-8")
+
+    header = _provenance(repo)
+    identity = _content_id(header)
+    assert identity, header
+    listing = _git(["ls-tree", "-r", identity], repo)
+    assert len(listing.splitlines()) > 600, len(listing.splitlines())
+    assert "marker.txt" in listing

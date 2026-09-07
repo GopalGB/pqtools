@@ -91,21 +91,41 @@ if [ -n "$gate_dirty" ]; then
     if [ -n "$gate_add_err" ]; then
       # Quote what git actually said rather than guessing which case it was -
       # an unreadable directory and an embedded repository both land here.
-      gate_why="git add -A: $(printf '%s' "$gate_add_err" | head -1)"
+      # Parameter expansion, not `| head -1`: under `set -o pipefail` a pipe
+      # whose reader exits early reports 141 (SIGPIPE), which is the bug that
+      # made the gitlink net below silently inoperative. Harmless in this
+      # position, but the shape is the same and it is not worth keeping.
+      gate_why="git add -A: ${gate_add_err%%$'\n'*}"
     else
       gate_tree=$(GIT_INDEX_FILE="$gate_tmp/index" git write-tree 2>/dev/null) \
         || { gate_tree=''; gate_why='git write-tree failed'; }
     fi
-    # A nested repository (a stray clone, or a `git worktree` - and gate runs
-    # DO happen in mq-gate-wt-*) is recorded as a `160000 commit` gitlink whose
-    # object lives in the OTHER repo's store, so it cannot be read back here
-    # while `git status --porcelain` counted it dirty. That is the marker and
-    # the identity disagreeing, which is the thing this line exists to prevent.
-    if [ -n "$gate_tree" ] \
-       && git ls-tree -r "$gate_tree" 2>/dev/null | grep -q '^160000'; then
-      gate_tree=''
-      gate_why='the worktree contains a nested repository (unreadable gitlink)'
-    fi
+    # There is deliberately no second net for `160000 commit` gitlinks here.
+    # Round 19 added one and round 20 found it both broken and unreachable:
+    #
+    #   - Broken: it used `grep -q`, which exits on the first match while
+    #     `git ls-tree` is still writing. The writer takes SIGPIPE and
+    #     `set -o pipefail` propagates 141, so a MATCH reported the same
+    #     non-zero status as no-match and the net never fired at real size.
+    #     Measured on this repo's tree (233 entries): `grep -q '^100644'`
+    #     returned 141 on 5 of 5 runs, and 0 in a 3-entry fixture - which is
+    #     the regime the round-19 control ran in, which is why that control
+    #     certified a net that could not fire.
+    #
+    #   - Unreachable: every way of introducing an UNDECLARED gitlink makes
+    #     `git add -A` write "warning: adding embedded git repository" to
+    #     stderr, so the check above already refuses. Verified for a stray
+    #     clone and for a linked `git worktree` placed inside the tree, and
+    #     `-c advice.addEmbeddedRepo=false` suppresses only the hints, not the
+    #     warning line. A DECLARED gitlink - a real submodule, or an embedded
+    #     repo somebody committed - re-adds with empty stderr and must be
+    #     ACCEPTED: its recorded SHA is precisely what HEAD itself records, so
+    #     the identity is exactly as good as git's own. The round-19 net
+    #     rejected those, which would have refused every dirty gate run in any
+    #     repo using submodules.
+    #
+    # So the honest position is that the stderr check is the net, and a
+    # gitlink check on top of it is dead code that cost a HIGH and a MEDIUM.
     rm -rf "$gate_tmp"
   else
     gate_why='could not create a scratch index'

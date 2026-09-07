@@ -2311,3 +2311,121 @@ measurement. Re-run with an asserted replacement, then red. The two nets were
 also controlled *separately*, which established that the gitlink check is
 independently load-bearing: with the stderr check removed the nested-repository
 case still refuses.
+
+---
+
+## Round 20 - `cc2752d..4b8be7c`, verdict FIX-FIRST, six findings, all taken
+
+The round-19 gitlink net was both broken and unreachable, and the round-19
+closeout's claim that it was "independently load-bearing" was measured in the
+one regime where its bug cannot appear. That claim is retracted below.
+
+### HIGH - `grep -q` under `set -o pipefail` returns 141, so the net never fired
+
+`grep -q` exits on the first match. `git ls-tree -r` is still writing, takes
+SIGPIPE, and `pipefail` propagates 141 - so a **match** reported the same
+non-zero status as no-match, and the `&&` condition was false exactly when a
+gitlink existed.
+
+Measured on this repository's own tree (233 entries, 20,504 bytes):
+
+    grep -q '^160000'  ->  status=1  1  1  1  1     (no gitlinks: correct)
+    grep -q '^100644'  ->  status=141 141 141 141 141   (a MATCH: 5 of 5)
+
+and in a 3-entry fixture:
+
+    seq 1 3    | grep -q '^1$'  ->  status=0
+    seq 1 5000 | grep -q '^1$'  ->  status=141
+
+**The 3-entry line is the regime the round-19 control ran in.** That is why it
+certified a net that could not fire. This is the same error as round 18's
+size-cap control and round 17's string grep, in a third form: the control
+executed the right code, in the wrong regime.
+
+### MEDIUM - the net had no test coverage at all, and would have refused every submodule
+
+Traced with an instrumented copy: in both nested-repository tests the stderr
+net fires first and sets `gate_tree=''`, so the gitlink branch is reached with
+`gate_tree=[]` and never executes. It was never covered.
+
+And once the SIGPIPE bug were fixed it would have been actively wrong.
+`git read-tree HEAD` loads a declared submodule's `160000` entry into the
+scratch index and `add -A` emits no warning for it, so any dirty gate run in a
+repo using submodules would print `COULD NOT IDENTIFY THE TREE THAT RAN` and
+exit 3. The defect named was an *undeclared* nested repository, not a gitlink.
+
+The review's alternative - reject entries failing `git cat-file -e` - does not
+work either, and this was checked rather than assumed: a legitimate submodule's
+commit is **not** in the superproject's object store (verified), so that test
+rejects declared and undeclared alike.
+
+### The net was deleted rather than repaired
+
+Having fixed both defects, the net was then removed, because it is dead code:
+
+- Every way of introducing an **undeclared** gitlink makes `git add -A` write
+  `warning: adding embedded git repository` to stderr, so the check above
+  already refuses. Verified for a stray clone and for a linked `git worktree`
+  placed inside the tree - the case this repo actually hits (`mq-gate-wt-*`).
+  `-c advice.addEmbeddedRepo=false` suppresses only the hints, not the warning
+  line (verified; the review suggested it as a bypass and it does not bypass).
+- A **declared** gitlink - a real submodule, or an embedded repo somebody
+  committed - re-adds with empty stderr (verified) and must be accepted: its
+  recorded SHA is precisely what HEAD itself records, so the identity is
+  exactly as good as git's own.
+
+So the stderr check is the net. A gitlink check on top of it added no reachable
+behaviour and cost a HIGH and a MEDIUM. The reasoning is recorded in the script
+so it is not re-added.
+
+### RETRACTION - the round-19 closeout overstated its own control
+
+Round 19 said: *"the two nets were also controlled separately, which
+established that the gitlink check is independently load-bearing: with the
+stderr check removed the nested-repository case still refuses."*
+
+That is wrong, and wrong twice. The control ran in a 4-entry fixture where
+`grep -q` returns 0; at real size it returns 141 and the net does not fire. And
+"independently load-bearing" was the wrong conclusion even had it fired, since
+the only case it can catch is one the stderr net catches first. The sentence
+is retracted here; the round-19 commit message is immutable.
+
+### LOW - the control asserted against a re-typed copy of `_GIT_ENV`
+
+The round-19 test rebuilt the environment dict inline instead of calling the
+construction the fixtures use, so an edit to the real one would leave the
+control green. Demonstrated rather than argued - with the *same* defect
+present (`**os.environ` restored):
+
+    control calls _git_env()      -> FAILED   (sees the defect)
+    control re-types the dict     -> 1 passed (blind to it)
+
+Now `_git_env()` is a function and both call it. This is the round-17 string
+grep one level up: the control was of a copy, not of the thing.
+
+### LOW - `chmod(0o000)` does not constrain root
+
+In a root container `add -A` succeeds, no stderr is produced, and the three
+assertions fail. Skipped under `os.geteuid() == 0`.
+
+### LOW - `printf … | head -1` is the same SIGPIPE shape
+
+Harmless in that position (its status is unchecked) but identical in form to
+the bug above, so it is now `${gate_add_err%%$'\n'*}` with no pipeline.
+
+### Controls
+
+Two behavioural, each red with the defect and green after restoring: the
+round-19 gitlink net reintroduced (submodule test red) · `_git_env()` reverted
+to passing the location variables through (location test red, and the
+re-typed variant demonstrably green against the same defect).
+
+**Stated plainly, because the temptation is to claim otherwise: there is NO
+test controlling the SIGPIPE defect itself.** It is fixed by deleting the code
+that had it, not by a guard. A `| grep -q` whose failure mode is "silently
+fails to fire" cannot be caught by a test asserting the identity is produced,
+because that is what a non-firing net produces. The new large-tree test
+(600 files) pins identity generation at realistic size - every other fixture in
+this file is one to four entries, which is what let the regime error through -
+but it is a regression guard, not a control for the defect, and it is not
+counted as one.
