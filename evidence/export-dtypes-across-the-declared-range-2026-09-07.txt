@@ -1,0 +1,50 @@
+# Export type map at BOTH ends of the declared extras range.
+# pyproject: pandas>=2, pyarrow>=14. Re-run 2026-09-07 (round 13).
+#
+# WHY THIS FILE WAS RE-RUN. The 2026-09-06 version of it reported "63 passed
+# on the floor venv". The round-13 review caught that 63 is the collect count
+# at 3577791, NOT at a49ed2a, which collects 66 - so the floor run predated
+# the round-12 `_pandas_column` rewrite and never executed the
+# `pd.to_datetime(...).tz_convert(offset)` + `astype(f"datetime64[us,
+# {offset}]")` path that the claim exists to cover. The evidence certified a
+# tree that did not contain the change. Re-measured below against the working
+# tree, and the table now carries a NON-UTC offset row, which is the case the
+# old table's UTC-only `datetimezone` line silently skipped.
+#
+# The review also claimed the interpolated `UTC+05:30` form works on 3.0.5 but
+# NOT on the 2.x floor. That half is FALSE - see the identical rows below and
+# tests/test_end_to_end.py::test_a_non_utc_offset_column_keeps_its_dtype_and_its_instants,
+# which now runs on both.
+
+## Floor: a clean venv with pandas>=2,<3 and pyarrow>=14,<15 (numpy<2, which
+## pyarrow 14 requires - it predates the NumPy 2 ABI).
+# pandas 2.3.3 | pyarrow 14.0.2
+logical              pandas=boolean                    arrow=bool
+number int           pandas=Int64                      arrow=int64
+number float         pandas=float64                    arrow=double
+text                 pandas=object                     arrow=string
+binary               pandas=object                     arrow=binary
+date                 pandas=object                     arrow=date32[day]
+time                 pandas=object                     arrow=time64[us]
+datetime             pandas=datetime64[us]             arrow=timestamp[us]
+datetimezone UTC     pandas=datetime64[us, UTC]        arrow=timestamp[us, tz=+00:00]
+datetimezone +05:30  pandas=datetime64[us, UTC+05:30]  arrow=timestamp[us, tz=+05:30]
+duration             pandas=timedelta64[us]            arrow=duration[us]
+
+## Current dev environment
+# pandas 3.0.5 | pyarrow 25.0.1
+logical              pandas=boolean                    arrow=bool
+number int           pandas=Int64                      arrow=int64
+number float         pandas=float64                    arrow=double
+text                 pandas=object                     arrow=string
+binary               pandas=object                     arrow=binary
+date                 pandas=object                     arrow=date32[day]
+time                 pandas=object                     arrow=time64[us]
+datetime             pandas=datetime64[us]             arrow=timestamp[us]
+datetimezone UTC     pandas=datetime64[us, UTC]        arrow=timestamp[us, tz=+00:00]
+datetimezone +05:30  pandas=datetime64[us, UTC+05:30]  arrow=timestamp[us, tz=+05:30]
+duration             pandas=timedelta64[us]            arrow=duration[us]
+
+## diff of the two tables: EMPTY (verified with diff, not by eye).
+## tests/test_export.py + tests/test_end_to_end.py: 71 passed on the floor
+## venv, against the same working tree these tables were measured on.

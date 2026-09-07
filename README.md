@@ -717,7 +717,14 @@ See [Safety model](#safety-model).
   Power Query SDK connector file), newline convention (`\n` vs `\r\n`),
   final-newline state, and file mode all round-trip unchanged.
 - **Refuses symlinks and hardlinks** - writes require a regular, single-link
-  file.
+  file. This holds for a symlink swapped in *after* the check too: `O_NOFOLLOW`
+  catches that race and it raises `SafeWriteError` like any other symlink.
+- **A file that will not open raises `OSError`, not `MQueryError`.** Refusals
+  are typed `MQueryError` subclasses, but a missing or unreadable file is the
+  OS's fact to report, so `FileNotFoundError` / `PermissionError` propagate
+  unwrapped from `open`, `update_file`, `read_sections` and `PqFile`. A
+  library caller catching only `MQueryError` needs `OSError` as well; the CLI
+  catches it already and prints `M_IO_ERROR`.
 - **Detects concurrent change**: the source is snapshotted before the
   transform and re-checked immediately before the atomic replace - this final
   snapshot check, not the lock, is the guarantee against lost updates; a

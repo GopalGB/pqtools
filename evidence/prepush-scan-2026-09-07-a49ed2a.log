@@ -1,0 +1,33 @@
+╔══════════════════════════════════════════════════════════════════╗
+║       MAX HQ — Pre-Push Sensitive-Info Gate                      ║
+╚══════════════════════════════════════════════════════════════════╝
+Remote: origin  URL: https://github.com/GopalGB/pqtools.git
+Commits going out: 1   Files touched: 11   Tags: 0
+
+── COMMITS ──────────────────────────────────────────────────────
+  a49ed2a  fix(cli,export,core): the round-12 review - two of the five were my own fixes  Gopal Bagaswar, 12 seconds ago
+
+── FILES ────────────────────────────────────────────────────────
+  .planning/AUDIT-2026-09-05-CLOSEOUT.md
+  evidence/export-dtypes-across-the-declared-range-2026-09-06.txt
+  evidence/opus5-wrapper-round12-76f36b1..3577791.txt
+  evidence/prepush-scan-2026-09-06-3577791.log
+  evidence/release-gate-2026-09-07-round12-fixes.log
+  pyproject.toml
+  src/pqtools/cli.py
+  src/pqtools/core.py
+  src/pqtools/export.py
+  SUPPORT-MATRIX.md
+  tests/test_end_to_end.py
+
+── SECRET SCAN ──────────────────────────────────────────────────
+  gitleaks: /opt/homebrew/bin/gitleaks
+  ruleset: MAX HQ (/Users/gopalmacbook/Desktop/Max HQ/pqtools/security/gitleaks.toml)
+  gitleaks: clean
+  in-house scan: clean
+
+✅ Scan clean. 1 commit(s), 11 file(s) ready to push to origin.
+
+⚠️  No controlling terminal, so the confirmation cannot be read.
+   Re-run the same command from Terminal.app or iTerm and answer y.
+   (GIT_PUSH_BYPASS skips the secret scan and is not the remedy for this.)

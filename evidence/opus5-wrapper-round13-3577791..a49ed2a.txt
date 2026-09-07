@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range 3577791..a49ed2a (bundle + lockfile shown as stub blobs)
+# staged:  11 files changed, 336 insertions(+), 12 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 3577791..a49ed2a, not stubbed, not in the diff
+# package-lock.json: unchanged in 3577791..a49ed2a, not stubbed, not in the diff
+# invoked 2026-09-07T02:41:58Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+Findings, ranked:
+
+- **HIGH — SUPPORT-MATRIX.md:195 / evidence/export-dtypes-across-the-declared-range-2026-09-06.txt:32 — the floor evidence was measured on a tree that does not contain the change it certifies.** `pytest tests/test_export.py tests/test_end_to_end.py --collect-only -q` collects **63** at HEAD (3577791) and **66** with this diff staged (3 new tests). So the "63 passed on the floor venv" run predates the round-12 `_pandas_column` rewrite, and the pandas-2.3.3 column never executed the new `pd.to_datetime(...).tz_convert(offset)` + `astype(f"datetime64[us, {offset}]")` path — the exact code the claim exists to cover. Fix: re-run the floor venv against the staged tree and update both the number and the evidence file, or drop the claim to what was actually measured.
+
+- **MEDIUM — tests/test_end_to_end.py:414 — the new regression test picks the one offset that skips the new format string.** `str(datetime.timezone.utc)` is `"UTC"`, so the test only ever builds `datetime64[us, UTC]`; the interpolated `UTC+05:30` / `UTC-08:00` form the rewrite introduces is untested, and that form is the part whose parsing differs across the declared pandas range (I confirmed it works on 3.0.5, not on the 2.x floor). The test also asserts only `.dtype`, never that the Europe/London row kept its instant. Fix: add a `+05:30` (or `-08:00`) column and assert the values, not just the dtype.
+
+- **LOW — src/pqtools/core.py:705 — the new comment's own carve-out is not true of one case it names.** The lstat check catches an existing symlink, but the `O_NOFOLLOW` refusal (symlink swapped in between `lstat` and `os.open`, i.e. the TOCTOU backstop the flag exists for) now escapes as `OSError(ELOOP)` → `M_IO_ERROR: Too many levels of symbolic links` from a *write* verb, not `M_SAFE_WRITE_REFUSED`. Still refuses, so no safety hole — the typed contract just has a hole where the comment says it does not. Fix: re-wrap `errno.ELOOP` (and `ENOTDIR`) as `SafeWriteError`, let everything else propagate.
+
+- **LOW — src/pqtools/core.py:705 — undocumented public-API exception change.** `pqtools.open()`, `update_file()`, `read_sections()` and `PqFile` now raise bare `FileNotFoundError`/`PermissionError` where they raised `SafeWriteError` (an `MQueryError`). The CLI is fine (`main` catches `OSError`), but a library caller catching `MQueryError` — which is what the README's "typed error" language teaches — now gets an uncaught traceback. Nothing in the diff records it. Fix: one line in SUPPORT-MATRIX/README saying file-open failures raise `OSError`, not `MQueryError`.
+
+- **LOW — src/pqtools/cli.py:533 — `--json` now reports failures out of file order.** `[*entries, *failures]` moves every error record to the end of the array, so a consumer can no longer align records with the argument order the other batch verbs preserve; and with all files unreadable, the text path now prints both the per-file error lines and `no queries found`. Fix: keep one list carrying both and filter the text branch with `if "name" in item`, or sort the merged list back into input order.
+
+Verified directly: the `is_container` clause really is dead (`containers.py:56` returns True for any directory); the tz rewrite is a strict improvement over reading `.tzinfo` (a `.astimezone()`-produced tz stringifies to `IST`, which `astype` cannot parse, while `timezone(utcoffset)` gives the parseable `UTC+05:30`); year-1 through year-2500 and null-bearing columns behave identically to the old path on pandas 3.0.5.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

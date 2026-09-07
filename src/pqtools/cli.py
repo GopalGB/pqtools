@@ -477,8 +477,7 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
     ``pq list FILE``), so a bad file among several is reported and skipped
     rather than losing the names the good files already found.
     """
-    entries: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     worst = 0
     for path in files:
         try:
@@ -503,42 +502,62 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
             # with nothing in it saying a file had failed - every other batch
             # verb appends this record, and a consumer reading only stdout
             # would have believed the list was the whole answer.
-            # Into a SEPARATE list. The first cut appended this straight
-            # into `entries`, which the plain-text branch below formats with
-            # `item["name"]` - so every read failure under a non-JSON
-            # `pq list` died with a bare KeyError, and the test written with
-            # it covered only the --json path that already worked. A record
-            # with no "name" does not belong in a list of names.
-            failures.append(
+            # One list, in argument order. The first cut appended this
+            # straight into the names list, which the plain-text branch
+            # formats with `item["name"]` - so every read failure under a
+            # non-JSON `pq list` died with a bare KeyError. Splitting it into
+            # a second list fixed that but moved every failure to the END of
+            # the --json array, so a consumer could no longer line records up
+            # against the files it passed. One list filtered on "name" does
+            # both jobs.
+            records.append(
                 {"file": str(path), "error": {"code": code, "message": str(error)}}
             )
             continue
         for section in sections:
             try:
                 members = containers.split_shared(section.source, section.container)
-            except MQueryError:
-                # A section that will not split is still worth reporting -
-                # staying silent about it would make the file look emptier
-                # than it is.
-                members = {}
+            except MQueryError as error:
+                # This comment used to say a section that will not split is
+                # "still worth reporting" - directly above a line that
+                # reported nothing. `members = {}` made an unparseable
+                # section indistinguishable from an empty one, so `pq list`
+                # on a file `pq check` rejects with M_PARSE_ERROR printed
+                # "no queries found" and exited 0. Silently returning a
+                # shorter list is the one thing this package promises never
+                # to do.
+                code = getattr(error, "code", "M_PARSE_ERROR")
+                print(f"{section.path}: error {code}: {error}", file=sys.stderr)
+                worst = 2
+                records.append(
+                    {
+                        "file": section.path,
+                        "error": {"code": code, "message": str(error)},
+                    }
+                )
+                continue
             for name, source in members.items():
-                entries.append(
+                records.append(
                     {
                         "name": name,
                         "section": section.path,
                         "lines": source.count("\n") + 1,
                     }
                 )
+    named = [item for item in records if "name" in item]
     if args.json:
-        _print([*entries, *failures], True)
-    elif not entries:
-        print("no queries found", file=sys.stderr)
-    else:
-        width = max(len(item["name"]) for item in entries)
-        for item in entries:
+        _print(records, True)
+    elif named:
+        width = max(len(item["name"]) for item in named)
+        for item in named:
             print(
                 f"{item['name']:<{width}}  {item['lines']:>4} lines  {item['section']}"
             )
+    elif worst == 0:
+        # Only when nothing failed. Printing "no queries found" underneath a
+        # file that had just reported an error told the reader the file was
+        # empty when it was in fact unreadable.
+        print("no queries found", file=sys.stderr)
     return worst
 
 

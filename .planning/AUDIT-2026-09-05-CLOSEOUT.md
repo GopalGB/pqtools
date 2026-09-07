@@ -1595,3 +1595,101 @@ the read-side error code.
 | Export suite at the DECLARED FLOOR | pandas 2.3.3 / pyarrow 14.0.2 / numpy<2 in a clean venv: **63 passed**, dtype table byte-identical to the 3.0.5 / 25.0.1 run; `evidence/export-dtypes-across-the-declared-range-2026-09-06.txt` |
 | Positive controls | `pq list` text path · timezone offset derivation · read-side error code - each red with the defect, green after restoring |
 
+
+## Round 13 - the review of the round-12 fixes: FIX-FIRST, five findings
+
+`evidence/opus5-wrapper-round13-3577791..a49ed2a.txt`. Four taken, one taken
+in half and refuted in half, plus one defect the review did not find that
+surfaced while reproducing its LOWs.
+
+### HIGH - the floor evidence certified a tree that did not contain the change
+
+`evidence/export-dtypes-across-the-declared-range-2026-09-06.txt` reported
+"63 passed on the floor venv". 63 is the collect count at **3577791**;
+a49ed2a collects **66**. So the floor run predated the round-12
+`_pandas_column` rewrite, and the pandas-2.3.3 column never executed the
+`pd.to_datetime(...).tz_convert(offset)` +
+`astype(f"datetime64[us, {offset}]")` path the claim existed to cover. Worse,
+the old table's only `datetimezone` row was UTC, whose `str()` is `"UTC"` -
+so even a correct run would have skipped the interpolated form.
+
+Reproduced by counting both trees, then fixed by rebuilding the floor venv
+(pandas 2.3.3 / pyarrow 14.0.2 / numpy 1.26.4, same as before) and
+re-measuring against the working tree: **71 passed**, dtype tables byte-
+identical (verified with `diff`, not by eye), and the table now carries a
+`datetimezone +05:30` row. Superseded file deleted; new one is
+`evidence/export-dtypes-across-the-declared-range-2026-09-07.txt`.
+SUPPORT-MATRIX.md's "all 63 tests pass" corrected to 71 and pointed at it.
+
+This is the finding that mattered. An evidence file that certifies the wrong
+tree is worse than no evidence file, because it stops the next person looking.
+
+### MEDIUM - half true: a real test gap, on a false premise
+
+**True:** `test_a_column_mixing_tzinfo_objects_at_one_offset_exports` only
+ever built `datetime64[us, UTC]`, and asserted `.dtype` alone - so a column
+that kept its type while shifting every instant would have passed.
+
+**False:** the review's stated reason - that the interpolated `UTC+05:30`
+form "works on 3.0.5, not on the 2.x floor". It works identically on both.
+Measured directly on pandas 2.3.3 and 3.0.5 before writing any fix: same
+dtype, same instant, for `+05:30` and `-08:00` alike. Had I taken the
+finding at its word I would have "fixed" a version-compatibility bug that
+does not exist, most likely by narrowing `pandas>=2` to protect a claim.
+
+The gap is closed by
+`test_a_non_utc_offset_column_keeps_its_dtype_and_its_instants`, which
+asserts the offset AND the instant at two non-UTC offsets, and which now runs
+on both ends of the declared range.
+
+### LOW - `O_NOFOLLOW`'s refusal escaped the typed contract
+
+Round 12 stopped wrapping failed opens as `SafeWriteError`, and the comment
+justifying it said the genuine write-safety refusals "stay SafeWriteError".
+One did not: a symlink swapped in between `lstat` and `os.open` - the TOCTOU
+race `O_NOFOLLOW` exists to close - came out as bare `OSError(ELOOP)` and
+rendered as `M_IO_ERROR: Too many levels of symbolic links`, which reads like
+a broken path rather than a refused write. Reproduced by patching
+`core.os.lstat` to report the target's stat while the path was a symlink.
+`errno.ELOOP` is now re-wrapped; everything else still propagates, and a
+plain missing file is still `OSError`. The counter-case the round-12 comment
+needed was "who else can make `os.open` fail for a write-safety reason".
+
+### LOW - the public-API exception change was never written down
+
+`open`, `update_file`, `read_sections` and `PqFile` now raise bare
+`FileNotFoundError` / `PermissionError` where they raised an `MQueryError`.
+The CLI is fine - `main` catches `OSError` - but the README's "typed error"
+language teaches a library caller to catch `MQueryError`, and nothing
+recorded the change. Documented in both README.md and SUPPORT-MATRIX.md
+rather than reverted: the round-12 behaviour is right, it was just silent.
+
+### LOW - `--json` failure ordering, and a double report
+
+Splitting failures into a second list (the round-12 fix for the plain-text
+`KeyError`) appended every failure AFTER every success, so a consumer could
+no longer align `pq list --json` records with the files it passed. And with
+every file failing, the text path printed the per-file error AND `no queries
+found` - which says "empty" about a file that was unreadable. One list in
+argument order, filtered on `"name"` for the text branch, fixes both; `no
+queries found` now prints only when nothing failed.
+
+### Not in the review - `pq list` called an unparseable file empty
+
+Found while reproducing the LOWs above. `_run_list` caught a `split_shared`
+failure and set `members = {}` under a comment claiming the section was
+"still worth reporting" - directly above the line that reported nothing. So
+`pq list parsefail.pq` printed `no queries found` and exited **0** on a file
+that `pq check` rejects with `M_PARSE_ERROR`: a shorter answer than the
+truth, carrying a success code. That is precisely the failure mode the
+package's stated contract rules out ("never silently return incomplete or
+incorrect data"), and it was hiding behind a comment that said the opposite.
+It now reports the section's own error and exits 2, while a genuinely empty
+section document still says `no queries found` and exits 0.
+
+### Controls
+
+Five fixes, five controls, each red with the defect reintroduced and green
+after restoring: ELOOP re-wrap removed · failures appended at the end again ·
+`no queries found` printed after an error · unsplittable section silently
+emptied · timezone format hardcoded back to UTC.

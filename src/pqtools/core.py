@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import errno
 import importlib
 import json
 import os
@@ -702,7 +703,7 @@ def _snapshot(path: Path) -> FileSnapshot:
                 "writes require a regular, non-symlink, single-link file"
             )
         descriptor = os.open(path, flags)
-    except OSError:
+    except OSError as error:
         # Deliberately NOT re-wrapped as SafeWriteError. This function is the
         # read path too (`cli._source`, `export`, `containers`), and a file
         # that will not open is missing or unreadable - not a file that is
@@ -713,6 +714,19 @@ def _snapshot(path: Path) -> FileSnapshot:
         # renders it as M_IO_ERROR. The genuine write-safety refusals - a
         # symlink, a non-regular file, more than one hard link - stay
         # SafeWriteError below, because those are exactly about writing.
+        #
+        # ELOOP is the exception, and the reason this is not a blanket
+        # `raise`. It is O_NOFOLLOW firing: the path was NOT a symlink when
+        # `lstat` ran and WAS one by the time `os.open` did - the TOCTOU race
+        # the flag exists to close. That is a write-safety refusal in exactly
+        # the sense the lstat branch above is, so it must carry the same
+        # code; leaving it bare reported a swapped-in symlink as
+        # "M_IO_ERROR: Too many levels of symbolic links", which reads like a
+        # broken path rather than a refused write.
+        if error.errno == errno.ELOOP:
+            raise SafeWriteError(
+                "writes require a regular, non-symlink, single-link file"
+            ) from error
         raise
     try:
         info = os.fstat(descriptor)

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -454,3 +455,139 @@ def test_a_missing_file_under_a_read_verb_is_an_io_error_not_a_write_refusal(
     err = capsys.readouterr().err
     assert "M_IO_ERROR" in err, err
     assert "writes require" not in err, err
+
+
+# ---------------------------------------------------------------------------
+# Round-13 review regressions
+# ---------------------------------------------------------------------------
+
+
+def test_a_non_utc_offset_column_keeps_its_dtype_and_its_instants() -> None:
+    """The round-13 MEDIUM: the tz regression test picked the one offset that
+    skips the code it was written for.
+
+    `str(dt.UTC)` is `"UTC"`, so a UTC-only test never builds the interpolated
+    `datetime64[us, UTC+05:30]` form the round-12 rewrite introduced - the
+    half whose parsing could plausibly differ across `pandas>=2`. It also
+    asserted only `.dtype`, so a column that silently shifted every instant
+    would still have passed.
+
+    (The review's companion claim - that the interpolated form fails on the
+    pandas 2.x floor - is FALSE, and this test is what says so: it runs on
+    both ends of the declared range. Measured on 2.3.3 and 3.0.5, identical.)
+    """
+    pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+
+    from pqtools.export import to_arrow, to_pandas
+
+    kolkata = dt.timezone(dt.timedelta(hours=5, minutes=30))
+    pacific = dt.timezone(dt.timedelta(hours=-8))
+
+    for offset, label in ((kolkata, "UTC+05:30"), (pacific, "UTC-08:00")):
+        moment = dt.datetime(2024, 3, 1, 12, 0, tzinfo=offset)
+        rows = [{"a": moment}, {"a": None}]
+        column = to_pandas(rows)["a"]
+        assert str(column.dtype) == f"datetime64[us, {label}]", column.dtype
+        # The instant, not just the type. A wrong offset keeps the dtype.
+        assert column.iloc[0].to_pydatetime() == moment
+        assert column.iloc[0].utcoffset() == offset.utcoffset(None)
+        assert column.isna().iloc[1]
+        # Arrow derives the offset the same way and must agree.
+        assert str(to_arrow(rows).schema.field("a").type.tz) == label[3:]
+
+
+def test_list_json_keeps_failures_in_argument_order(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-13 LOW: fixing the plain-text `KeyError` by moving failures
+    into a second list appended them all AFTER the successes, so a consumer
+    could no longer align `pq list --json` records with the files it passed.
+    """
+    from pqtools.cli import main
+
+    good = tmp_path / "a.pq"
+    good.write_text("section S;\nshared A = 1;\n", encoding="utf-8")
+    later = tmp_path / "c.pq"
+    later.write_text("section S;\nshared C = 3;\n", encoding="utf-8")
+    missing = tmp_path / "b.pq"
+
+    assert main(["list", str(good), str(missing), str(later), "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert [item.get("name") or item["file"] for item in payload] == [
+        "A",
+        str(missing),
+        "C",
+    ], payload
+
+
+def test_list_does_not_call_an_unreadable_file_empty(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-13 LOW, second half: with every file failing, the text path
+    printed the per-file error AND `no queries found` - which says the file
+    was empty, when it was unreadable.
+    """
+    from pqtools.cli import main
+
+    assert main(["list", str(tmp_path / "missing.pq")]) == 2
+    err = capsys.readouterr().err
+    assert "M_IO_ERROR" in err, err
+    assert "no queries found" not in err, err
+
+    # ...but a genuinely empty section document still says exactly that.
+    empty = tmp_path / "empty.pq"
+    empty.write_text("section S;\n", encoding="utf-8")
+    assert main(["list", str(empty)]) == 0
+    assert "no queries found" in capsys.readouterr().err
+
+
+def test_list_refuses_a_section_it_cannot_parse(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Found while reproducing the round-13 LOWs, and not in the review.
+
+    `_run_list` caught the split failure and set `members = {}` under a
+    comment claiming the section was "still worth reporting". So `pq list`
+    on a file that `pq check` rejects with M_PARSE_ERROR printed "no queries
+    found" and exited 0 - a shorter answer than the truth, with a success
+    code. That is the one failure mode the package's stated contract rules
+    out entirely.
+    """
+    from pqtools.cli import main
+
+    broken = tmp_path / "parsefail.pq"
+    broken.write_text("section S;\nshared Broken = ( ;\n", encoding="utf-8")
+
+    assert main(["check", str(broken)]) == 2, "precondition: check rejects it"
+    assert main(["list", str(broken)]) == 2, "so list must not call it empty"
+    err = capsys.readouterr().err
+    assert "no queries found" not in err, err
+    assert "error" in err, err
+
+
+def test_a_symlink_swapped_in_after_lstat_is_a_write_refusal(
+    tmp_path: Path,
+) -> None:
+    """The round-13 LOW: `O_NOFOLLOW` firing means the path became a symlink
+    between `lstat` and `os.open` - the TOCTOU race the flag closes. It is a
+    write-safety refusal, but it escaped as a bare `OSError(ELOOP)` and
+    rendered as `M_IO_ERROR: Too many levels of symbolic links`.
+    """
+    from unittest import mock
+
+    from pqtools.core import SafeWriteError, _snapshot
+
+    target = tmp_path / "real.pq"
+    target.write_text("let a = 1 in a\n", encoding="utf-8")
+    link = tmp_path / "link.pq"
+    link.symlink_to(target)
+
+    real_lstat = os.lstat
+    with mock.patch("pqtools.core.os.lstat", lambda p, *a, **k: real_lstat(target)):
+        with pytest.raises(SafeWriteError, match="regular, non-symlink"):
+            _snapshot(link)
+
+    # A plain missing file is still an OSError, not a write refusal.
+    with pytest.raises(OSError):
+        _snapshot(tmp_path / "nope.pq")

@@ -192,9 +192,31 @@ This table is the same at both ends of the declared dependency range -
 `pandas>=2`, `pyarrow>=14` - and not only on whichever version happens to be
 installed. Verified by running the export suite against pandas 2.3.3 /
 pyarrow 14.0.2 as well as 3.0.5 / 25.0.1; the two dtype tables are identical
-and all 63 tests pass on each. The three native dtypes are coerced
+and all 71 tests pass on each. The three native dtypes are coerced
 explicitly rather than inferred, which is what makes that true: pandas 2
 infers nanosecond resolution where pandas 3 infers microsecond.
+
+A `datetimezone` column at a non-UTC offset lands as
+`datetime64[us, UTC+05:30]`, and that interpolated form parses identically on
+both ends of the range - the tz is derived from `utcoffset()`, so a column
+mixing `UTC` and `Europe/London` in January is one column, not `object`. The
+measurement is
+[evidence/export-dtypes-across-the-declared-range-2026-09-07.txt](evidence/export-dtypes-across-the-declared-range-2026-09-07.txt),
+re-run against this tree; the 2026-09-06 version of that file reported a
+count taken before the change it was certifying.
+
+**Opening a file is an `OSError`, not an `MQueryError`.** Everything this
+package *refuses* raises a typed `MQueryError` subclass, and the CLI renders
+it with an `M_*` code. A file that will not open is different: `pqtools.open`,
+`update_file`, `read_sections` and `PqFile` let the `FileNotFoundError` /
+`PermissionError` through unwrapped, because the OS's own reason is the true
+one and reporting a missing file as `M_SAFE_WRITE_REFUSED: writes require a
+regular, non-symlink, single-link file` told the reader nothing true. A
+library caller that catches only `MQueryError` must also catch `OSError`. The
+CLI already does, and renders it as `M_IO_ERROR`. The genuine write-safety
+refusals - a symlink (including one swapped in after the check, which
+`O_NOFOLLOW` catches), a non-regular file, more than one hard link - stay
+`SafeWriteError`.
 
 **Refused, by name, rather than exported:** an unread lazy table (select it
 first), a record, a nested list or table (expand it first), a `type` value, a
