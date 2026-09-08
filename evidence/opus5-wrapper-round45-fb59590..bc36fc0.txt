@@ -1,0 +1,25 @@
+# Round 45 capture. The wrapper header (with the stub qualifier) is below.
+# Verdict FIX-FIRST. All five findings were taken in round 45; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 45".
+#
+# Exact claude-opus-5 wrapper review - range fb59590..bc36fc05286d274125fe19b307fe0785b7a92cf5 (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 135 insertions(+), 17 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in fb59590..bc36fc05286d274125fe19b307fe0785b7a92cf5, not stubbed, not in the diff
+# package-lock.json: unchanged in fb59590..bc36fc05286d274125fe19b307fe0785b7a92cf5, not stubbed, not in the diff
+# invoked 2026-09-08T16:28:18Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified against the working tree (`grep -n`, `sed -n` line numbers below are HEAD-with-diff-applied). The code change is behaviour-preserving: `nested()` returns exactly the old comprehension, `stack += nested(current)` is identical to the old `stack += [...]`, `nested(control)` feeds the same generator, and `grep` now finds one hit at `tests/test_tail_namespaces.py:170`. So the round-44 MEDIUM was genuinely taken. Findings are in the record, which is 3 of the 4 files in this diff.
+
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4280** — U1 mutates the now-**shared** `nested()`, so it goes RED if *either* caller depends on it; it cannot establish the row's own claim "both the walk and the children check depend on it". T1 could discriminate because it broke one copy at a time; the dedupe removed that, and coverage-per-arm is exactly the question a dedupe raises (the row directly below says so). This is round 42's finding shape again — a control satisfied by something other than the property it exists to prove. Fix: two controls, one per call site — delete `stack += nested(current)` from `called_names` (walk arm), and separately swap `nested(control)` → `[]` in the children line — each with its own observable; or state that U2 is the walk arm's evidence and U1 covers only children.
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4222 and :4233** — both cite `test_tail_namespaces.py:181` / `:228`, which *this same commit* renumbers: the predicate is now at `:170`, new `:181` is a line inside `called_names`'s docstring, new `:228` is a comment. A later round following either pointer lands on the wrong line. Fix: qualify with the tree ("at fb59590") or drop the numbers and anchor on `called_names` / the `children` union alone.
+- **LOW — evidence/opus5-wrapper-round44-2f2168f..fb59590.txt:1 vs :11** — the header asserts "Exact claude-opus-5 wrapper review" while the captured output's own model marker is `⚪ ox-alpha`; nothing in the file records what the CLI actually reported, so the model attribution in a permanent evidence record is unverified. Fix: record the model id the wrapper returned, or note that the marker is the model's self-label and not evidence of provenance.
+- **LOW — evidence/opus5-wrapper-round44-2f2168f..fb59590.txt:1,5** — the title line is duplicated; line 5 repeats line 1 and carries the "(bundle + lockfile shown as stub blobs)" qualifier line 1 lacks, so the two disagree about what was stubbed. Fix: keep line 5, drop line 1.
+- **LOW — tests/test_tail_namespaces.py:217, 220-221** — removing the parenthetical left a blank line between the three-line "regime" comment and the `control = compile(...)` it describes, detaching it; and the reflowed round-42 comment leaves a half-width line mid-paragraph (`# only. \`import time\` at module level`). Fix: drop the added blank at :217 and rewrap :220-222.
+
+No correctness, security, or gate-weakening issue. `src/` untouched; gate log is complete (all 8 steps, `GATE PASSED`, collect 4167 == passed 4167 on the dirty round-44 tree), not a killed stub.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

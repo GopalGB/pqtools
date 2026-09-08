@@ -1,4 +1,4 @@
-# Exact claude-opus-5 wrapper review - range 2f2168f..fb59590
+# Round 44 capture. The wrapper's own header (with the stub qualifier) is below.
 # Verdict FIX-FIRST. All three findings were taken in round 44; see
 # .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 44".
 #
@@ -7,6 +7,10 @@
 # src/pqtools/_bridge.cjs: unchanged in 2f2168f..fb59590, not stubbed, not in the diff
 # package-lock.json: unchanged in 2f2168f..fb59590, not stubbed, not in the diff
 # invoked 2026-09-08T16:18:38Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# NOTE (round 45): this capture's body carries the model marker `ox-alpha`.
+# That is the model's own self-label under this machine's model-indicator rule,
+# NOT evidence of provenance: review.sh invokes `claude -p --model claude-opus-5`
+# and refuses to run on any substitution. Later captures record this inline.
 
 ⚪ ox-alpha
 

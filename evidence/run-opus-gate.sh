@@ -115,6 +115,16 @@ fi
   echo "# staged: $STAT"
   printf '%b' "$NOTES"
   echo "# invoked $(date -u +%FT%TZ) via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)"
+  # Round 45: the file said "Exact claude-opus-5" in its title and recorded
+  # nothing about the model, while four captured reviews carried the marker
+  # `ox-alpha` in their body. That marker is the MODEL'S SELF-LABEL, written
+  # under this machine's model-indicator rule - it is not provenance, and the
+  # difference was not written down anywhere. What IS provenance: review.sh
+  # calls `claude -p --model "$MODEL"` and refuses to run if MODEL is anything
+  # but claude-opus-5. Record the requested model and say which is which.
+  echo "# model requested: ${CLAUDE_REVIEW_MODEL:-claude-opus-5} (review.sh refuses any substitution)"
+  echo "# NOTE: any model marker inside the review body below is the model's own"
+  echo "#       self-label, not evidence of provenance. The line above is."
   echo
   timeout 900 bash "$HOME/.codex/skills/claude-review/bin/review.sh" --staged
   RC=$?

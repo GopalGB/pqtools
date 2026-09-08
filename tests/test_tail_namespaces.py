@@ -214,12 +214,11 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # different regime from the defect, in miniature. This one compiles a
     # module-level import and a NESTED call - the SOURCE carries all three
     # properties; the assertion below is what makes each of them load-bearing.
-
     control = compile(_CONTROL_SOURCE, "<sleep-control>", "exec")
 
     # Round 42, superseding round 41's claim above: assert over the CHILDREN
-    # only. `import time` at module level
-    # emits IMPORT_NAME, so `"time"` sits in the ROOT tuple - measured,
+    # only. `import time` at module level emits IMPORT_NAME, so `"time"` sits
+    # in the ROOT tuple - measured,
     # `control.co_names == ("time", "_outer")` - and a check over the whole
     # walk is satisfied for `"time"` by the import statement rather than by
     # `_inner`'s LOAD_GLOBAL. It would still pass if LOAD_GLOBAL stopped

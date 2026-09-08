@@ -4219,8 +4219,8 @@ Two LOWs, both cosmetic, both taken:
 
 > **CORRECTION, round 44.** This bullet first said the predicate was
 > "collapsed". It was not - only the aggregation was restyled, and
-> `isinstance(const, CodeType)` was still at BOTH `test_tail_namespaces.py:181`
-> and `:228` (grep, two hits). **A recorded-but-unmade fix is the one failure
+> `isinstance(const, CodeType)` was still at BOTH the `called_names` walk and
+> the `children` union (grep, two hits, at tree `fb59590`). **A recorded-but-unmade fix is the one failure
 > this file exists to prevent**, because a later round reads it to decide what
 > is already handled. Round 44 extracted a `nested()` helper so the predicate
 > has one home and the sentence is true; the wording above is left as written
@@ -4230,7 +4230,7 @@ Two LOWs, both cosmetic, both taken:
 
 | # | What was measured | Observable | Verdict |
 |---|---|---|---|
-| T1 | traversal deleted from `called_names` (`test_tail_namespaces.py:181`) | - | RED, then GREEN restored |
+| T1 | traversal deleted from `called_names`'s own descent (tree `2f2168f`) | - | RED, then GREEN restored |
 | T2 | non-global control source (`d.sleep()`) after the dedupe | `children=['sleep']`, accepted=**False**; global form accepted=**True** | still discriminates |
 
 ### State of the loop after round 43
@@ -4250,8 +4250,8 @@ error a closeout must not make.
 
 Round 43's entry said the duplicated traversal predicate was "collapsed". It
 was not. Only the aggregation had been restyled from a set comprehension to
-`set().union(*gen)`; `isinstance(const, CodeType)` was still at BOTH
-`test_tail_namespaces.py:181` and `:228` - two grep hits. The reviewer's
+`set().union(*gen)`; `isinstance(const, CodeType)` was still at BOTH the `called_names` walk and
+the `children` union - two grep hits, at tree `fb59590`. The reviewer's
 second suggested option was the one that would have removed it, and I took the
 first while writing down the second.
 
@@ -4277,8 +4277,59 @@ supersedes it, and the dangling parenthetical is gone.
 
 | # | Defect reintroduced | Observable with defect | Test | Restored |
 |---|---|---|---|---|
-| U1 | `nested()` returns `[]` | - | RED - both the walk and the children check depend on it | GREEN |
+| U1 | `nested()` returns `[]` | - | RED - but see the correction below: this cannot show WHICH caller depends on it | GREEN |
 | U2 | clamped sleep in a nested `def` (round 41's shape) | top-level tuple **unchanged** | RED 0.14s | GREEN |
 
 U2 re-runs the round-41 hole against the refactored guard, because a
 deduplication is exactly the change that can quietly drop coverage.
+
+> **CORRECTION, round 45.** U1 mutates the now-SHARED `nested()`, so it goes
+> red if EITHER caller depends on it and cannot establish the row's own claim
+> that BOTH do. T1 could discriminate because it broke one copy at a time; the
+> dedupe removed that ability, and coverage-per-arm is precisely the question a
+> dedupe raises - which the row directly below it says. A control satisfied by
+> something other than the property it exists to prove, one round after round
+> 42 named that shape. Replaced by V1/V2 below, one per call site.
+
+## Round 45 - `fb59590..bc36fc0`, verdict FIX-FIRST, all five taken
+
+`src/` untouched. The code change was confirmed behaviour-preserving and the
+round-44 MEDIUM genuinely taken. Every finding is in the record.
+
+### MEDIUM - the control could not establish its own claim
+
+U1 mutates the now-SHARED `nested()`, so it goes red if EITHER caller depends
+on it. The row claimed BOTH. T1 could discriminate because it broke one copy
+at a time - the dedupe removed exactly that ability, and coverage-per-arm is
+the question a dedupe raises. Replaced by two controls, each confined to one
+call site and each verified by grep count before running:
+
+| # | Mutation (one site only) | Test |
+|---|---|---|
+| V1 | `stack += nested(current)` deleted from `called_names`; the `children` line untouched | RED |
+| V2 | `children` fed `[]`; `called_names`'s descent untouched | RED |
+
+### LOW - the evidence header asserted a model it did not verify
+
+Every capture is named `opus5-wrapper-*` and titled "Exact claude-opus-5", and
+four of seventeen carry the marker `ox-alpha` in their body. Nothing in the
+file said which of those is provenance.
+
+Resolved by looking rather than by choosing: `review.sh` invokes
+`claude -p --model "$MODEL"` and **refuses to run** on any substitution
+(`BLOCKED: Claude review must use claude-opus-5`). So the invocation is the
+provenance and the in-body marker is the model's own self-label under this
+machine's model-indicator rule. The wrapper now records the requested model and
+says explicitly that the body marker is not evidence of it; the four existing
+captures got a retro-note rather than being left to be misread.
+
+### LOW x3
+
+The closeout cited `test_tail_namespaces.py:181` and `:228` - line numbers the
+same commit renumbered, so a later round following them lands on a docstring
+and a comment. Anchored on the construct plus the tree instead. My evidence
+preamble duplicated the wrapper's own title line without its stub qualifier, so
+the two disagreed about what was stubbed - the preamble now points at the
+header rather than restating it. And a comment had been detached from the
+statement it describes by a stray blank line, with a half-width line left
+mid-paragraph by the earlier reflow.
