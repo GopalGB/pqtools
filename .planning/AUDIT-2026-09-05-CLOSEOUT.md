@@ -4067,3 +4067,77 @@ invisible to the name check because they are not called `sleep`, invisible to
 the timing check because they are clamped. This is the fourth round in a row
 where the finding was in the test rather than the code, and the third distinct
 way the same one-line property has been mis-guarded.
+
+## Round 41 - `9d501a5..f62da00`, verdict **SHIP**, both taken
+
+`src/` untouched again. Both findings are in the guard, and the first is the
+same hole one level deeper than round 40 closed it.
+
+### MEDIUM - `co_names` is per code object, and a nested `def` is another one
+
+The round-40 pin was on the TOP-LEVEL tuple. A call inside a nested `def`,
+`lambda` or comprehension lives in a CHILD code object under `co_consts` and
+contributes nothing to the parent's tuple. Reproduced exactly as reported -
+module-level `import time` plus:
+
+    def _w():
+        time.sleep(min(delay.total_seconds(), 1.0))
+    _w()
+
+    outer co_names == the pinned tuple  ->  guard GREEN
+    the call sits in _w's own co_names  ->  ('time', 'sleep', 'min', ...)
+
+and the clamp moves both timings equally, so the 5-second delta is blind too.
+The Q1/Q2 shape - invisible to both halves - still open, one nesting level
+down. The check walks `co_consts` now, so depth does not matter.
+
+Note the first reproduction attempt did NOT reproduce it: putting `import
+time` inside the function emits `IMPORT_NAME`, which DOES touch the outer
+`co_names`, so the pin caught it and the control looked like a pass for the
+existing code. The reviewer's shape needs the import at module level. Measured
+both, and only the second one is the hole.
+
+### LOW - my positive control ran in a different binding regime. Again.
+
+The round-40 control was a local `def _sleeps(seconds): time.sleep(seconds)`
+nested inside the test, which closes over the test's own `import time` - so
+`time` is a FREEVAR and `co_names == ('sleep',)`. It exercised the attribute
+lookup only, never the global load the real defect would use
+(`co_names == ('time', 'sleep')`). Harmless today, and exactly the
+"guard measured where the defect is not" pattern in miniature, inside a
+control written to prove an instrument.
+
+The control now compiles a module-level `import time` with a NESTED call, so
+one control exercises all three properties the assertion rests on: the global
+binding, the attribute, and the `co_consts` walk.
+
+### Controls
+
+| # | Defect reintroduced | Top-level tuple | Nested walk sees | Test |
+|---|---|---|---|---|
+| R | module `import time` + clamped sleep in a nested `def` | **UNCHANGED** (round 40 was green) | `time, sleep, min, total_seconds` | RED 0.15s |
+| R2 | same, in a `lambda` | **UNCHANGED** | `time, sleep, min, total_seconds` | RED 0.13s |
+| R3 | clamped `threading.Event().wait` (round 40's Q1) | changed | `threading, Event, wait, min` | RED 0.13s - no regression |
+
+R and R2 are the ones that matter: the observable records the top-level tuple
+as unchanged, which is the round-40 guard passing, beside the new guard's red.
+
+> **Recorded because it is the same failure class this audit is about.** I
+> first named this section and its evidence file `9d501a5..8f0e4ba`. There is
+> no commit `8f0e4ba`; I had read the review body from line 6 onward and
+> supplied a plausible-looking hash for the header I had not read. The real
+> range is `9d501a5..f62da00`. A fabricated identifier in an evidence filename
+> is exactly the thing `evidence/` exists to prevent, and it was caught only by
+> going back to `head -2` on the source file. **Read the header you are naming
+> the file after.**
+
+### Where this loop has got to
+
+Five consecutive rounds in which the finding was in a test rather than in the
+code, and `src/` has been untouched by the last two diffs entirely. The shipped
+behaviour has been stable and confirmed-by-execution since round 36. What is
+still converging is the precision of one guard over a one-line property, which
+has now been mis-specified in five distinct ways: an absolute wall clock, an
+unbounded delay, a name-only check, a comment-satisfied check, and a
+top-level-only walk. That is worth stating plainly rather than reading the
+round count as instability in the product.

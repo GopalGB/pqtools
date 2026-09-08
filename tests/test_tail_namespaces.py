@@ -96,6 +96,22 @@ def test_function_invoke_propagates_the_called_functions_own_error():
 # --------------------------------------------------------------------------
 
 
+# The positive control for the `co_names` instrument used by
+# `test_function_invoke_after_invokes_immediately_rather_than_sleeping`.
+# Module-level `import time` plus a NESTED call, so compiling it exercises the
+# global binding, the attribute lookup and the `co_consts` walk at once - the
+# three properties that test's assertion rests on.
+_CONTROL_SOURCE = """import time
+
+
+def _outer(d):
+    def _inner():
+        time.sleep(d)
+
+    _inner()
+"""
+
+
 def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     """Pins the deliberate choice for a function this page gives no
     worked example for.
@@ -142,15 +158,39 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # alternatives were measured failing on one of those two shapes.
     invoke_after = _misc._function_invoke_after
 
-    # Round 40: pin the WHOLE tuple, not just the absence of "sleep".
-    # `co_names` holds the literal name, so it catches `time.sleep`,
-    # `import time as _t`, and `from time import sleep as _s` (all three
-    # measured) - but NOT `threading.Event().wait(delay)` or
-    # `select.select([], [], [], delay)`, and a clamped form of either would
-    # evade the timing half below as well. Pinning the tuple means any new
-    # call site in this function goes red and a person looks at it, the same
-    # idiom as the `ParsedSection.__init__` parameter pin.
-    assert invoke_after.__code__.co_names == (
+    def called_names(code: object) -> set[str]:
+        """Every name this code object references, nested ones included.
+
+        Round 41: the pin was on the TOP-LEVEL `co_names` only. A call inside
+        a nested `def`, `lambda` or comprehension lives in a CHILD code object
+        under `co_consts` and contributes nothing to the parent's tuple.
+        Measured on this tree: a module-level `import time` plus a body doing
+        `def _w(): time.sleep(min(delay.total_seconds(), 1.0))` then `_w()`
+        leaves the outer tuple EXACTLY as pinned - the guard stayed green -
+        and the clamp moves both timings equally, so the delta was blind too.
+        The same "invisible to both halves" shape the Q1/Q2 controls closed,
+        still open one level down.
+        """
+        found: set[str] = set()
+        stack = [code]
+        while stack:
+            current = stack.pop()
+            found |= set(current.co_names)  # type: ignore[attr-defined]
+            stack += [
+                const
+                for const in current.co_consts  # type: ignore[attr-defined]
+                if hasattr(const, "co_names")
+            ]
+        return found
+
+    # Pin the whole set, not the absence of one word. `co_names` records a
+    # NAME, so it catches `time.sleep`, `import time as _t` and
+    # `from time import sleep as _s` (all measured) but NOT
+    # `threading.Event().wait(delay)` or `select.select([], [], [], delay)` -
+    # and a CLAMPED form of any of those is invisible to the timing half as
+    # well. Pinning means every new call site anywhere in this function, at
+    # any nesting depth, goes red and a person looks at it.
+    assert called_names(invoke_after.__code__) == {
         "_arity",
         "isinstance",
         "datetime",
@@ -158,19 +198,22 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
         "EvalError",
         "_type_name",
         "invoke",
-    ), invoke_after.__code__.co_names
+    }, sorted(called_names(invoke_after.__code__))
 
-    # A positive control ON THE INSTRUMENT. This previously asserted
-    # `"sleep" in inspect.getsource(invoke_after)`, which is true only because
-    # the function's own COMMENT says the word: no defect could make it fail,
-    # and rewording that comment would fail this test while pointing at the
-    # wrong file. A guard that cannot go red for a real reason is the round-36
-    # lesson wearing the opposite face. This one fails only if `co_names`
-    # stops seeing a call - the property the assertion above rests on.
-    def _sleeps(seconds: float) -> None:
-        time.sleep(seconds)
-
-    assert "sleep" in _sleeps.__code__.co_names
+    # A positive control ON THE INSTRUMENT, in the binding regime the defect
+    # would actually use. The previous control closed over an enclosing
+    # `import time`, which makes `time` a FREEVAR (`co_names == ('sleep',)`),
+    # so it exercised only the attribute half - a control measuring a
+    # different regime from the defect, in miniature. This one compiles a
+    # module-level import and a NESTED call, so it exercises the global
+    # binding, the attribute, and the `co_consts` walk together: every
+    # property the assertion above rests on.
+    control = compile(
+        _CONTROL_SOURCE,
+        "<sleep-control>",
+        "exec",
+    )
+    assert {"time", "sleep"} <= called_names(control)
 
     # Behavioural. The one-time `node --version` probe is paid here so it
     # lands outside both measurements instead of on whichever runs first -

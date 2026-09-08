@@ -1,0 +1,25 @@
+# Exact claude-opus-5 wrapper review - range 9d501a5..f62da00
+# Verdict SHIP. Both findings were taken in round 41; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 41".
+#
+# Exact claude-opus-5 wrapper review - range 9d501a5..f62da00d2259bce2a82f1bd0d29c87e20f448a32 (bundle + lockfile shown as stub blobs)
+# staged:  5 files changed, 166 insertions(+), 11 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 9d501a5..f62da00d2259bce2a82f1bd0d29c87e20f448a32, not stubbed, not in the diff
+# package-lock.json: unchanged in 9d501a5..f62da00d2259bce2a82f1bd0d29c87e20f448a32, not stubbed, not in the diff
+# invoked 2026-09-08T15:42:54Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+⚪ ox-alpha
+
+Verified before writing: `_function_invoke_after.__code__.co_names` on this tree is exactly the pinned tuple, and it is byte-identical on 3.11.4 / 3.12.10 / 3.13.12 (the whole CI matrix in `.github/workflows/ci.yml:14`), so the tuple pin is not version-brittle. `evidence/release-gate-2026-09-08-round40-fixes.log`'s content tree `eb93cdc` contains `tests/test_tail_namespaces.py` blob `7075cde` and `tests/test_end_to_end.py` blob `a80f5b8` — both identical to the working tree — so that log does certify the tree it ships with, and 4167 matches round 39 (no test count change, correct: no test added or removed). `import inspect` is gone and nothing else in the file uses it. `src/` is untouched.
+
+One real finding.
+
+- **MEDIUM — tests/test_tail_namespaces.py:153-161** — the tuple pin does not see a call site inside a nested `def` / `lambda` / comprehension: those names live in the nested code object under `co_consts`, and the nested function's own name is a fast local, so it adds nothing to `co_names`. Measured on this tree: a body doing `def _w(): time.sleep(min(delay.total_seconds(), 1.0))` then `_w()` compiles to outer `co_names == ('_arity','isinstance','datetime','timedelta','EvalError','_type_name','invoke')` — **exactly the pinned tuple, green** — and the clamp moves both measurements equally, so the 5 s delta is blind too. That is the same "invisible to the name check, invisible to the timing check" shape the round-40 Q1/Q2 controls were written to close, still open through both halves, and it makes the comment's claim at line 151 ("any new call site in this function goes red") false as written. Fix: pin the union over nested code objects instead of the top-level tuple — `stack=[invoke_after.__code__]; names=set()` then pop, `names |= set(c.co_names)`, `stack += [k for k in c.co_consts if hasattr(k, "co_names")]`, assert on `names`; or, minimally, add `assert not [k for k in invoke_after.__code__.co_consts if hasattr(k, "co_names")]` so a nested code object is itself the red.
+
+- **LOW — tests/test_tail_namespaces.py:173** — the positive control asserts on `_sleeps`, whose `time` is a **freevar** (`co_freevars == ('time',)`, `co_names == ('sleep',)`), while the subject's `time` would be a module **global** (`co_names` would gain `'time'` too). The control therefore exercises only the LOAD_ATTR half of the property the pin rests on, in a different binding regime than the defect would occur in — the audit's own recurring "guard ran where the defect cannot appear" pattern, in miniature. Harmless here because LOAD_ATTR records the attr name either way, but the control would not notice if LOAD_GLOBAL stopped contributing. Fix: make the control a module-level `import time` + `def _sleeps(...)` compiled via `exec`, or assert both `'sleep'` and `'time'` from a global-binding control.
+
+The nested-code-object gap is a test-coverage hole, not a shipped defect, and `src/` carries no change in this diff.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
