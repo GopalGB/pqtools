@@ -1,0 +1,25 @@
+# Exact claude-opus-5 wrapper review - range ad235e9..3000e35 (bundle + lockfile shown as stub blobs)
+# staged:  6 files changed, 426 insertions(+), 28 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in ad235e9..3000e35, not stubbed, not in the diff
+# package-lock.json: unchanged in ad235e9..3000e35, not stubbed, not in the diff
+# invoked 2026-09-07T15:52:43Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+⚪ ox-alpha
+
+**HIGH — `M_PARSE_ERROR` has no help entry, so `pq explain M_PARSE_ERROR` gives an actively wrong answer.** `src/pqtools/core.py:144` — `check()` emits `M_PARSE_ERROR` (`core.py:717`, from `ParseError.code`), but it is absent from `DIAGNOSTIC_HELP`/`DIAGNOSTIC_SEVERITY`, so `_run_explain` falls through to the function-name branch. Verified: `pq explain M_PARSE_ERROR` → *"M_PARSE_ERROR is not a name pqtools recognizes as a documented Power Query M function. It may be a typo…"* (exit 0). `llms.txt` now claims "`pq explain` takes either a diagnostic code or an M function name", and both new tables list `M_PARSE_ERROR` first. Fix: add `M_PARSE_ERROR` to both tables (severity `error`).
+
+**HIGH — the same gap silences the plain-English layer on the most common finding.** `src/pqtools/core.py:228` — verified: `check('let A = = 1 in A')` renders exactly one line, `bad.pq:1:9: error M_PARSE_ERROR: parse error at 1:9: Power Query parser rejected the source`, with no sentence under it. The reader who cannot read M is the one who most often has an unparseable file. Same fix as above.
+
+**MEDIUM — the drift guard structurally cannot see the code it is missing.** `tests/test_end_to_end.py:1542` — `_ALL_SIX` is *valid* M, so `check()` can never reach the `M_PARSE_ERROR` branch from it; the test's stated guarantee ("a seventh code added later… nothing would notice") is already false for the seventh code that exists today. Fix: union in a second `check()` call over deliberately unparseable source before the `missing` assertion.
+
+**MEDIUM — the once-per-code dedupe resets per file, so batch runs repeat it anyway.** `src/pqtools/cli.py:656` — `render_diagnostics` is called inside the per-file loop, so `explained` is per-file, not per-run. Verified on two files: the M001 sentence prints twice; over `pq check 'src/**/*.pq'` (the README's own example command) it prints once per matching file — the exact "output people learn to skip" the change was written to prevent. Fix: give `render_diagnostics` an `explained: set[str] | None = None` parameter and thread one set through the batch loop.
+
+**LOW — `assert emitted` lets the fixture narrow silently.** `tests/test_end_to_end.py:1558` — the fixture does currently emit all six (verified), but the test only asserts non-empty, so a parser change that stopped emitting e.g. M002 would keep it green while covering less. Fix: `assert emitted == {"M001","M002","M003","M004","M005","M006"}`.
+
+**LOW — silent empty severity.** `src/pqtools/cli.py:854` — `DIAGNOSTIC_SEVERITY.get(code, "")` prints `M00X () - title` if a key is ever missing. Fix: index directly (`DIAGNOSTIC_SEVERITY[code]`); the key-set equality assertion already guarantees presence.
+
+Checked and clean: `--json` paths on both `check` and `explain` are unchanged; the indented sentence never contains `: error `, so grep/line-count anchors hold; the README's `pq explain M003` block matches real output byte-for-byte including wrap points; `evidence/…round24-diagnostics.log`'s `4144 tests collected` matches this tree (`--collect-only -q` → 4144).
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

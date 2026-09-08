@@ -142,6 +142,23 @@ class DiagnosticHelp:
 
 
 DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
+    # `check()` emits this one from ParseError, not from the rule loop, which
+    # is why the first version of this table missed it - and why the guard
+    # below missed it too, since that guard fed the checker VALID M and so
+    # could never reach this branch. It is also the finding a person who
+    # cannot read M hits most often.
+    "M_PARSE_ERROR": DiagnosticHelp(
+        title="this is not valid Power Query",
+        means=(
+            "Microsoft's own parser could not read this file, so no other "
+            "check could run on it. The position is where it gave up, which "
+            "is usually just after the real mistake."
+        ),
+        fix=(
+            "Look just before that position for a missing comma between "
+            "steps, an unclosed bracket or quote, or a stray word."
+        ),
+    ),
     "M001": DiagnosticHelp(
         title="two steps share one name",
         means=(
@@ -211,6 +228,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
 # help table on purpose: a code that gains an entry in one and not the other
 # is caught by test_every_emitted_diagnostic_code_is_explained.
 DIAGNOSTIC_SEVERITY: dict[str, str] = {
+    "M_PARSE_ERROR": "error",
     "M001": "error",
     "M002": "warning",
     "M003": "warning",
@@ -225,7 +243,9 @@ def diagnostic_help(code: str) -> DiagnosticHelp | None:
     return DIAGNOSTIC_HELP.get(code)
 
 
-def render_diagnostics(items: Sequence[Diagnostic]) -> list[str]:
+def render_diagnostics(
+    items: Sequence[Diagnostic], explained: set[str] | None = None
+) -> list[str]:
     """The human-readable form of a run's diagnostics, one string per line.
 
     ONE renderer. It was three identical f-strings at three call sites in
@@ -239,9 +259,15 @@ def render_diagnostics(items: Sequence[Diagnostic]) -> list[str]:
     Repeating it is not thoroughness: a file with five unused steps printed
     the same sentence five times, and output that repeats itself is output
     people learn to skip - which costs more than the jargon it replaced.
+
+    `explained` carries that "already said it" set ACROSS files. Without it
+    the set was per-call and therefore per-file, so `pq check 'src/**/*.pq'`
+    - the README's own example - repeated every sentence once per matching
+    file, which is the same defect at batch scale.
     """
     lines: list[str] = []
-    explained: set[str] = set()
+    if explained is None:
+        explained = set()
     for item in items:
         lines.append(
             f"{item.file}:{item.line}:{item.column}: "

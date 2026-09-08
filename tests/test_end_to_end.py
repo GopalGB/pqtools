@@ -1554,24 +1554,38 @@ def test_every_diagnostic_code_that_can_be_emitted_has_an_explanation() -> None:
     """
     from pqtools.core import DIAGNOSTIC_HELP, DIAGNOSTIC_SEVERITY, check
 
+    # BOTH branches of check(): the rule loop, and the ParseError branch that
+    # only fires on source the parser rejects. The first version of this guard
+    # fed it valid M only, so it could never reach the second branch - and
+    # M_PARSE_ERROR, the code a person who cannot read M hits most often, was
+    # missing from the help table with the guard green. A guard run only in
+    # the regime where the defect cannot appear is not a guard.
     emitted = {item.code for item in check(_ALL_SIX, "query.pq")}
-    assert emitted, "fixture stopped producing diagnostics"
+    assert emitted == {"M001", "M002", "M003", "M004", "M005", "M006"}, emitted
+    unparseable = {item.code for item in check("let A = = 1 in A", "bad.pq")}
+    assert unparseable == {"M_PARSE_ERROR"}, unparseable
+    emitted |= unparseable
+
     missing = sorted(code for code in emitted if code not in DIAGNOSTIC_HELP)
     assert not missing, f"emitted with no plain-English entry: {missing}"
 
     # The severity table is consulted by `pq explain`, which never sees a
     # Diagnostic object, so it can drift out of the help table independently.
     assert set(DIAGNOSTIC_HELP) == set(DIAGNOSTIC_SEVERITY)
+    everything = list(check(_ALL_SIX, "query.pq")) + list(
+        check("let A = = 1 in A", "bad.pq")
+    )
     for code in emitted:
-        actual = {
-            item.severity for item in check(_ALL_SIX, "query.pq") if item.code == code
-        }
+        actual = {item.severity for item in everything if item.code == code}
         assert DIAGNOSTIC_SEVERITY[code] in actual, (code, actual)
 
     for code, entry in DIAGNOSTIC_HELP.items():
         assert entry.means.endswith("."), code
         assert entry.fix.endswith("."), code
-        assert entry.title == entry.title.lower(), code
+        # Not `== .lower()`: "this is not valid Power Query" contains a proper
+        # noun. The style rule is that a title does not START capitalised, so
+        # it reads as a phrase after the code, not as a sentence.
+        assert entry.title[:1].islower(), code
 
 
 def test_the_explanation_is_printed_once_per_code_not_once_per_finding() -> None:
@@ -1648,3 +1662,77 @@ def test_pq_explain_json_carries_the_code_fields(
     assert payload["code"] == "M006"
     assert payload["severity"] == "info"
     assert payload["fix"].startswith("Nothing")
+
+
+def test_the_explanation_is_not_repeated_across_files_in_a_batch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-24 MEDIUM: the dedupe set was per-file, so it reset.
+
+    `pq check 'src/**/*.pq'` - the README's own example - printed every
+    sentence once per matching file, which is the same "output people learn to
+    skip" defect the change was written to prevent, at batch scale.
+    """
+    from pqtools.cli import main
+
+    source = "let A = 1, A = 2 in A\n"
+    for name in ("one.pq", "two.pq", "three.pq"):
+        (tmp_path / name).write_text(source, encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "check",
+                str(tmp_path / "one.pq"),
+                str(tmp_path / "two.pq"),
+                str(tmp_path / "three.pq"),
+            ]
+        )
+        == 2
+    )
+    out = capsys.readouterr().out
+    flat = " ".join(out.split())
+    sentence = "Two steps in this query are called the same thing"
+    assert flat.count(sentence) == 1, out
+    # ...and every file still reports every one of its own findings. Two per
+    # file, not one: `let A = 1, A = 2` names the duplicate at both positions.
+    assert out.count("error M001:") == 6, out
+    for name in ("one.pq", "two.pq", "three.pq"):
+        assert name in out, (name, out)
+
+
+def test_an_unparseable_file_gets_the_plain_english_line_too(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-24 HIGH: M_PARSE_ERROR had no entry, so the single most
+    common finding rendered as a bare jargon line.
+
+    `check()` emits it from the ParseError branch rather than the rule loop,
+    which is why it was missed - and why the guard, fed valid M, could not see
+    that it was missed.
+    """
+    from pqtools.cli import main
+
+    bad = tmp_path / "bad.pq"
+    bad.write_text("let A = = 1 in A\n", encoding="utf-8")
+    assert main(["check", str(bad)]) == 2
+    out = capsys.readouterr().out
+    assert "M_PARSE_ERROR" in out, out
+    assert "could not read this file" in out, out
+
+
+def test_pq_explain_answers_for_the_parse_error_code(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """It previously fell through to the function-name branch and answered
+    "M_PARSE_ERROR is not a name pqtools recognizes as a documented Power
+    Query M function", which is an actively wrong answer - and llms.txt says
+    `pq explain` takes any diagnostic code.
+    """
+    from pqtools.cli import main
+
+    assert main(["explain", "M_PARSE_ERROR"]) == 0
+    out = capsys.readouterr().out
+    assert "M_PARSE_ERROR (error)" in out, out
+    assert "not a name pqtools recognizes" not in out, out
+    assert "What to do:" in out, out

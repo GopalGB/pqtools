@@ -635,6 +635,10 @@ def _run_check_batch(files: list[Path], args: argparse.Namespace) -> int:
     """
     worst = 0
     json_diagnostics: list[dict[str, Any]] = []
+    # One "already explained it" set for the whole batch - see
+    # render_diagnostics. Per-file, `pq check 'src/**/*.pq'` repeated every
+    # sentence once per matching file.
+    explained: set[str] = set()
     for path in files:
         try:
             diagnostics = _check_diagnostics(path)
@@ -653,7 +657,7 @@ def _run_check_batch(files: list[Path], args: argparse.Namespace) -> int:
         if args.json:
             json_diagnostics.extend(item.as_dict() for item in diagnostics)
         elif diagnostics:
-            for line in render_diagnostics(diagnostics):
+            for line in render_diagnostics(diagnostics, explained):
                 print(line)
         else:
             print(f"{path}: OK")
@@ -851,7 +855,7 @@ def _run_explain(args: argparse.Namespace) -> int:
     code_help = diagnostic_help(name.upper())
     if code_help is not None:
         code = name.upper()
-        severity = DIAGNOSTIC_SEVERITY.get(code, "")
+        severity = DIAGNOSTIC_SEVERITY[code]
         if args.json:
             _print(
                 {

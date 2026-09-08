@@ -2677,3 +2677,103 @@ that is stated rather than glossed: exercising it means `kill -9`-ing a real
 900-second review and starting another, which is not something the suite can
 own. It was verified by hand instead - the two stale worktrees were removed,
 and `DRY_RUN` after the change leaves no worktree registered.
+
+---
+
+## Round 24 - `ad235e9..3000e35`, verdict FIX-FIRST, six findings, all taken
+
+The diagnostics-in-plain-English change. Two HIGH, and both are the same root
+cause: `check()` emits `M_PARSE_ERROR` from the `ParseError` branch rather than
+from the rule loop, and every part of the change looked only at the rule loop.
+
+### HIGH - the most common finding had no explanation, and `pq explain` answered it wrongly
+
+`M_PARSE_ERROR` was absent from `DIAGNOSTIC_HELP` and `DIAGNOSTIC_SEVERITY`.
+Two consequences, both reproduced:
+
+    $ check('let A = = 1 in A')
+    bad.pq:1:9: error M_PARSE_ERROR: parse error at 1:9: ...
+    (no sentence under it)
+
+    $ pq explain M_PARSE_ERROR
+    M_PARSE_ERROR is not a name pqtools recognizes as a documented Power
+    Query M function. It may be a typo, ...        <- exit 0
+
+The second is worse than a gap: it is an actively wrong answer, and the same
+commit added a line to `llms.txt` promising `pq explain` takes "either a
+diagnostic code or an M function name". The reader who cannot read M is also
+the reader whose file most often will not parse.
+
+Both tables now carry it, and its `fix` is the one piece of advice that
+actually helps: the reported position is where the parser gave up, which is
+usually just after the real mistake.
+
+### MEDIUM - the drift guard structurally could not see the code it was missing
+
+`test_every_diagnostic_code_that_can_be_emitted_has_an_explanation` was written
+precisely so a code could not ship without an explanation. It fed `check()`
+`_ALL_SIX`, which is **valid M**, so it could never reach the `ParseError`
+branch. Its stated guarantee - "a seventh code added later, nothing would
+notice" - was already false for the seventh code that existed as it was
+written.
+
+This is the round-20 regime error again, in a third form. Round 19 measured a
+`grep -q` net in a 3-entry fixture where SIGPIPE cannot happen; round 18
+disabled one of two size checks; here a guard against a missing entry ran only
+on input that cannot produce the missing entry.
+
+Demonstrated rather than argued. `M_PARSE_ERROR` removed from **both** tables,
+so they stay consistent and only the widening is under test:
+
+    narrowed guard (round-24 shape) + defect  ->  1 passed   (blind)
+    widened guard                  + defect  ->  FAILED
+
+The guard now unions a second `check()` over deliberately unparseable source,
+and asserts the valid-M set exactly rather than merely non-empty, so a parser
+change that stopped emitting `M002` cannot quietly narrow the coverage.
+
+### MEDIUM - the once-per-code dedupe reset per file
+
+`render_diagnostics` was called inside the per-file loop, so `explained` was
+per-file. Reproduced on three files: the M001 sentence printed three times, and
+over `pq check 'src/**/*.pq'` - the README's own example command - it prints
+once per matching file. That is the same "output people learn to skip" defect
+the change was written to prevent, at batch scale. One set now threads through
+the batch.
+
+### LOW x2
+
+`assert emitted` allowed the fixture to narrow silently (now an exact set), and
+`DIAGNOSTIC_SEVERITY.get(code, "")` would have printed `M00X () - title` on a
+missing key (now indexed directly, which the key-set equality assertion already
+guarantees is safe).
+
+### Two of my own errors during the fix, both recorded
+
+**A control script destroyed uncommitted work.** The cleanup step for one
+control ran `git checkout tests/test_end_to_end.py`, which restored the file to
+HEAD and deleted the three new tests and the guard widening - none of which
+were committed. The suite went from 72 to 68 and the two controls that
+followed were measuring a file that no longer contained what they were
+controlling. Re-applied from the edit script, and every subsequent control
+restored from a scratchpad copy instead. `git checkout` is not a cleanup
+command when the work is uncommitted.
+
+**A control's first reading was wrong.** `M_PARSE_ERROR` removed from the help
+table only left the two tables inconsistent, so the guard went red via the
+key-set equality assertion rather than via the widening. That is a real
+assertion doing its job, but it proves nothing about the widening. The
+corrected control removes the code from both tables, and only then does the
+narrowed-vs-widened difference show.
+
+**A test assertion was miscalibrated, not the code.** The batch test asserted
+three `error M001:` lines for three files; `let A = 1, A = 2` names the
+duplicate at both positions, so the right number is six. The dedupe was
+correct throughout.
+
+### Controls
+
+Four behavioural, each red with the defect and green after restoring:
+`M_PARSE_ERROR` dropped from the help table - dropped from both tables with the
+guard widened - the batch dedupe reverted to per-file - and, as the negative
+half of the second, the narrowed guard shown green against the same defect.
