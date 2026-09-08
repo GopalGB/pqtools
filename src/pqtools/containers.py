@@ -364,58 +364,69 @@ def _read_pbip(path: Path) -> list[QuerySection]:
     return sections
 
 
-def split_shared(section_source: str, container: str = "<string>") -> dict[str, str]:
-    """Split a section document into its ``shared Name = ...;`` members.
+@dataclass(frozen=True)
+class ParsedSection:
+    """A section document and the parse OF THAT document, bound together.
 
-    Uses the pinned parser (`core.parse`), not a regex, so nested braces,
-    parens, strings and comments never confuse the split: walks the token
-    stream for ``shared`` followed by an identifier, then slices by token
-    offsets out to the matching top-level semicolon.
+    Round 35: `pq add` needs to split a document it has just parsed, without
+    paying for a second Node subprocess, so the split had to accept a parse
+    from outside. Passed a parse of a DIFFERENT document it sliced with that
+    document's token offsets and returned plausible wrong text - a member the
+    document does not contain. Round 34 guarded it with
+    `last_token_end > len(source)`, which catches a parse of a longer document
+    and misses a shorter one: asked about `shared Alpha = 111;` with a parse of
+    `shared Zed = 1;` it answered `{'Zed': 'shared Alpha = '}`.
+
+    Tightening that inequality is the trap this package has walked into
+    before - a heuristic narrowed round after round, wrong in a new direction
+    each time. So the mismatch is made unrepresentable instead: there is one
+    object, and `members()` takes no source argument to get wrong.
     """
+
+    source: str
+    parsed: dict[str, Any]
+
+    @classmethod
+    def of(cls, section_source: str) -> ParsedSection:
+        """Parse `section_source`. Raises whatever `core.parse` raises."""
+        return cls(section_source, core.parse(section_source))
+
+    def members(self) -> dict[str, str]:
+        """Split into ``shared Name = ...;`` members.
+
+        Uses the pinned parser, not a regex, so nested braces, parens, strings
+        and comments never confuse the split: walks the token stream for
+        ``shared`` followed by an identifier, then slices by token offsets out
+        to the matching top-level semicolon.
+        """
+        tokens: list[dict[str, Any]] = self.parsed["tokens"]
+        members: dict[str, str] = {}
+        depth = 0
+        for index, token in enumerate(tokens):
+            kind = token["kind"]
+            if kind in _OPENERS:
+                depth += 1
+            elif kind in _CLOSERS:
+                depth -= 1
+            elif (
+                depth == 0
+                and kind == "KeywordShared"
+                and index + 1 < len(tokens)
+                and tokens[index + 1]["kind"] == "Identifier"
+            ):
+                start = int(token["start"])
+                end = _member_end(tokens, index)
+                name = core.unquote_identifier(str(tokens[index + 1]["text"]))
+                members[name] = self.source[start:end]
+        return members
+
+
+def split_shared(section_source: str, container: str = "<string>") -> dict[str, str]:
+    """Split a section document into its ``shared Name = ...;`` members."""
     try:
-        parsed = core.parse(section_source)
+        return ParsedSection.of(section_source).members()
     except MQueryError as error:
         raise ContainerError(f"{container}: {error.message}") from error
-    return _split_shared_parsed(section_source, parsed)
-
-
-def _split_shared_parsed(section_source: str, parsed: dict[str, Any]) -> dict[str, str]:
-    """The same split, over a parse the caller has already paid for.
-
-    `pq add` has to check that composing its snippet into the section added
-    exactly one member, and it has just parsed the composed document to decide
-    the snippet is valid at all. Going back through `split_shared` would spend
-    a second Node subprocess on the success path for a parse already in hand.
-
-    Private, and `parsed` MUST be the parse of this exact `section_source`:
-    the slices below are token offsets into it, so a parse of some other
-    document returns plausible wrong text rather than raising. Underscored for
-    that reason - `split_shared` is the supported entry point.
-    """
-    if int(parsed["tokens"][-1]["end"]) > len(section_source):
-        raise ContainerError(
-            "internal: token offsets do not belong to this section source"
-        )
-    tokens: list[dict[str, Any]] = parsed["tokens"]
-    members: dict[str, str] = {}
-    depth = 0
-    for index, token in enumerate(tokens):
-        kind = token["kind"]
-        if kind in _OPENERS:
-            depth += 1
-        elif kind in _CLOSERS:
-            depth -= 1
-        elif (
-            depth == 0
-            and kind == "KeywordShared"
-            and index + 1 < len(tokens)
-            and tokens[index + 1]["kind"] == "Identifier"
-        ):
-            start = int(token["start"])
-            end = _member_end(tokens, index)
-            name = core.unquote_identifier(str(tokens[index + 1]["text"]))
-            members[name] = section_source[start:end]
-    return members
 
 
 def _member_end(tokens: list[dict[str, Any]], shared_index: int) -> int:

@@ -1,0 +1,22 @@
+# Exact claude-opus-5 wrapper review - range 895691c..17295ff
+# Verdict SHIP. Both LOWs were taken in round 35; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 35".
+#
+# Exact claude-opus-5 wrapper review - range 895691c..17295ff (bundle + lockfile shown as stub blobs)
+# staged:  7 files changed, 246 insertions(+), 7 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 895691c..17295ff, not stubbed, not in the diff
+# package-lock.json: unchanged in 895691c..17295ff, not stubbed, not in the diff
+# invoked 2026-09-08T14:14:41Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified by execution against this worktree: 4167 collected (matches the staged gate log exactly, and `git cat-file`/`git write-tree` confirm the log's content hash `fbd41f1` differs from the current tree `d83a913` only by the log file itself — so the evidence certifies this content); the five touched tests pass.
+
+- **LOW — src/pqtools/containers.py:391** — the new pairing guard only rejects a parse that is *longer* than the source, so the contract the docstring states ("`parsed` MUST be the parse of this exact `section_source`") is not what the check enforces. Reproduced the direction it misses: `_split_shared_parsed('section S;\n\nshared Alpha = 111;\n', parse('section S;\n\nshared Zed = 1;\n'))` returns `{'Zed': 'shared Alpha = '}` — a member `Zed` that is not in the document, with truncated text, which is exactly the "invents a member" failure this round was written to close; the new test asserts only the caught direction. Not live (both callers — `split_shared` and `_run_add`'s `parse(new_source)` — pass paired arguments, confirmed at cli.py:414/430), so this is contract hardening, but a length inequality cannot be made exact. Fix: bundle them so the mismatch is unrepresentable (one helper returning `(source, parsed)`, or carry the source on the parse dict and compare it), rather than tightening the inequality.
+- **LOW — src/pqtools/cli.py:1355** — `action.option_strings[0]` renders whichever alias was declared first, and `_build_parser`'s own docstring names "an option declared with a short alias first" as a case this parser must survive; the moment one is added, the refusal says `-o` while `--help`, `llms.txt` and `_OPTION_VERBS` all say `--out`. Fix: `next((s for s in action.option_strings if s.startswith("--")), action.option_strings[0])`.
+
+Checked and not findings: `flag_of[name]` cannot `KeyError` — `passed ⊆ present`, and `present` is built from the same `option_strings`-filtered action set, so every key is present regardless of `_OPTION_VERBS` drift (the parser is flat, no subparsers). `parsed["tokens"][-1]` cannot `IndexError` — `parse('')`, `'   '`, `'\n'` and a comment-only document all raise `ParseError` before the guard. The `kept`/`extra` fallback holds across 11 body shapes on a real container (records, lists, functions, `let`, `meta`, `#"quoted"`, attributed and multi-member smuggles) — every one names the smuggled text, none hit `"changes the section"`, and `composed[name]` is always a prefix of `expected[name]` because both are the same appended slice.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

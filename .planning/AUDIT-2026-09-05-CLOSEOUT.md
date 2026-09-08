@@ -3661,3 +3661,64 @@ document it was asked about.
 | F | bare `"changes the section"` fallback | names-the-member=False | RED | names-the-member=True, GREEN |
 | G | flag rendered from the dest | message names `'--out'` | RED | names `'--out-file'`, GREEN |
 | H | pairing check removed | returns `{'A': ..., 'B': ''}` - invents B | RED | refuses, GREEN |
+
+## Round 35 - `895691c..17295ff`, verdict **SHIP**, both LOWs taken
+
+Second consecutive SHIP. Both findings are contract hardening with no live
+caller reaching them, and both were taken because each is a named pattern this
+audit has already paid for once.
+
+### LOW - a length inequality is a heuristic, and it was wrong in the other direction
+
+Round 34's pairing guard was `last_token_end > len(section_source)`. That
+catches a parse of a LONGER document and misses a shorter one. Reproduced:
+
+    _split_shared_parsed('section S;\n\nshared Alpha = 111;\n',
+                         parse('section S;\n\nshared Zed = 1;\n'))
+    -> {'Zed': 'shared Alpha = '}
+
+A member the document does not contain, with truncated text - the exact
+failure the check was added to close, alive in the direction it did not test.
+The reviewer's own words for the fix are the right ones: *a length inequality
+cannot be made exact.*
+
+This is [[feedback_stop_depending_on_a_heuristic_you_cannot_make_exact]] for
+the second time in one audit. Three rounds were once spent narrowing a
+classifier regex, each narrowing wrong in a new direction; the fix there was to
+stop depending on it. Same answer here: the mismatch is made
+**unrepresentable** rather than detected. `ParsedSection` holds a source and
+the parse OF that source, and `members()` takes no second argument to get
+wrong. `_split_shared_parsed` is gone.
+
+The test pins the SHAPE (`inspect.signature(...members).parameters == ["self"]`
+and `not hasattr(containers, "_split_shared_parsed")`), because a passing split
+proves nothing about a call that can no longer be written.
+
+### LOW - `option_strings[0]` is the first alias, not the long form
+
+`_build_parser`'s own docstring names "an option declared with a short alias
+first" as a case it must survive. On that day the refusal would say `-o` while
+`--help`, `llms.txt` and `_OPTION_VERBS` all say `--out-file`. Renders the
+long form now.
+
+**And the round-34 guard could not see it.** Its probe declared `--out-file`
+alone, so `option_strings[0]` and the long form were the same string: the test
+passed for the fix AND for the defect. The regime error, in the guard written
+one round earlier for this exact code path. The probe now declares
+`-o` FIRST, on purpose, with a comment saying why.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| I | `members(source=None)` accepts a foreign source | `{'Zed': 'shared Alpha = '}` expressible again | RED | unrepresentable, GREEN |
+| J | `action.option_strings[0]` | message names `'-o'` | RED | names `'--out-file'`, GREEN |
+
+**J took three attempts and both failures were caught by the convention, not by
+luck.** Attempt 1's `str.replace` did not match (ruff had wrapped the
+expression), attempt 2's line-slice asserted `),` where the file has `)`.
+Neither raised anything the test result would have shown - both printed
+`--out-file` for the "with defect" observable, IDENTICAL to the restored one.
+Two identical observables is not a measurement, and that is the only reason
+this was not recorded as a clean red-then-green. Third attempt matched the
+four-line block literally with a verified count.

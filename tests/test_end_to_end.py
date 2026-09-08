@@ -2657,7 +2657,12 @@ def test_a_refusal_names_the_flag_the_user_typed_not_one_built_from_the_dest(
 
     probe = argparse.ArgumentParser(prog="pq")
     probe.add_argument("command")
-    probe.add_argument("--out-file", dest="out")
+    # Round 35: the short alias is declared FIRST on purpose. Rendering
+    # `option_strings[0]` would say `-o` while `--help`, `llms.txt` and
+    # `_OPTION_VERBS` all say `--out-file`, and `_build_parser`'s own docstring
+    # names that declaration order as a case this parser must survive. Without
+    # the alias here, this test passes for both the fix and the defect.
+    probe.add_argument("-o", "--out-file", dest="out")
     monkeypatch.setattr(cli, "_build_parser", lambda: probe)
     monkeypatch.setattr(cli, "_OPTION_VERBS", {"out": frozenset({"eval"})})
 
@@ -2667,30 +2672,40 @@ def test_a_refusal_names_the_flag_the_user_typed_not_one_built_from_the_dest(
         )
     message = str(caught.value)
     assert "--out-file" in message, message
+    assert "-o " not in message, message
 
 
-def test_the_member_split_refuses_a_parse_of_a_different_document() -> None:
-    """Round 34: the reused-parse helper sliced with foreign token offsets.
+def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
+    """Round 35: the pairing check was a length inequality, which cannot be exact.
 
-    `_split_shared_parsed` exists so `pq add` can check containment against a
-    parse it has already paid for. Handed a parse of some OTHER document it
-    slices `section_source[start:end]` with that document's offsets and
-    returns plausible wrong text, raising nothing - the failure mode this
-    package refuses everywhere else. Underscored so it does not read as
-    supported API, and it now checks the pairing.
+    Round 34 guarded the reused-parse split with
+    `last_token_end > len(source)`. That catches a parse of a LONGER document
+    and misses a shorter one: asked about `shared Alpha = 111;` with a parse of
+    `shared Zed = 1;` it returned `{'Zed': 'shared Alpha = '}` - a member the
+    document does not contain, with truncated text. The exact failure the
+    check was added to close, surviving in the direction it did not test.
+
+    Narrowing the inequality is the trap this package has walked into before:
+    a heuristic tightened round after round, wrong in a new direction each
+    time. So the mismatch is unrepresentable now - one object holds the source
+    and its own parse, and `members()` has no second argument to get wrong.
+    That is what this test pins, because a passing split proves nothing about
+    a shape that can no longer be expressed.
     """
+    import inspect
+
     from pqtools import containers
-    from pqtools.core import parse
 
-    short = "section S;\n\nshared A = 1;\n"
-    longer = "section S;\n\nshared A = 1;\n\nshared B = 22222;\n"
+    signature = inspect.signature(containers.ParsedSection.members)
+    assert list(signature.parameters) == ["self"], list(signature.parameters)
+    assert not hasattr(containers, "_split_shared_parsed")
 
-    with pytest.raises(containers.ContainerError):
-        containers._split_shared_parsed(short, parse(longer))
-
-    # Vacuity: correctly paired, it still splits - so the refusal above is
-    # about the mismatch and not about the helper being broken.
-    assert set(containers._split_shared_parsed(longer, parse(longer))) == {"A", "B"}
+    doc = "section S;\n\nshared Alpha = 111;\n\nshared Beta = 2;\n"
+    paired = containers.ParsedSection.of(doc)
+    assert paired.source is doc
+    assert paired.members() == containers.split_shared(doc)
+    assert set(paired.members()) == {"Alpha", "Beta"}
+    assert paired.members()["Alpha"] == "shared Alpha = 111;"
 
 
 def test_option_presence_never_reports_a_positional() -> None:

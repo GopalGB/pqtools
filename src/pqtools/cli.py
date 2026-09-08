@@ -426,10 +426,10 @@ def _run_add(args: argparse.Namespace) -> int:
     # for cost. The body parse only ever chose a better MESSAGE, so it belongs
     # in the failure branch, paid for by the run that already failed.
     try:
-        parsed = parse(new_source)
+        section = containers.ParsedSection.of(new_source)
     except ParseError as error:
         raise _add_parse_refusal(text, body, error) from error
-    _refuse_uncontained_add(args.file, args.name, body, new_source, parsed, existing)
+    _refuse_uncontained_add(args.file, args.name, body, section, existing)
 
     if not args.write:
         if args.json:
@@ -453,8 +453,7 @@ def _refuse_uncontained_add(
     file: str,
     name: str,
     body: str,
-    new_source: str,
-    parsed: dict[str, Any],
+    section: containers.ParsedSection,
     existing: dict[str, str],
 ) -> None:
     """The composition must add ONE query and disturb none of the others.
@@ -474,7 +473,7 @@ def _refuse_uncontained_add(
     adding one query would have produced. It reuses the caller's parse, so the
     success path still pays exactly one subprocess.
     """
-    composed = containers._split_shared_parsed(new_source, parsed)
+    composed = section.members()
     expected = dict(existing)
     expected[name] = f"shared {_quote_identifier(name)} = {body};"
     if composed == expected:
@@ -1350,8 +1349,15 @@ def _refuse_irrelevant_options(args: argparse.Namespace, tokens: list[str]) -> N
         # and from the doc test left it at the third site - the one a user reads.
         # An option declared `dest="out"` on `--out-file` would be detected
         # correctly and then named `--out` in the refusal.
+        # The LONG form, not `option_strings[0]`: `_build_parser`'s own
+        # docstring names "an option declared with a short alias first" as a
+        # case it must survive, and on that day the refusal would say `-o`
+        # while `--help`, `llms.txt` and `_OPTION_VERBS` all say `--out`.
         flag_of = {
-            action.dest: action.option_strings[0]
+            action.dest: next(
+                (text for text in action.option_strings if text.startswith("--")),
+                action.option_strings[0],
+            )
             for action in _build_parser()._actions  # noqa: SLF001
             if action.option_strings
         }
