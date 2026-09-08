@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range d823d02..d233ac5
+# Verdict FIX-FIRST. All five findings were taken in round 39; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 39".
+#
+# Exact claude-opus-5 wrapper review - range d823d02..d233ac5 (bundle + lockfile shown as stub blobs)
+# staged:  5 files changed, 190 insertions(+), 10 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in d823d02..d233ac5, not stubbed, not in the diff
+# package-lock.json: unchanged in d823d02..d233ac5, not stubbed, not in the diff
+# invoked 2026-09-08T15:18:12Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified by execution in this worktree: `pytest --collect-only -q` gives **4167**, matching the gate log's `collect: 4167` and `4167 passed`, so `evidence/release-gate-2026-09-08-round38-fixes.log` certifies the tree it ships with. The new `__init__` pin is correct and closes the stated gap — `ParsedSection` is `@dataclass(frozen=True, init=False)` with an explicit one-arg `__init__` (`src/pqtools/containers.py:367-387`), so both the `init=False` revert and the keyword-only `parsed=` shape now go red. The audit's L4 correction matches what the test actually reports.
+
+- **HIGH — tests/test_tail_namespaces.py:129-138** — under the exact regression this test names, it does not go red, it **hangs for 86400 s**. `_function_invoke_after` sleeps in-process (`src/pqtools/builtins/_misc.py:1014-1020`); `NODE_TIMEOUT_SECONDS = 30` bounds only the node subprocess, and there is no `pytest-timeout` and no `addopts` (`pyproject.toml:155`), so nothing kills it. Control N only stayed runnable by dividing the delay by 10000 — the control was bounded, the guard is not, which is the control-measures-a-different-regime shape this round is otherwise about. Fix: make the long delay `#duration(0, 0, 0, 30)` — a real sleep still puts 28 s between the two measurements against a 5.0 s margin, and worst case is a 32 s red instead of a day-long hang.
+- **MEDIUM — tests/test_tail_namespaces.py:115-116, 126-131** — "Host speed lands on both measurements and cancels" is false for one-time cost, and one exists: the first `evaluate` in a process also pays `_require_node`'s `node --version` probe (`src/pqtools/core.py:645-665`, `lru_cache`), so an extra node spawn lands only on `short_elapsed`. Measured cold-then-warm in this worktree: **0.226 s vs 0.130 s** — a whole spawn of asymmetry, and one spawn measured 1.71 s on the host that produced the red. It is inside the 5.0 s margin today only by luck of host speed, and it is order-dependent (it bites only when this test is the first bridge user in its worker). Fix: call `evaluate("1 + 1")` once before the two `timed()` calls so the probe is outside both measurements.
+- **MEDIUM — tests/test_tail_namespaces.py:138** — coverage regression against the old assertion: a *clamped* sleep is now invisible. `time.sleep(min(delay.total_seconds(), 1.0))` leaves the delta ≈ 0 and passes, where `elapsed < 1.0` went red. The new assertion detects only delay-**proportional** sleeps. Fix: add the machine-independent structural guard instead of another wall-clock bound — `_misc.py` imports no `time` (`base64, datetime, json, math, re, typing` only), so `assert not hasattr(_misc, "time") and not hasattr(_misc, "sleep")` catches both the proportional and the clamped regression at zero timing risk.
+- **LOW — tests/test_tail_namespaces.py:126,129,133-134** — `two_seconds` / `one_day` name the delay but hold the *result* of `1 + 1`, so `assert two_seconds == 2` reads as a timing assertion and is not one. Fix: rename to `short_result` / `long_result`.
+- **LOW — tests/test_end_to_end.py:2720-2732** — the pre-existing comment "Shape, kept because it names WHY the above holds... on its own it proves nothing" now introduces the new `__init__` assertion, which is not shape-only and does prove something; it was written about the `members` assertion two lines further down. Fix: move the round-38 block and its `constructor` assert above that comment, or re-scope the comment to the `members`/`hasattr` pair.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

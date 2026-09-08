@@ -106,35 +106,68 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     query happens to name, for zero difference in the RESULT. "Invoke now"
     is the honest behaviour for a deterministic, single-shot evaluator.
 
-    Round 38: this asserted `elapsed < 1.0` for a call naming a delay of ONE
-    DAY. A regression to a real sleep costs 86400 seconds, so 1.0 never
-    measured that - it measured how fast the host could start the Node bridge,
-    and it went red at 1.71s on a machine deep in swap while `InvokeAfter` was
-    costing 0.000s more than a plain `1 + 1`. Comparing two delays that differ
-    by a factor of 43200 asks the real question: an evaluator that sleeps
-    scales with the delay, and one that does not is flat. Host speed lands on
-    both measurements and cancels, so this cannot be reduced to a machine-speed
-    assertion the way an absolute budget can.
+    Three rounds of getting the GUARD wrong, which is worth writing down:
+
+    - Round 38 found the original `assert elapsed < 1.0` was a machine-speed
+      assertion. The call named a delay of one DAY, so a real sleep costs
+      86400s; 1.0 measured Node bridge startup, and it went red at 1.71s on a
+      host deep in swap while `InvokeAfter` cost 0.000s more than `1 + 1`.
+    - Round 39 found the replacement worse in the one case that matters:
+      under the exact regression it names it would not go RED, it would HANG
+      for 86400s. `_function_invoke_after` sleeps in-process, so
+      `NODE_TIMEOUT_SECONDS` does not bound it, and there is no
+      `pytest-timeout` and no `addopts`. The control only stayed runnable by
+      dividing the delay by 10000 - the control was bounded and the guard was
+      not, which is the same "measured in a different regime" defect this
+      audit keeps finding.
+    - Round 39 also found the delta blind to a CLAMPED sleep
+      (`time.sleep(min(delay, 1.0))` moves both measurements equally), and
+      found "host speed cancels" false for the one-time cost: the first
+      `evaluate` in a process also pays `_require_node`'s `node --version`
+      probe, which lands on whichever measurement runs first.
+
+    So the property is asked twice, structurally and behaviourally, and the
+    longest this test can now take is about 32 seconds.
     """
+    import inspect
     import time
+
+    from pqtools.builtins import _misc
+
+    # Structural, and the one that actually holds under every shape: it costs
+    # no wall clock, no host speed can move it, and it sees a CLAMPED sleep
+    # that no timing delta can. The check is on the code object rather than
+    # the source text because the comment inside this very function contains
+    # the word "sleep" - and rather than `hasattr(_misc, "time")` because a
+    # function-local `import time as _t` leaves no module attribute. Both
+    # alternatives were measured failing on one of those two shapes.
+    invoke_after = _misc._function_invoke_after
+    assert "sleep" not in invoke_after.__code__.co_names, invoke_after.__code__.co_names
+    assert "sleep" in inspect.getsource(invoke_after)  # the comment, not a call
+
+    # Behavioural. The one-time `node --version` probe is paid here so it
+    # lands outside both measurements instead of on whichever runs first -
+    # one spawn measured 1.71s on the host that produced round 38's red.
+    evaluate("1 + 1")
 
     def timed(source: str) -> tuple[object, float]:
         start = time.monotonic()
         value = evaluate(source)
         return value, time.monotonic() - start
 
-    two_seconds, short_elapsed = timed(
+    short_result, short_elapsed = timed(
         "Function.InvokeAfter(() => 1 + 1, #duration(0, 0, 0, 2))"
     )
-    one_day, long_elapsed = timed(
-        "Function.InvokeAfter(() => 1 + 1, #duration(1, 0, 0, 0))"
+    long_result, long_elapsed = timed(
+        "Function.InvokeAfter(() => 1 + 1, #duration(0, 0, 0, 30))"
     )
 
-    assert two_seconds == 2
-    assert one_day == 2
-    # Sleeping would put 86398 seconds between these two. Not sleeping puts
-    # the difference between two bridge round-trips - milliseconds - and the
-    # margin is wide enough that no amount of host load closes it.
+    assert short_result == 2
+    assert long_result == 2
+    # A delay-proportional sleep puts 28 seconds between these two. Not
+    # sleeping puts the difference between two bridge round-trips. The 15x
+    # ratio is what is being measured, so no absolute host speed can fake it,
+    # and the worst case is a 32-second red rather than a day-long hang.
     assert abs(long_elapsed - short_elapsed) < 5.0, (short_elapsed, long_elapsed)
 
 

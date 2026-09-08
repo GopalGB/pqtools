@@ -2717,8 +2717,6 @@ def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
     with pytest.raises(TypeError, match=r"takes 2 positional arguments"):
         containers.ParsedSection(doc, foreign)  # type: ignore[call-arg]
 
-    # Shape, kept because it names WHY the above holds rather than only that
-    # it does - but on its own it proves nothing, which is the lesson here.
     # Round 38: the `match=` above pins CPython's POSITIONAL-arity message, so
     # it survives the likeliest way this defect returns. Measured: adding a
     # keyword-only `parsed` parameter leaves the positional call raising the
@@ -2731,6 +2729,10 @@ def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
         constructor.parameters
     )
 
+    # These two are shape only: they name WHY the assertions above hold rather
+    # than only that they do, and on their own they prove nothing - which is
+    # the round-36 lesson this test carries. The `__init__` assertion above is
+    # NOT in that category; it is one of the two that can go red.
     signature = inspect.signature(containers.ParsedSection.members)
     assert list(signature.parameters) == ["self"], list(signature.parameters)
     assert not hasattr(containers, "_split_shared_parsed")

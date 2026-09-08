@@ -3937,3 +3937,74 @@ The re-run that certifies this round took **337s** for the suite - slower than
 the 249s run that went red - and the re-aimed test passed. That is the fix
 measured against worse conditions than the ones that broke it, rather than
 against a quiet machine.
+
+## Round 39 - `d823d02..d233ac5`, verdict FIX-FIRST, all five taken
+
+Every finding is in a guard. The HIGH is the sharpest one this audit has had.
+
+### HIGH - under the regression it names, the test does not go red. It hangs.
+
+Round 38 re-aimed the `Function.InvokeAfter` test to compare a 2-second delay
+against a ONE-DAY delay. Under a real `time.sleep(delay)` that second call
+sleeps for 86400 seconds. `_function_invoke_after` sleeps IN-PROCESS, so
+`NODE_TIMEOUT_SECONDS = 30` does not bound it; measured, there is no
+`pytest-timeout` installed and no `addopts` in `pyproject.toml`. Nothing kills
+it. The suite stops for a day.
+
+And the control missed it for the reason this audit keeps finding: **control N
+was bounded and the guard was not.** N divided the delay by 10000 to stay
+runnable in nine seconds - so it measured a regime the real test could never
+enter. A control that has to be made safe to run is telling you the guard is
+not safe to run.
+
+The long delay is `#duration(0, 0, 0, 30)` now. A proportional sleep still puts
+28 seconds between the two measurements against a 5.0 margin, and the worst
+case is a 32-second red instead of a day-long hang.
+
+### MEDIUM - "host speed cancels" was false for the one-time cost
+
+The first `evaluate` in a process also pays `_require_node`'s `node --version`
+probe, `lru_cache`d - so a whole extra process spawn lands on whichever
+measurement runs first, and one spawn measured 1.71s on the host that produced
+round 38's red. Measured cold-then-warm here as well. `evaluate("1 + 1")` is
+called once before both timings so the probe is outside them.
+
+### MEDIUM - the delta is blind to a CLAMPED sleep
+
+`time.sleep(min(delay, 1.0))` moves both measurements equally, so the delta
+stays ~0 and the test passes - where the old `elapsed < 1.0` would have gone
+red. A genuine coverage regression in the round-38 rewrite.
+
+Answered structurally rather than with another wall-clock bound: the function
+must not name `sleep` at all. Three candidate instruments were measured, not
+assumed:
+
+| instrument | module-level `import time` | function-local `import time as _t` | verdict |
+|---|---|---|---|
+| `hasattr(_misc, "time")` | catches | **MISSES** | rejected |
+| `"sleep" in inspect.getsource(...)` | catches | catches | **rejected - the function's own comment says "sleep"**, so it is always true |
+| `"sleep" in ...__code__.co_names` | catches | catches | used |
+
+The source check would have been a guard that cannot go green, which is the
+mirror image of a guard that cannot go red. The code object sees the call and
+not the comment.
+
+### LOW x2
+
+`two_seconds` / `one_day` named the delay but held the RESULT of `1 + 1`, so
+`assert two_seconds == 2` read as a timing assertion and was not one. Renamed.
+And a comment reading "on its own it proves nothing" had come to introduce the
+round-38 `__init__` assertion, which does prove something; re-scoped to the
+`members`/`hasattr` pair it was written about.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| O | `sleep(delay / 10)` - proportional | `'sleep' in co_names` = True | RED **in 0.14s**, before any timing | co_names clean, GREEN |
+| P | `sleep(min(delay, 1.0))` - clamped | timing delta **0.021s** - under the 5.0 margin | RED (structural) | GREEN |
+| P' | same, structural assertions deleted | same 0.021s delta | **GREEN in 2.70s** - timing alone cannot see a clamped sleep | - |
+
+P' is the one that matters: it shows the two halves are not redundant. Timing
+catches the proportional sleep, structure catches the clamped one, and neither
+alone is the guard.
