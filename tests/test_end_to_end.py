@@ -2395,38 +2395,21 @@ def _one_section_container(tmp_path: Path) -> Path:
     `.gitignore` excludes and CLAUDE.md says is never committed - so both
     round-31c guards SKIPPED in every clean clone, and the preview/write
     disagreement they were written for was unguarded for anyone but me. A test
-    that always skips is not a test. `tests/test_containers.py` already
-    synthesises this shape; the same construction is inlined here rather than
-    imported across test modules, which pytest's rootdir does not guarantee.
+    that always skips is not a test.
+
+    Round 33: that replacement then inlined the DataMashup layout a THIRD time
+    (`test_containers.py` builds it, and line 687 of this file builds it
+    again), on a stated worry that importing across test modules is not
+    guaranteed by pytest's rootdir. The suite had already disproved that
+    worry: `test_write_validation.py` and `test_container_workflow.py` both
+    import these helpers from `test_containers`. One copy of the byte layout
+    means one place to fix when the format understanding changes.
     """
-    import io
-    import struct
-    import zipfile
+    from test_containers import _blob, _pbix
 
     m_text = "section Section1;\n\nshared Existing = let x = 1 in x;\n"
-    inner = io.BytesIO()
-    with zipfile.ZipFile(inner, "w") as archive:
-        archive.writestr("Config/Package.xml", "<Package/>")
-        archive.writestr("[Content_Types].xml", "<Types/>")
-        archive.writestr("Formulas/Section1.m", m_text.encode("utf-8"))
-    parts = inner.getvalue()
-    out = [struct.pack("<I", 0)]
-    for segment in (
-        parts,
-        b"\xef\xbb\xbf<permissions/>",
-        b"\x00\x00\x00\x00\xef\xbb\xbf<metadata/>",
-        b"\x01\x02\x03\x04binding",
-    ):
-        out.append(struct.pack("<I", len(segment)))
-        out.append(segment)
-    blob = b"".join(out)
-
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("Version", "1.0")
-        archive.writestr("DataMashup", blob)
     target = tmp_path / "container.pbix"
-    target.write_bytes(buffer.getvalue())
+    target.write_bytes(_pbix(_blob(m_text)))
     return target
 
 
@@ -2523,6 +2506,173 @@ def test_pq_add_separates_a_bad_query_from_one_that_breaks_the_section(
     assert capsys.readouterr().out.strip() == "1"
 
 
+def test_pq_add_refuses_a_source_that_smuggles_a_second_query(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Round 33's HIGH, and it was my own round-32 regression.
+
+    Round 32 moved `parse(body)` off the success path on the reasoning that it
+    "only ever chose a better MESSAGE". It was also the containment check.
+    Without it `--source` accepts a whole `;`-separated run of declarations,
+    and the composed document is still valid M - so it parsed, previewed
+    clean, exited 0, and `--write` committed a section that REDEFINED a member
+    `add` refuses by name to touch four lines earlier.
+
+    The duplicate-name guard is not enough on its own: it reads `--name`,
+    which here is an innocent new name. The smuggled member rides in the
+    value.
+    """
+    from pqtools.cli import main
+
+    container = _one_section_container(tmp_path)
+    before = container.read_bytes()
+
+    capsys.readouterr()
+    code = main(
+        [
+            "add",
+            str(container),
+            "--name",
+            "X",
+            "--source",
+            "1; shared Existing = 2",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code != 0, captured.out
+    assert "Existing" in captured.err, captured.err
+    assert "redefines" in captured.err, captured.err
+    # The preview must not have printed the document it refused to compose.
+    assert "shared X" not in captured.out, captured.out
+
+    # A third query is the same defect wearing a different name: the keys
+    # differ here, the sources differ above, and one check has to catch both.
+    capsys.readouterr()
+    assert (
+        main(["add", str(container), "--name", "X", "--source", "1; shared Y = 2"]) != 0
+    )
+    assert "adds 'Y'" in capsys.readouterr().err
+
+    # --write is the expensive half. Nothing may have reached the file, by
+    # either route, and no backup should exist for a write that never began.
+    assert container.read_bytes() == before
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "add",
+                str(container),
+                "--name",
+                "X",
+                "--source",
+                "1; shared Existing = 2",
+                "--write",
+            ]
+        )
+        != 0
+    )
+    capsys.readouterr()
+    assert container.read_bytes() == before
+    assert not list(tmp_path.glob("*.bak"))
+
+    # Vacuity: the ordinary add this guard sits in front of still works, so
+    # the refusal above is about the smuggled member and not about `add`.
+    capsys.readouterr()
+    assert main(["add", str(container), "--name", "X", "--source", "1"]) == 0
+    assert "shared X = 1;" in capsys.readouterr().out
+
+
+def test_pq_add_answers_in_json_when_asked_on_both_paths(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Round 33's MEDIUM: `--json` on `add` had no test on either path.
+
+    `test_every_option_is_classified_for_every_verb` passes whether or not
+    `_run_add` ever READS `args.json` - it checks that the option is
+    classified, not that it is consumed. That gap is exactly how `--json` came
+    to be classified as meaningful for `add` and then honoured by nothing but
+    the shared error path, dropping silently on success for a whole round.
+    Classification and consumption are different questions, so this asks the
+    second one.
+    """
+    from pqtools.cli import main
+
+    container = _one_section_container(tmp_path)
+
+    capsys.readouterr()
+    assert main(["add", str(container), "--name", "X", "--source", "1", "--json"]) == 0
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["name"] == "X"
+    assert preview["written"] is False
+    assert "shared X = 1;" in preview["source"]
+
+    capsys.readouterr()
+    assert (
+        main(
+            ["add", str(container), "--name", "X", "--source", "1", "--json", "--write"]
+        )
+        == 0
+    )
+    written = json.loads(capsys.readouterr().out)
+    assert written["name"] == "X"
+    assert written["written"] is True
+    assert Path(written["backup"]).exists()
+
+
+def test_option_presence_never_reports_a_positional() -> None:
+    """Round 33's LOW: `set(vars(seen))` also returns the POSITIONAL dests.
+
+    `_options_present` fed `command` and `file` into the refusal table
+    alongside the real options. Nothing breaks today only because no
+    `_OPTION_VERBS` key happens to be spelled like a positional - so an option
+    later given `dest="file"`, or a positional later renamed to `out`, would
+    make every verb refuse it and no test would notice. Correct by luck is not
+    correct.
+    """
+    from pqtools.cli import _build_parser, _options_present
+
+    parser = _build_parser()
+    positionals = {
+        action.dest
+        for action in parser._actions  # noqa: SLF001 - argparse has no public API
+        if not action.option_strings
+    }
+    # Vacuity: there must BE positionals for this to be measuring anything.
+    assert positionals == {"command", "file"}, sorted(positionals)
+
+    seen = _options_present(["add", "f.pbix", "--name", "X", "--source", "1"])
+    assert not seen & positionals, sorted(seen & positionals)
+    # ... and it still reports the options that were actually typed.
+    assert seen == {"name", "source"}, sorted(seen)
+
+
+def test_option_presence_refuses_rather_than_quietly_stopping_the_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round 33's other LOW: the probe failed OPEN.
+
+    `except SystemExit: return set()` reads downstream as "the user typed no
+    options", which silently disables every refusal in
+    `_refuse_irrelevant_options`. The main parse of the same tokens has
+    already succeeded by then, so a probe failure is a pqtools bug - and a
+    gate that stops gating without saying so is the exact failure this
+    function was written to remove.
+    """
+    import argparse
+
+    from pqtools import cli
+    from pqtools.core import MQueryError
+
+    broken = argparse.ArgumentParser(prog="pq")
+    broken.add_argument("only_this", choices=["nope"])
+    monkeypatch.setattr(cli, "_build_parser", lambda: broken)
+
+    with pytest.raises(MQueryError) as caught:
+        cli._options_present(["add", "f.pbix", "--name", "X"])
+    assert "bug in pqtools" in str(caught.value)
+    assert "Nothing was changed" in str(caught.value)
+
+
 def test_every_documented_pq_command_uses_options_that_exist() -> None:
     """The round-32 MEDIUM: `llms.txt` told agents to run a command that cannot.
 
@@ -2543,11 +2693,16 @@ def test_every_documented_pq_command_uses_options_that_exist() -> None:
     from pqtools.cli import _OPTION_VERBS, _build_parser
 
     parser = _build_parser()
-    known = {
-        option
+    # Round 33: the dest was inferred from the flag TEXT (`--foo-bar` ->
+    # `foo_bar`), the same text-inference the sibling test above abandoned. An
+    # option declared with an explicit `dest=` would skip the "refused on this
+    # verb" half of the check without ever failing. Ask argparse instead.
+    dest_of = {
+        option: action.dest
         for action in parser._actions  # noqa: SLF001 - argparse has no public API
         for option in action.option_strings
     }
+    known = set(dest_of)
     verbs = {
         choice
         for action in parser._actions  # noqa: SLF001
@@ -2583,7 +2738,7 @@ def test_every_documented_pq_command_uses_options_that_exist() -> None:
                 if flag not in known:
                     problems.append(f"{name}: {command} -> {flag} is not an option")
                     continue
-                dest = flag[2:].replace("-", "_")
+                dest = dest_of[flag]
                 if dest in _OPTION_VERBS and verb not in _OPTION_VERBS[dest]:
                     problems.append(f"{name}: {command} -> {flag} is refused on {verb}")
     assert not problems, problems

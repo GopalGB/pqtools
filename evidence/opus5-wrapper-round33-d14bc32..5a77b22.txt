@@ -1,6 +1,30 @@
+# Exact claude-opus-5 wrapper review - range d14bc32..5a77b22
+#
+# Attempt history for this range, recorded because two earlier attempts left a
+# 473-byte header in this file that reads like a review with no findings:
+#   attempt 1 + 2 - KILLED by the harness for host memory pressure before the
+#     model returned (swap 4136-4303M of 5120M used). No verdict. The review
+#     spawns a second full claude process; that is what does not fit.
+#   attempt 3 (below) - COMPLETED. Written to a scratch path first so a third
+#     kill could not leave a false clean pass in evidence/, then copied here.
+# An empty-looking review file is a false clean pass. This is the real one.
+#
 # Exact claude-opus-5 wrapper review - range d14bc32..5a77b22 (bundle + lockfile shown as stub blobs)
 # staged:  6 files changed, 397 insertions(+), 60 deletions(-)
 # src/pqtools/_bridge.cjs: unchanged in d14bc32..5a77b22, not stubbed, not in the diff
 # package-lock.json: unchanged in d14bc32..5a77b22, not stubbed, not in the diff
-# invoked 2026-09-08T13:31:46Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# invoked 2026-09-08T13:33:59Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
 
+🔵 Opus 5
+
+Verified by execution against this worktree (`4161` collected, matching the gate log; `.venv` borrowed from the main checkout):
+
+- **HIGH — src/pqtools/cli.py:429** — moving `parse(body)` off the success path removed the only check that `--source` is a *single* expression, so `--source` can now smuggle extra section members past the duplicate-name guard four lines above. Measured: `pq add c.pbix --name X --source '1; shared Existing = 2'` exits 0 and with `--write` produces `shared X = 1; shared Existing = 2;` — silently **redefining `Existing`**, the member `cli.py:408` refuses to touch ("use `replace-source` to change it"). At HEAD the same input is refused (`parse("1; shared Existing = 2")` → `--source does not parse`). The round-32 premise "the body parse only ever chose a better MESSAGE" is false: it was also the containment check. Fix: after `parse(new_source)` succeeds, assert the composition added exactly one member and left the existing ones byte-identical — `containers.split_shared(new_source, sections[0].container)` compared against `existing | {args.name}` *and* their sources — or put `parse(body)` back on the success path.
+- **MEDIUM — src/pqtools/cli.py:437,449** — the new `pq add --json` emission has no test on either path (`grep` finds zero `add` + `json` cases in `tests/`). `test_every_option_is_classified_for_every_verb` passes whether or not `_run_add` reads `args.json` — it checks classification, not consumption, which is exactly how the flag was dropped for a round. Fix: assert `json.loads(capsys.out)` on the preview and on `--write` (keys `name`/`source`/`written`, `name`/`backup`/`written`).
+- **LOW — src/pqtools/cli.py:1251** — `set(vars(seen))` returns positional dests too (`{'command','file',...}`, measured), so the refusal is correct only by luck that no `_OPTION_VERBS` key collides with a positional; add a positional named `out` or `name` and every verb refuses it. Fix: `{a.dest for a in probe._actions if a.option_strings} & set(vars(seen))`. Same function, line 1249: `except SystemExit: return set()` fails **open** — a probe divergence disables every refusal silently; let it propagate instead.
+- **LOW — tests/test_end_to_end.py:2586** — `dest = flag[2:].replace("-", "_")` infers the dest from the flag *text*, the identical text-inference the sibling test at line 2291 just abandoned; an option declared with an explicit `dest=` skips the "refused on this verb" half without failing. Fix: `dests = {opt: a.dest for a in parser._actions for opt in a.option_strings}` and look `flag` up.
+- **LOW — tests/test_end_to_end.py:2403** — the inlined DataMashup layout is the *third* copy of those bytes in the suite: `tests/test_end_to_end.py:687` already builds one in this same file, and `tests/test_containers.py:43` exposes `_blob()`/`_pbix()` — which `tests/test_write_validation.py:45` and `tests/test_container_workflow.py:172` already import cross-module, contradicting the docstring's stated reason for inlining. Fix: `from test_containers import _blob, _pbix` → `target.write_bytes(_pbix(_blob(m_text)))`.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

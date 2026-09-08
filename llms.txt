@@ -34,7 +34,11 @@ affiliated with or endorsed by Microsoft.
 - Reads `.pbix` / `.pbit` / `.xlsx` containers to analyse the M inside them.
   `pq format` / `pq rename` / `pq replace-source` print the edited M and
   save it with `--write`. `pq add --name N --source '...' --write` adds a
-  brand-new query. Any `--write` on a container writes a backup first, to the
+  brand-new query. `--source` must be ONE query body: a value that declares a
+  second `shared` member (`'1; shared Other = 2'`) is refused by name, because
+  composing it would add or redefine a query you did not name - use
+  `replace-source` to change a query that already exists.
+  Any `--write` on a container writes a backup first, to the
   first free `<file>.bak`, `<file>.bak.1`, ... - an existing backup is never
   overwritten, and a backup that fails stops the edit.
 

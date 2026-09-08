@@ -3501,3 +3501,101 @@ Both were caught by the same cheap habit and nothing else: printing the
 observable - `pq check f --format json -> exit 0` / `exit 2` - beside the test
 result, so a mutation that had not landed, or a test that could not see it, is
 visible in the same output rather than inferred from a green.
+
+## Round 33 - `d14bc32..5a77b22`, verdict FIX-FIRST, all five taken
+
+Three attempts. Two were killed by the harness for host memory pressure and
+left a 473-byte header in `evidence/` that reads like a review with no
+findings - the round-30 situation exactly, and the bot committed it twice.
+Handled the same way: `evidence/` was made truthful FIRST (an explicit NOT-RUN
+record naming what was and was not established for `5a77b22`), and the retry
+wrote to a scratch path so a third kill could not leave a false clean pass in
+the repo at all. That is the change worth keeping from this round's process:
+**write the review somewhere it cannot lie before you run it.**
+
+### HIGH - `--source` could smuggle a second query past the duplicate-name guard
+
+Mine, from round 32. That round moved `parse(body)` off the success path on the
+reasoning that it "only ever chose a better MESSAGE". It was also the
+containment check. `--source` is composed into `shared <name> = <body>;`, and a
+body of `1; shared Existing = 2` composes into a document that is perfectly
+valid M - so it parsed, previewed clean, exited 0, and `--write` committed a
+section redefining `Existing`, the member `add` refuses by name to touch
+twenty lines earlier. The duplicate-name guard could not see it: it reads
+`--name`, which was an innocent new name. The second member rode in the value.
+
+Measured before the fix, on the shipped build:
+
+    $ pq add c.pbix --name X --source '1; shared Existing = 2' --write
+    // added X; backup: .../w.pbix.bak            exit 0
+    $ pq list w.pbix
+    Existing     1 lines
+    X            1 lines
+    # and the file now holds: shared Existing = 41;  ...  shared X = 1; shared Existing = 2;
+
+Fixed by `_refuse_uncontained_add`, which asks the composed document whether it
+is the original plus exactly one named member, rather than asking the snippet
+whether it looks like one. That is strictly stronger than the parse it
+replaces: it also catches a snippet adding a THIRD query (`'1; shared Y = 2'`),
+which `parse(body)` and the name guard both miss. It reuses the parse
+`_run_add` has already paid for - `containers.split_shared_parsed` was split
+out of `split_shared` for that - so the success path still spends one Node
+subprocess, which is what round 32 was protecting.
+
+One trap worth recording. `split_shared` returns a **dict**, so the smuggled
+duplicate collapses and the KEY SETS MATCH (`{Existing, X}` either way). A
+check on names alone passes. Measured which definition survives (the last:
+`Existing -> 'shared Existing = 2;'`) rather than assuming, then built the
+check so it does not depend on that answer at all - the appended text is
+compared as a whole, so first-wins and last-wins both differ from what adding
+one query would have produced.
+
+### MEDIUM - `pq add --json` had no test on either path
+
+`test_every_option_is_classified_for_every_verb` passes whether or not
+`_run_add` ever READS `args.json`; it checks classification, not consumption.
+That is precisely how `--json` came to be classified as meaningful for `add`
+and then honoured by nothing but the shared error path for a whole round.
+Classification and consumption are different questions. Now asked separately.
+
+### LOW - the presence probe returned positional dests, and failed OPEN
+
+`set(vars(seen))` also carried `command` and `file` into the refusal table.
+Correct today only because no `_OPTION_VERBS` key is spelled like a positional
+- an option later given `dest="file"` would make every verb refuse it, silently.
+Separately, `except SystemExit: return set()` reads downstream as "no options
+were typed", which disables every refusal. The main parse of the same tokens
+has already succeeded by then, so a probe failure is a pqtools bug; it now says
+so instead of quietly ceasing to gate.
+
+### LOW - two test-side ones, both taken
+
+The documented-command check inferred an option's dest from the flag TEXT - the
+same text-inference the sibling test above it had just abandoned. Asks argparse
+now. And `_one_section_container` inlined the DataMashup byte layout a third
+time, on a stated worry that cross-module test imports are not guaranteed;
+`test_write_validation.py` and `test_container_workflow.py` already do it, so
+the suite had disproved the worry before it was written down. Proven equivalent
+by bytes, not by "the tests still pass": the inlined construction and
+`_pbix(_blob(m_text))` produce the identical 710 bytes.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| A | `_refuse_uncontained_add` call removed | smuggle `exit=0`, composed doc printed | RED | `exit=2`, nothing printed, GREEN |
+| B | preview always prints text | `--json` output starts `'s'`, is-json=False | RED | JSON, GREEN |
+| C1 | `return set(vars(seen))` | `['command','file','name','source']` | RED | `['name','source']`, GREEN |
+| C2 | `except SystemExit: return set()` | - | RED | GREEN |
+| D | (none possible) | no shipped option has a divergent dest | see below | - |
+| E | (none needed) | inlined vs imported bytes both 710, identical | - | - |
+
+D is hardening, not a live bug, and is recorded as such rather than given a
+manufactured control: measured, no pqtools option declares an explicit `dest=`,
+so text-inference and argparse agree everywhere today. The mechanism was
+demonstrated standalone (`--out-file` with `dest="out"`: text-inference says
+`out_file`, argparse says `out`). Saying "controlled" here would have been the
+verification theatre this loop keeps catching.
+
+Control A was re-run AFTER `ruff format` touched the tree, because round 32's
+control A measured nothing twice for exactly that reason.

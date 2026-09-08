@@ -426,9 +426,10 @@ def _run_add(args: argparse.Namespace) -> int:
     # for cost. The body parse only ever chose a better MESSAGE, so it belongs
     # in the failure branch, paid for by the run that already failed.
     try:
-        parse(new_source)
+        parsed = parse(new_source)
     except ParseError as error:
         raise _add_parse_refusal(text, body, error) from error
+    _refuse_uncontained_add(args.file, args.name, body, new_source, parsed, existing)
 
     if not args.write:
         if args.json:
@@ -446,6 +447,54 @@ def _run_add(args: argparse.Namespace) -> int:
     else:
         print(f"// added {args.name}; backup: {backup}", file=sys.stderr)
     return 0
+
+
+def _refuse_uncontained_add(
+    file: str,
+    name: str,
+    body: str,
+    new_source: str,
+    parsed: dict[str, Any],
+    existing: dict[str, str],
+) -> None:
+    """The composition must add ONE query and disturb none of the others.
+
+    Round 33: round 32 moved `parse(body)` off the success path believing it
+    only ever chose a better MESSAGE. It was also the containment check - the
+    one thing stopping `--source` from carrying a second `shared` declaration
+    straight past the duplicate-name guard twenty lines above. Measured on the
+    shipped build: `--source '1; shared Existing = 2'` previewed clean, exited
+    0, and with `--write` produced a section redefining `Existing`, the member
+    `add` refuses by name to touch.
+
+    Asking the composed document is strictly stronger than the parse it
+    replaces. It also catches a snippet that adds a THIRD query, and it does
+    not depend on which of two same-named members `split_shared` keeps: the
+    appended text is compared as a whole, so either choice differs from what
+    adding one query would have produced. It reuses the caller's parse, so the
+    success path still pays exactly one subprocess.
+    """
+    composed = containers.split_shared_parsed(new_source, parsed)
+    expected = dict(existing)
+    expected[name] = f"shared {_quote_identifier(name)} = {body};"
+    if composed == expected:
+        return
+    introduced = sorted(set(composed) - set(expected))
+    disturbed = sorted(
+        other for other, source in existing.items() if composed.get(other) != source
+    )
+    changes = []
+    if introduced:
+        changes.append("adds " + ", ".join(repr(other) for other in introduced))
+    if disturbed:
+        changes.append("redefines " + ", ".join(repr(other) for other in disturbed))
+    reason = " and ".join(changes) if changes else "changes the section"
+    raise MQueryError(
+        f"{file}: --source must be ONE query body - composing this one also "
+        f"{reason}, which is not what adding {name!r} should do. Pass one query "
+        "per command, and use replace-source to change a query that already "
+        "exists. Nothing was changed."
+    )
 
 
 def _add_parse_refusal(text: str, body: str, error: ParseError) -> ParseError:
@@ -1246,9 +1295,27 @@ def _options_present(tokens: list[str]) -> set[str]:
     with contextlib.redirect_stderr(io.StringIO()):
         try:
             seen, _ = probe.parse_known_args(tokens)
-        except SystemExit:
-            return set()
-    return set(vars(seen))
+        except SystemExit as error:
+            # Round 33: this returned an empty set, which reads as "no options
+            # were typed" and silently disables EVERY refusal below. The main
+            # parse of these same tokens has already succeeded by the time we
+            # are called, so a failure here is a pqtools bug, not a user error
+            # - and a gate that quietly stops gating is the failure mode this
+            # whole function was written to remove.
+            raise MQueryError(
+                "pqtools could not re-read its own command line to check which "
+                "options you passed, so it cannot say whether they apply to "
+                "this command. This is a bug in pqtools. Nothing was changed."
+            ) from error
+    # Only the optional dests. `vars(seen)` also carries the positionals
+    # (`command`, `file`), so this was correct only while no `_OPTION_VERBS`
+    # key happened to share a positional's name.
+    optional = {
+        action.dest
+        for action in probe._actions  # noqa: SLF001
+        if action.option_strings
+    }
+    return optional & set(vars(seen))
 
 
 def _refuse_irrelevant_options(args: argparse.Namespace, tokens: list[str]) -> None:

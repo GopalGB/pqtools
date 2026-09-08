@@ -376,6 +376,17 @@ def split_shared(section_source: str, container: str = "<string>") -> dict[str, 
         parsed = core.parse(section_source)
     except MQueryError as error:
         raise ContainerError(f"{container}: {error.message}") from error
+    return split_shared_parsed(section_source, parsed)
+
+
+def split_shared_parsed(section_source: str, parsed: dict[str, Any]) -> dict[str, str]:
+    """The same split, over a parse the caller has already paid for.
+
+    `pq add` has to check that composing its snippet into the section added
+    exactly one member, and it has just parsed the composed document to decide
+    the snippet is valid at all. Going back through `split_shared` would spend
+    a second Node subprocess on the success path for a parse already in hand.
+    """
     tokens: list[dict[str, Any]] = parsed["tokens"]
     members: dict[str, str] = {}
     depth = 0
