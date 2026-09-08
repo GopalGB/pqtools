@@ -27,6 +27,7 @@ from .core import (
     FAILURE_HELP,
     Diagnostic,
     MQueryError,
+    ParseError,
     _snapshot,
     check,
     dependencies,
@@ -410,8 +411,36 @@ def _run_add(args: argparse.Namespace) -> int:
     body = args.source.rstrip()
     if body.endswith(";"):
         body = body[:-1].rstrip()
+
+    # Round 31b: NOTHING validated here before `--write`. `pq add c.pbix
+    # --name Bad --source "let x = = 1 in x"` printed the composed document
+    # and exited 0 - a preview whose entire purpose is "show me what would
+    # happen" answering with something that cannot happen. The write path
+    # refused the same input, so the two verbs disagreed about the same bytes.
+    #
+    # The body is parsed ON ITS OWN first, because that is the source the user
+    # wrote and so the only one whose line and column they can navigate to.
+    # The write path reported `65:22` for a one-line `--source`: a real
+    # position in a composed document the user never sees.
+    try:
+        parse(body)
+    except ParseError as error:
+        raise ParseError(
+            f"--source does not parse: {error.message}. The position is in "
+            "the source you supplied. Nothing was added."
+        ) from error
     text = sections[0].source.rstrip()
     new_source = f"{text}\n\nshared {_quote_identifier(args.name)} = {body};\n"
+    # And the composed document, which a body that parses alone can still
+    # break. Said separately so the position is not mistaken for the snippet's.
+    try:
+        parse(new_source)
+    except ParseError as error:
+        raise ParseError(
+            f"the query parses alone but not inside this section: "
+            f"{error.message}. That position is in the composed section "
+            "document, not in your --source. Nothing was added."
+        ) from error
     if not args.write:
         print(new_source)
         return 0
@@ -1113,6 +1142,83 @@ def _normalise_targets(args: argparse.Namespace) -> None:
     args.file = Path(targets[0])
 
 
+# Which verbs each option means something to. Measured from the code, not
+# guessed: `--old`/`--new` are read only by the rename transform, `--name` only
+# by `_run_add`, `--bind`/`--set-param`/`--format`/`--to`/`--out` and the four
+# `--allow-*` flags only by `_run_eval`, and so on.
+#
+# Every option is global on this parser, deliberately - the comment in `main`
+# records why the shape must not depend on option order. The cost of that is
+# that argparse accepts every flag for every verb, and until round 30b it
+# IGNORED the ones a verb does not read. `pq replace-source q.pq --name Source
+# --source "..."` replaced the WHOLE FILE while the user had every reason to
+# read `--name` as scoping the edit to one step, and `pq rename q.pq --old a
+# --new b --member Nope --source xx` renamed and silently dropped two flags.
+#
+# This package refuses a `Username` field in an M options record BY NAME rather
+# than ignoring it, for exactly this reason. Its own flags were held to a lower
+# standard than the M it reads. They are not now.
+_OPTION_VERBS: dict[str, frozenset[str]] = {
+    "json": frozenset(
+        {
+            "parse",
+            "format",
+            "check",
+            "dependencies",
+            "rename",
+            "replace-source",
+            "eval",
+            "list",
+            "add",
+            "show",
+            "explain",
+            "diff",
+        }
+    ),
+    "write": frozenset({"format", "rename", "replace-source", "add"}),
+    "allow_net": frozenset({"eval"}),
+    "allow_db": frozenset({"eval"}),
+    "allow_private_net": frozenset({"eval"}),
+    "allow_host": frozenset({"eval"}),
+    "old": frozenset({"rename"}),
+    "new": frozenset({"rename"}),
+    "name": frozenset({"add"}),
+    "source": frozenset({"replace-source", "add"}),
+    "member": frozenset({"eval", "show"}),
+    "bind": frozenset({"eval"}),
+    "set_param": frozenset({"eval"}),
+    "format": frozenset({"eval"}),
+    "to": frozenset({"eval"}),
+    "out": frozenset({"eval"}),
+}
+
+
+def _refuse_irrelevant_options(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> None:
+    """Refuse a flag this verb does not read, by name, instead of ignoring it.
+
+    A flag counts as PASSED when its value differs from THE PARSER'S OWN
+    default, asked for rather than assumed. The first cut of this compared
+    against a hardcoded `(None, False, [])` and reported `--format` on every
+    single verb, because `--format` defaults to `"json"` - a check that fires
+    on correct input is worse than the silence it replaced, and it took
+    probing the legitimate invocations, not just the broken ones, to see it.
+    """
+    passed = sorted(
+        name
+        for name, verbs in _OPTION_VERBS.items()
+        if args.command not in verbs
+        and getattr(args, name, parser.get_default(name)) != parser.get_default(name)
+    )
+    if passed:
+        flags = ", ".join(f"--{name.replace('_', '-')}" for name in passed)
+        raise MQueryError(
+            f"{args.command} does not use {flags} - remove it rather than "
+            "assume it did something. Nothing was changed."
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pq")
     parser.add_argument(
@@ -1241,6 +1347,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
     args.file = [*args.file, *extra]
     try:
+        # Before anything reads a file: a flag this verb does not use is a
+        # misunderstanding about what is about to happen, and the write verbs
+        # are exactly where that is expensive.
+        _refuse_irrelevant_options(args, parser)
         _normalise_targets(args)
         if args.command == "explain":
             return _run_explain(args)

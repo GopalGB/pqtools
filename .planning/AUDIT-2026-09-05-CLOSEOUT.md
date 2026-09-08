@@ -3276,3 +3276,133 @@ satisfied, and the control stayed green. Fifth mis-specified control in this
 audit, and the first one where I had already written down the habit that
 prevents it. Redone, the mutation prints the measured decision set
 (`{True}` after, `{False, True}` before) instead of asserting it.
+
+---
+
+## Round 31 - `2edbf00..ef70e16` - **SHIP**, four findings taken
+
+Second SHIP in a row. The reviewer recomputed every position the new rename
+test asserts (`1:5`, `1:9`, `1:13`, `1:13`, `3:12`), confirmed the new predicate
+is equivalent to the original including the empty-string case, and checked that
+`M__` / `MQUERY__` genuinely do not match the anchored shape - so the two pins
+round 30 added are assertions, not tautologies.
+
+### The performance regression I introduced
+
+`_rename_blocker` replaced a C-level `source.isascii()` with an unconditional
+per-character Python loop over an input capped at 10 MiB, on every rename,
+including the all-ASCII case that is almost every rename. The loop exists to
+find WHERE the first non-ASCII character is, which the C call cannot say - so
+it now runs only when `not source.isascii()` first says there is something to
+find. The position is worth a loop; looking for one that is not there is not.
+
+### Three comments that outran their code, again
+
+`FAILURE_HELP["M_RENAME_REFUSED"].fix` said "The message names which one it
+found and where" - but `RenameRefusal` carries one code for **eight** raise
+sites and only the new one has a position. After "rename target is a reserved M
+keyword" the promise sends the reader hunting for a line number that is not
+there. Scoped: "When one of those four fired ... the other reasons name
+themselves instead."
+
+`_RENAME_BLOCKERS` was introduced as "The four constructs ..." above a
+three-element tuple; the fourth is scanned thirty lines below. That is the
+defect class the rest of this round is about, committed in the fix for it.
+
+And `llms.txt` - the surface written to be quoted verbatim by assistants -
+still listed only the SECONDARY causes of `M_RENAME_REFUSED` (reserved keyword,
+collision, overlap) and never the four that actually fire on a real query.
+`SUPPORT-MATRIX.md` and `FAILURE_HELP` were updated in the same diff; the
+agent-facing file was not, because the test compares only the code SET, not the
+prose.
+
+## Round 31b - a flag a verb does not use is now refused, not ignored
+
+Found by running all twelve verbs, which the suite does not do.
+
+`pq replace-source q.pq --name Source --source "..."` **replaced the whole
+file**. `replace_source` is documented to do exactly that - "Replace complete
+source only - never an unsafe partial-text match" - so the behaviour is right
+and my invocation was wrong. But `--name` was accepted and silently dropped on
+a WRITE verb, and a user has every reason to read it as scoping the edit to one
+step. `pq rename q.pq --old a --new b --member Nope --source xx` renamed and
+dropped two flags without a word.
+
+Every option on this parser is global, deliberately: the comment in `main`
+records the round-11 HIGH that came from letting the parser's shape depend on
+option order, so subparsers are not available as a fix. The cost was that
+argparse accepted every flag for every verb and the code ignored the ones it
+did not read.
+
+**This package refuses a `Username` field in an M options record BY NAME rather
+than ignoring it. Its own flags were held to a lower standard than the M it
+reads.** They are not now: a flag outside its verb's set is refused by name,
+before any file is opened, with nothing written.
+
+### The two things that make the table safe
+
+A hand-kept map from option to verbs is precisely the shape that drifted in
+round 26 (`DIAGNOSTIC_SEVERITY`). So `test_every_option_is_classified_for_every_verb`
+checks it against the parser: every option the parser defines must be
+classified, every classified name must be a real option, every verb named must
+be a real verb, and not every option may be universal - a new flag added
+without a decision fails there instead of being accepted everywhere by default.
+
+And the check compares each value against **the parser's own default**, asked
+for rather than assumed. The first cut compared against a hardcoded
+`(None, False, [])` and reported `--format` on every verb, because `--format`
+defaults to `"json"`. A guard that fires on correct input is worse than the
+silence it replaces, and only probing the LEGITIMATE invocations revealed it -
+the broken ones all looked right.
+
+### The round-11 case was kept, not dropped
+
+`test_an_option_before_the_verb_does_not_change_the_answer` was parametrised
+over `--allow-net explain`, which this change makes an error. The property that
+test defends was never about `--allow-net`'s meaning - it is that a leading
+option must not change which token is read as the verb. The case moved to its
+own test asserting the refusal **names `explain`**, which proves the verb was
+parsed correctly. A wrong parse would say "Table.SelectRows does not use ..."
+or fail on a Path. The property is now proved through the new behaviour rather
+than around it, which is stronger than before, not weaker.
+
+## Round 31c - `pq add` validated nothing until `--write`
+
+The verb walk again, and the sharpest finding of the three.
+
+`pq add c.pbix --name Bad --source "let x = = 1 in x"` **printed the composed
+section document and exited 0**. The `--write` path refused the identical
+bytes. A preview whose entire purpose is "show me what would happen" was
+answering with something that cannot happen, and the two paths disagreed about
+the same input.
+
+The write path's refusal was also unusable: **`parse error at 65:22` for a
+ONE-LINE `--source`**. That position is real, but it is in the composed section
+document, which the user never wrote and cannot see.
+
+Both fixed by parsing twice, before either path branches:
+
+- **The body on its own**, because that is the source the user wrote and the
+  only coordinates they can navigate to. The same input now reports `1:9`.
+- **The composed document**, said separately so its position cannot be mistaken
+  for the snippet's.
+
+The second check is not defence in depth - it is reachable, and by a mistake
+people actually make. **A query ending in a `//` comment parses perfectly on
+its own**; appended as `shared Name = <body>;` the section's terminating `;`
+lands inside that comment and the document does not parse. Control B confirms
+it: with that check removed, the preview of a comment-terminated query exits 0.
+
+### Controls for rounds 31b and 31c
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | the snippet parse removed from `add` | RED - and instructively: it still exits 2, because the composed check catches it. What is lost is the ACTIONABLE POSITION, which is what the test asserts |
+| B | the composed parse removed | RED, and the comment-terminated preview exits 0 - the check is load-bearing, not belt-and-braces |
+| C | the flag-refusal call removed | RED |
+| D | an unclassified `--brandnew` added to the parser | RED on the drift test |
+
+Every mutation printed its measured observable before the test ran, per the
+habit written down after round 29's mis-run. Control C's line shows why that
+matters: the probe output and the test failure ran together, so a mutation that
+had not applied would have been visible immediately.

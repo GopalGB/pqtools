@@ -1,0 +1,20 @@
+# Exact claude-opus-5 wrapper review - range 2edbf00..ef70e16 (bundle + lockfile shown as stub blobs)
+# staged:  7 files changed, 346 insertions(+), 56 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 2edbf00..ef70e16, not stubbed, not in the diff
+# package-lock.json: unchanged in 2edbf00..ef70e16, not stubbed, not in the diff
+# invoked 2026-09-08T12:49:19Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+⚪ ox-alpha
+
+Verified against the tree, not read: the new predicate is equivalent to the original (`find`-based needles + first non-ASCII, `min` on offset; ties are unreachable since `#`/`[`/`=` are distinct ASCII chars at distinct indices, and the empty string returns `None` exactly as `isascii()` returned `True`). Recomputed every position asserted in the new test — `1:5`, `1:9`, `1:13`, `1:13`, and the multi-line `3:12` — all correct. Confirmed `"M__"` / `"MQUERY__"` do not match `_CODE_SHAPED` (`cli.py:872`: `[A-Z0-9_]*[A-Z0-9]` cannot end on `_`), so the two added pins are real assertions, not tautologies. Gate log arithmetic is consistent: round 29 certified 4154, this diff adds exactly 2 tests, log says 4156 collected / 4156 passed.
+
+- **MEDIUM — src/pqtools/core.py:360** — the new `fix` opens "The message names which one it found and where", but `RenameRefusal` carries one code (`core.py:74`) for **eight** raise sites and only the new one at :908 has a construct or a position. `pq explain M_RENAME_REFUSED` after "rename target is a reserved M keyword" (:929), "collides with an existing let binding" (:933), "already appears in the source" (:938), "target must name exactly one top-level let binding" (:941), "rename spans overlap" (:945), "requires distinct unquoted identifiers" (:927) or "supports one unquoted top-level let scope" (:916) now promises a position the user will not find. Fix: scope it — "When one of the four above fired, the message names which one and where."
+- **MEDIUM — src/pqtools/core.py:892** — the non-ASCII scan is now an unconditional Python-level loop over the whole source where it used to be the C-level `source.isascii()`; input is capped at `MAX_BYTES = 10 MiB` (`core.py:27`), so an all-ASCII multi-megabyte query pays a full per-character interpreter loop on every `rename` before the guard even decides, and it runs even when a needle already matched at offset 0. Fix: wrap the loop in `if not source.isascii():`.
+- **LOW — src/pqtools/core.py:862** — "The four constructs the whole-file textual guard refuses on" sits directly above a three-element tuple; the fourth is in the loop 30 lines below. This is the exact defect class the round's other three fixes are about. Fix: "Three of the four constructs … the fourth, any non-ASCII character, is scanned in `_rename_blocker`."
+- **LOW — llms.txt:140** — the `M_RENAME_REFUSED` row still gives only the secondary causes ("a reserved keyword, a collision with an existing binding, a target that already appears in the source, overlapping spans") and never names `#"` / `[` / `=>` / non-ASCII, which are the causes that actually fire on a real query. `SUPPORT-MATRIX.md` and `FAILURE_HELP` were updated in this diff; the surface written to be quoted verbatim by assistants was not, and `test_end_to_end.py:1888` compares only the code *set*, not the prose. Fix: add the four blockers to that row's cause list.
+
+None of these change what is refused, and the equivalence test plus its vacuity assertion do hold the net at its original width.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

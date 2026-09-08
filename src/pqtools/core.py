@@ -357,7 +357,9 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "reserved word or a name already in use stops it too."
         ),
         fix=(
-            "The message names which one it found and where. Rename that step "
+            "When one of those four fired, the message names which one and at "
+            "what line and column; the other reasons - a reserved word, a "
+            "collision, an overlap - name themselves instead. Rename that step "
             "by hand, or pick a different target. It refuses rather than "
             "half-renaming, because a query that is quietly wrong is worse "
             "than one that was not changed."
@@ -859,9 +861,13 @@ def _dependencies_from(parsed: dict[str, Any]) -> list[str]:
     )
 
 
-# The four constructs the whole-file textual guard refuses on, in words a
-# person can act on. `SUPPORT-MATRIX.md` states the scope and why it is
-# deliberately over-strict; this is only about SAYING WHICH ONE fired.
+# THREE of the four constructs the whole-file textual guard refuses on, in
+# words a person can act on. The fourth - any non-ASCII character - is not a
+# fixed needle, so it is scanned separately in `_rename_blocker` below.
+# Saying "four" here over a three-element tuple was the same defect this
+# round's other fixes are about: a comment claiming more than the code holds.
+# `SUPPORT-MATRIX.md` states the scope and why it is deliberately over-strict;
+# this is only about SAYING WHICH ONE fired.
 _RENAME_BLOCKERS: tuple[tuple[str, str], ...] = (
     ('#"', 'a quoted identifier (#"...")'),
     ("[", "a record literal or field access ([...])"),
@@ -889,10 +895,17 @@ def _rename_blocker(source: str) -> tuple[str, int, int] | None:
         offset = source.find(needle)
         if offset != -1:
             found.append((offset, what))
-    for index, char in enumerate(source):
-        if not char.isascii():
-            found.append((index, f"a non-ASCII character ({char!r})"))
-            break
+    # `str.isascii()` first, and only then the loop. The loop exists to find
+    # WHERE the first non-ASCII character is, which the C-level check cannot
+    # tell us - but running it unconditionally turned a single C call into a
+    # per-character interpreter loop over an input capped at 10 MiB, on every
+    # rename, including the all-ASCII case that is almost every rename. The
+    # position is worth a loop only when there is something to find.
+    if not source.isascii():
+        for index, char in enumerate(source):
+            if not char.isascii():
+                found.append((index, f"a non-ASCII character ({char!r})"))
+                break
     if not found:
         return None
     offset, what = min(found)

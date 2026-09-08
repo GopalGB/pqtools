@@ -243,7 +243,6 @@ def test_set_param_obeys_the_same_network_gate_as_the_query(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["--allow-net", "explain", "Table.SelectRows"],
         ["--json", "explain", "Table.SelectRows"],
         ["explain", "Table.SelectRows"],
         ["explain", "Table.SelectRows", "--json"],
@@ -265,6 +264,27 @@ def test_an_option_before_the_verb_does_not_change_the_answer(
 
     assert main(argv) == 0
     assert "is implemented by pqtools" in capsys.readouterr().out
+
+
+def test_an_irrelevant_option_before_the_verb_still_finds_the_verb(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The `--allow-net explain` case from the round-11 parametrisation.
+
+    Round 30b made a flag a verb does not read a refusal instead of a silent
+    no-op, so `pq --allow-net explain X` now exits 2. The case is NOT dropped:
+    the round-11 property was never about `--allow-net`'s meaning, it was that
+    a leading option must not change which token is read as the verb - and the
+    refusal naming `explain` is that property, proved by the new behaviour
+    rather than around it. A wrong parse would say "Table.SelectRows does not
+    use ..." or fail on a Path.
+    """
+    from pqtools.cli import main
+
+    assert main(["--allow-net", "explain", "Table.SelectRows"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("error MQUERY_ERROR: explain does not use"), err
+    assert "--allow-net" in err, err
 
 
 @pytest.mark.parametrize("verb", ["check", "parse", "dependencies", "list", "show"])
@@ -2246,3 +2266,210 @@ def test_a_refused_rename_names_the_construct_and_where_it_is() -> None:
     assert "record literal or field access" in text, text
     assert "line 1 column 9" in text, text
     assert "pq explain M_RENAME_REFUSED" in text, text
+
+
+def test_every_option_is_classified_for_every_verb() -> None:
+    """The table cannot silently fall behind the parser.
+
+    A hand-kept map from option to verbs is exactly the shape that drifts -
+    `DIAGNOSTIC_SEVERITY` was a second dict keyed by the same codes and it
+    drifted within two rounds. So the table is checked against the parser
+    itself: every option the parser defines must be classified, every
+    classified name must be a real option, and every verb named must be a real
+    verb. A new flag added without a decision fails here rather than being
+    accepted everywhere by default.
+    """
+    import pqtools.cli as cli_module
+    from pqtools.cli import _OPTION_VERBS
+
+    source = Path(cli_module.__file__).read_text(encoding="utf-8")
+    defined = set(re.findall(r'parser\.add_argument\(\s*"--([a-z-]+)"', source))
+    defined = {name.replace("-", "_") for name in defined}
+    verbs = set(
+        re.findall(
+            r'"(parse|format|check|dependencies|rename|replace-source|eval'
+            r'|list|add|show|explain|diff)"',
+            source,
+        )
+    )
+
+    assert defined == set(_OPTION_VERBS), {
+        "parser has, table lacks": sorted(defined - set(_OPTION_VERBS)),
+        "table has, parser lacks": sorted(set(_OPTION_VERBS) - defined),
+    }
+    for name, allowed in _OPTION_VERBS.items():
+        assert allowed, f"{name} is allowed on no verb at all"
+        unknown = allowed - verbs
+        assert not unknown, (name, sorted(unknown))
+    # Not every option may be universal, or the check would be a no-op that
+    # still passed every assertion above.
+    assert any(len(v) < len(verbs) for v in _OPTION_VERBS.values())
+
+
+def test_a_verb_refuses_a_flag_it_does_not_use_instead_of_ignoring_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Found by running all twelve verbs, not by the suite.
+
+    `pq replace-source q.pq --name Source --source "..."` replaced the WHOLE
+    FILE while the user had every reason to read `--name` as scoping the edit
+    to one step, and `pq rename q.pq --old a --new b --member Nope --source xx`
+    renamed and dropped two flags without a word. This package refuses a
+    `Username` field in an M options record BY NAME rather than ignoring it;
+    its own flags were held to a lower standard than the M it reads.
+    """
+    from pqtools.cli import main
+
+    target = tmp_path / "q.pq"
+    original = "let a = 1 in a\n"
+    target.write_text(original, encoding="utf-8")
+
+    refused = (
+        (
+            [
+                "replace-source",
+                str(target),
+                "--name",
+                "A",
+                "--source",
+                "let z = 1 in z",
+            ],
+            "--name",
+        ),
+        (
+            ["rename", str(target), "--old", "a", "--new", "b", "--member", "X"],
+            "--member",
+        ),
+        (["check", str(target), "--to", "parquet"], "--to"),
+        (["check", str(target), "--write"], "--write"),
+        (["list", str(target), "--old", "X"], "--old"),
+    )
+    for argv, flag in refused:
+        capsys.readouterr()
+        assert main(argv) == 2, argv
+        err = capsys.readouterr().err
+        assert flag in err, (argv, err)
+        assert "does not use" in err, (argv, err)
+        # A refusal that already wrote is not a refusal.
+        assert target.read_text(encoding="utf-8") == original, argv
+
+    # And the check must not fire on correct input - a guard that reddens a
+    # legitimate invocation is worse than the silence it replaced. The first
+    # cut of it compared against a hardcoded default instead of the parser's,
+    # and reported `--format` (which defaults to "json") on every verb.
+    for argv in (
+        ["check", str(target), "--json"],
+        ["eval", str(target)],
+        ["eval", str(target), "--format", "json"],
+        ["explain", "Text.From", "--json"],
+        ["format", str(target)],
+        ["rename", str(target), "--old", "a", "--new", "b"],
+        ["parse", str(target), "--json"],
+        ["dependencies", str(target)],
+    ):
+        capsys.readouterr()
+        assert main(argv) == 0, (argv, capsys.readouterr().err)
+
+
+def _one_section_container(tmp_path: Path) -> Path:
+    """A private copy of the sample container. Never the sample itself."""
+    source = Path(__file__).resolve().parent.parent / ".samples"
+    source = source / "real-powerbi-fuzzy-matching.pbix"
+    if not source.exists():  # pragma: no cover - .samples is gitignored
+        pytest.skip("sample container not present")
+    target = tmp_path / "container.pbix"
+    target.write_bytes(source.read_bytes())
+    return target
+
+
+def test_pq_add_refuses_a_query_that_does_not_parse_before_it_previews(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Round 31b: `pq add` validated NOTHING until `--write`.
+
+    `pq add c.pbix --name Bad --source "let x = = 1 in x"` printed the composed
+    section document and exited 0 - a preview whose whole purpose is "show me
+    what would happen" answering with something that cannot happen, while the
+    write path refused the identical bytes. Two verbs disagreeing about the
+    same input is the shape this package exists to avoid.
+    """
+    from pqtools.cli import main
+
+    container = _one_section_container(tmp_path)
+    before = container.read_bytes()
+
+    for argv_tail in ([], ["--write"]):
+        capsys.readouterr()
+        code = main(
+            ["add", str(container), "--name", "Bad", "--source", "let x = = 1 in x"]
+            + argv_tail
+        )
+        assert code == 2, argv_tail
+        captured = capsys.readouterr()
+        assert "M_PARSE_ERROR" in captured.err, captured
+        assert "--source does not parse" in captured.err, captured
+        # The position must be in the source the USER wrote. The write path
+        # used to report `65:22` for a one-line `--source` - a real position in
+        # a document they never see.
+        assert "1:9" in captured.err, captured
+        assert "65:" not in captured.err, captured
+        assert "shared Bad" not in captured.out, captured.out
+        assert container.read_bytes() == before, argv_tail
+
+
+def test_pq_add_separates_a_bad_query_from_one_that_breaks_the_section(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The composed-document check is reachable, and this is how.
+
+    A query ending in a `//` comment parses perfectly well on its own. Appended
+    as `shared Name = <body>;` the section's terminating `;` lands inside that
+    comment, so the document does not parse - and the position is in the
+    composed text, not in what the user typed. Both failures are refused; they
+    say different things because they are different mistakes.
+    """
+    from pqtools.cli import main
+
+    container = _one_section_container(tmp_path)
+    before = container.read_bytes()
+    body = "let x = 1 in x\n// note: quarterly only"
+
+    capsys.readouterr()
+    assert main(["add", str(container), "--name", "C", "--source", body]) == 2
+    err = capsys.readouterr().err
+    assert "parses alone but not inside this section" in err, err
+    assert "not in your --source" in err, err
+    assert "--source does not parse" not in err, err
+    assert container.read_bytes() == before
+
+    # The same body without the comment is fine, so the refusal is about the
+    # comment and not about the query.
+    capsys.readouterr()
+    assert (
+        main(["add", str(container), "--name", "C", "--source", "let x = 1 in x"]) == 0
+    )
+    out = capsys.readouterr().out
+    assert "shared C = let x = 1 in x;" in out, out
+    assert container.read_bytes() == before, "preview must not write"
+
+    # And it writes, and the result is listable and evaluable.
+    assert (
+        main(
+            [
+                "add",
+                str(container),
+                "--name",
+                "C",
+                "--source",
+                "let x = 1 in x",
+                "--write",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["list", str(container)]) == 0
+    assert "C" in capsys.readouterr().out
+    capsys.readouterr()
+    assert main(["eval", str(container), "--member", "C"]) == 0
+    assert capsys.readouterr().out.strip() == "1"
