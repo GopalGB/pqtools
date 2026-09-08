@@ -159,6 +159,16 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # alternatives were measured failing on one of those two shapes.
     invoke_after = _misc._function_invoke_after
 
+    def nested(code: CodeType) -> list[CodeType]:
+        """The code objects a `def`, `lambda` or comprehension compiles into.
+
+        Round 44: this predicate lived at two sites and the round-43 closeout
+        recorded it as collapsed when it had not been - only the aggregation
+        below had been restyled. One home now, so the record is true and the
+        two callers cannot drift apart.
+        """
+        return [const for const in code.co_consts if isinstance(const, CodeType)]
+
     def called_names(code: CodeType) -> set[str]:
         """Every name this code object references, nested ones included.
 
@@ -177,9 +187,7 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
         while stack:
             current = stack.pop()
             found |= set(current.co_names)
-            stack += [
-                const for const in current.co_consts if isinstance(const, CodeType)
-            ]
+            stack += nested(current)
         return found
 
     # Pin the whole set, not the absence of one word. `co_names` records a
@@ -206,11 +214,11 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # different regime from the defect, in miniature. This one compiles a
     # module-level import and a NESTED call - the SOURCE carries all three
     # properties; the assertion below is what makes each of them load-bearing.
-    # (Round 41 wrote that clause about the assertion, and round 42 had to
-    # retract it: see below.)
+
     control = compile(_CONTROL_SOURCE, "<sleep-control>", "exec")
 
-    # Round 42: assert over the CHILDREN only. `import time` at module level
+    # Round 42, superseding round 41's claim above: assert over the CHILDREN
+    # only. `import time` at module level
     # emits IMPORT_NAME, so `"time"` sits in the ROOT tuple - measured,
     # `control.co_names == ("time", "_outer")` - and a check over the whole
     # walk is satisfied for `"time"` by the import statement rather than by
@@ -221,13 +229,7 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # `_inner.co_names == ("time", "sleep")`), so all three properties - the
     # global binding, the attribute, and the `co_consts` walk - are each
     # load-bearing here.
-    children = set().union(
-        *(
-            called_names(const)
-            for const in control.co_consts
-            if isinstance(const, CodeType)
-        )
-    )
+    children = set().union(*(called_names(const) for const in nested(control)))
     assert {"time", "sleep"} <= children, sorted(children)
 
     # Behavioural. The one-time `node --version` probe is paid here so it

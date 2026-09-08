@@ -4213,15 +4213,24 @@ Two LOWs, both cosmetic, both taken:
   the SOURCE carries all three properties and the assertion is what makes each
   load-bearing.
 - `children` re-implemented one level of `called_names`'s own traversal
-  predicate inline, so `isinstance(const, CodeType)` lived in two places.
-  Collapsed to `set().union(*(called_names(k) for k in ...))`. Verified the
-  assertion is unchanged: both forms give `{'sleep','time'}`.
+  predicate inline, so `isinstance(const, CodeType)` lived in two places. The
+  aggregation was restyled to `set().union(*(called_names(k) for k in ...))`.
+  Verified the assertion is unchanged: both forms give `{'sleep','time'}`.
+
+> **CORRECTION, round 44.** This bullet first said the predicate was
+> "collapsed". It was not - only the aggregation was restyled, and
+> `isinstance(const, CodeType)` was still at BOTH `test_tail_namespaces.py:181`
+> and `:228` (grep, two hits). **A recorded-but-unmade fix is the one failure
+> this file exists to prevent**, because a later round reads it to decide what
+> is already handled. Round 44 extracted a `nested()` helper so the predicate
+> has one home and the sentence is true; the wording above is left as written
+> so the correction is visible rather than edited away.
 
 ### Controls
 
 | # | What was measured | Observable | Verdict |
 |---|---|---|---|
-| T1 | traversal deleted from the one remaining copy | - | RED, then GREEN restored |
+| T1 | traversal deleted from `called_names` (`test_tail_namespaces.py:181`) | - | RED, then GREEN restored |
 | T2 | non-global control source (`d.sleep()`) after the dedupe | `children=['sleep']`, accepted=**False**; global form accepted=**True** | still discriminates |
 
 ### State of the loop after round 43
@@ -4231,3 +4240,45 @@ untouched by the last four diffs; every finding in them was in a test, its
 comment, or the closeout's own precision. The shipped behaviour has been
 confirmed by execution in each of those reviews - the round-33 containment fix
 was attacked seven ways in round 34 and has not moved since.
+
+## Round 44 - `2f2168f..fb59590`, verdict FIX-FIRST, all three taken
+
+No finding in the code. The MEDIUM is in this file, and it is the one kind of
+error a closeout must not make.
+
+### MEDIUM - I recorded a fix I had not made
+
+Round 43's entry said the duplicated traversal predicate was "collapsed". It
+was not. Only the aggregation had been restyled from a set comprehension to
+`set().union(*gen)`; `isinstance(const, CodeType)` was still at BOTH
+`test_tail_namespaces.py:181` and `:228` - two grep hits. The reviewer's
+second suggested option was the one that would have removed it, and I took the
+first while writing down the second.
+
+**A recorded-but-unmade fix is the failure this file exists to prevent**, since
+a later round reads it to decide what is already handled. It is the same shape
+as the round-35 "unrepresentable" claim: writing a property into the record
+before checking it holds suppresses the next check.
+
+Taken by making the sentence TRUE rather than by softening it: a `nested()`
+helper now owns the predicate, both callers use it, and grep finds one hit. The
+round-43 wording is left standing with a CORRECTION block, as with rounds 36
+and 38.
+
+### LOW x2
+
+Control row T1 said "the one remaining copy" when there were two, so it did not
+identify which was mutated and a reader could not reproduce it - now named by
+file and line. And a comment pointed forward to a block that never stated it
+was retracting the round-41 claim it referred to; that block now says it
+supersedes it, and the dangling parenthetical is gone.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| U1 | `nested()` returns `[]` | - | RED - both the walk and the children check depend on it | GREEN |
+| U2 | clamped sleep in a nested `def` (round 41's shape) | top-level tuple **unchanged** | RED 0.14s | GREEN |
+
+U2 re-runs the round-41 hole against the refactored guard, because a
+deduplication is exactly the change that can quietly drop coverage.

@@ -1,0 +1,25 @@
+# Exact claude-opus-5 wrapper review - range 2f2168f..fb59590
+# Verdict FIX-FIRST. All three findings were taken in round 44; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 44".
+#
+# Exact claude-opus-5 wrapper review - range 2f2168f..fb59590 (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 110 insertions(+), 9 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 2f2168f..fb59590, not stubbed, not in the diff
+# package-lock.json: unchanged in 2f2168f..fb59590, not stubbed, not in the diff
+# invoked 2026-09-08T16:18:38Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+⚪ ox-alpha
+
+The refactor is behaviour-preserving (`old == new == {'sleep','time'}`, empty-generator degrades to `set()` and still goes red, not silently green). The comment edit is accurate. One real finding, in the audit record rather than the code:
+
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4213-4215** — the Round-43 entry states `children` "re-implemented one level of `called_names`'s own traversal predicate inline, so `isinstance(const, CodeType)` lived in two places. Collapsed to `set().union(...)`." It was not collapsed. `isinstance(const, CodeType)` is still at both `tests/test_tail_namespaces.py:181` (inside `called_names`) and `:228` (the `children` generator) — verified by grep, two hits. The change swapped a set-comprehension for `set().union(*gen)`; the duplicated predicate is untouched. Only the reviewer's *second* option (`called_names(..., skip_root=True)`) would have removed it. This repo's closeout is the audit trail a later round reads to decide what is already handled, so a recorded-but-unmade fix is the failure mode the file exists to prevent. Fix: change that bullet to say the aggregation was restyled and the duplicated `isinstance` predicate remains (or take `skip_root=True` and make the sentence true).
+
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4221** — control row T1 reads "traversal deleted from the one remaining copy". There is no single remaining copy; two exist (lines 181 and 228), so T1 as written does not identify which copy was mutated, and a reader cannot reproduce it. Fix: name the copy — "traversal deleted from `called_names` (line 181)".
+
+- **LOW — tests/test_tail_namespaces.py:209-210** — "(Round 41 wrote that clause about the assertion, and round 42 had to retract it: see below.)" points forward to the Round-42 block at 213-223, which explains children-only but never states it is retracting a round-41 claim. The pointer resolves to text that does not contain the referent. Fix: drop the parenthetical, or make the round-42 block's first line say it supersedes the round-41 clause.
+
+No correctness, security, or gate-weakening issue in the code. `src/` untouched; the gate log's collect count (4167) matches the count the round-42 wrapper independently measured on the same tree, and the evidence header's `4 files changed, 144 insertions(+), 14 deletions(-)` matches `git diff --stat 8f51417 2f2168f` exactly.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
