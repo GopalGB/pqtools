@@ -2857,3 +2857,117 @@ the mutation hit the first occurrence, which is in a different function. The
 guard stayed green because nothing it exercises had changed. Re-run against the
 occurrence inside `_run_check_batch`, it goes red. A control that edits the
 wrong one of eight identical lines measures nothing.
+
+---
+
+## Round 26 - `dbd6f46..29579d2`, eight findings, all eight taken
+
+The round-25 fix taught `pq explain` the failure codes. Round 26 is about the
+three shapes that let that fix be *almost* right: a promise enforced only by a
+test, a table that can hold a second copy of an entry, and a guard that only
+ever runs in one direction.
+
+### MEDIUM - a promise the code did not make
+
+`llms.txt` said "It never answers a real code as though it were an
+unrecognised function name". The only thing enforcing that was the test's own
+derivation of *today's* codes. `pq explain M_FUTURE_ERROR` still printed "may
+be a typo, an internal or undocumented name, or something outside the M
+standard library (a query name, a variable, a record field)" and exited 0 -
+four suggestions, not one of which is ever true of a code.
+
+Reproduced verbatim before touching anything. The fix decides the question in
+the code rather than in the test: a name is code-SHAPED if it is all-caps with
+an underscore, which no documented M name is (checked against all 635; M names
+are dotted PascalCase and contain no underscore). A code-shaped name that is
+not a code this version reports is told exactly that, with the list of codes
+that do exist, so the reader is not sent to a document.
+
+**The first version of the shape was `M_[A-Z0-9_]+|NODE_ERROR|MQUERY_ERROR` -
+a list of today's codes wearing a regex costume.** The new test caught it:
+`NODE_ERROR2` fell through, and so would every future code not starting `M_`,
+while a bare `M_` - which names nothing and is a legal M identifier - was
+caught. Both boundaries are now pinned by assertion, in both directions.
+
+### MEDIUM - an entry that could never be shown
+
+`FAILURE_HELP["M_PARSE_ERROR"]` was unreachable the day it was written:
+`_run_explain` consults `diagnostic_help()` first, so a code in both tables can
+only ever show the lint entry. It had already drifted - a different title and a
+different fix from the entry users actually see. Nothing noticed, because every
+check asked whether a code has *an* entry.
+
+A parse failure genuinely is both things (`check()` reports it, `evaluate()`
+raises it), so it belongs in both tables - but a code has one meaning. Both
+tables now point at one object, and `test_a_code_in_both_tables_has_one_entry`
+holds that with `is`.
+
+### MEDIUM - `except Exception: pass` in a derivation
+
+The module walk that discovers `MQueryError` subclasses swallowed every import
+failure, so a module that stops importing takes its error classes out of the
+derived set and every guard built on that set stays green.
+
+The clause was there for "optional extras may be absent". Measured: every
+third-party import in this package (`openpyxl`, `pandas`, `pyarrow`) is already
+inside a function, so no `pqtools` module can fail to import because an extra
+is missing. **The clause protected against a hazard that cannot happen while
+hiding every hazard that can.** It is gone, not narrowed.
+
+### LOW x5, all taken
+
+Two dicts keyed by the same codes, read through `.get(code, "")`, meant a lint
+code missing a severity printed `M001 (lint diagnostic)` and reported
+`"severity": ""` - a quiet wrong answer where a missing key should have been
+loud. Severity is now a field on the entry; one table cannot drift from itself.
+The `llms.txt` JSON paragraph now says severity is `""` for a failure code and
+documents the second shape. The failure-table row pattern was `[A-Z_]+`, blind
+to any code with a digit - fixed to `[A-Z0-9_]+`, which is what makes the new
+lint-table check (codes `M001`..`M006`, plus their severities) able to parse a
+row at all. And `label` held two meanings sixteen lines apart inside one
+branch; the prose headings are `heading` now.
+
+### The eighth finding, and the control that failed first
+
+*"Nothing proves the reverse: an invented code present in both `FAILURE_HELP`
+and `llms.txt` passes every check."*
+
+My first answer was a test that walks every table entry through `pq explain`
+and asserts its title reaches the user. **The control refused to go red.**
+`pq explain` will happily print any entry it holds, so an invented code
+satisfies that test too - it catches *shadowed* entries (the MEDIUM above) and
+not *invented* ones. Recorded rather than quietly re-scoped: the test is kept,
+because shadowing is a real defect it is the only net for, but it did not
+answer the finding.
+
+What answers it is measuring the two sets. Reachable codes: 18. Explained
+codes: 18. Identical. So the forward-only assertion became an equality, and
+`M_INVENTED` - added to `FAILURE_HELP` *and* to `llms.txt`, exactly the
+reviewer's scenario - now reddens it. The comment names the trap for whoever
+hits this next: if a new code is genuinely reachable by a path the derivation
+cannot see (`M_IO_ERROR` was, until an `OSError` was provoked to reveal it),
+extend the derivation - deleting the assertion restores the hole.
+
+### Controls
+
+Six behavioural, each red with the defect and green after restoring, all run
+against scratchpad file copies and never `git checkout`:
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | the code-shape branch removed | RED -> GREEN |
+| B | `M_PARSE_ERROR` given a second, divergent failure entry | RED -> GREEN |
+| C | `except Exception: pass` restored, with a module that raises at import | old swallow GREEN (the defect) / fix RED |
+| D | `M001`'s severity removed | RED -> GREEN, and `pq explain M001` printed `M001 (lint diagnostic)` |
+| E | both table parsers reverted to `[A-Z_]+` | RED -> GREEN |
+| F | `M_INVENTED` added to `FAILURE_HELP` and `llms.txt` | RED -> GREEN |
+
+Two controls were mis-specified on the first attempt and are recorded as such.
+**C** used a probe module that defined its error class *before* raising, so the
+class registered and both arms went red - it measured nothing. Redone with the
+raise first, the old swallow is green with a permanently broken module, which
+is the defect. **F** is described above.
+
+The two remaining fixes have no executable control and are not claimed to:
+the `llms.txt` severity wording is documentation, and `label` -> `heading` is a
+rename with no behaviour attached.

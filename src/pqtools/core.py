@@ -136,9 +136,22 @@ class Diagnostic:
 
 @dataclass(frozen=True)
 class DiagnosticHelp:
+    """Everything `pq explain CODE` knows about one code.
+
+    `severity` is empty for a FAILURE code, which does not have one - a
+    failure is not a finding graded against a query, it is pqtools stopping.
+    Round 26: this was a second dict keyed by the same codes, read through
+    `DIAGNOSTIC_SEVERITY.get(code, "")`, so a lint code present in one table
+    and absent from the other printed "lint diagnostic" instead of its
+    severity and reported `"severity": ""` over JSON - a quiet wrong answer
+    where the missing key should have been loud. One table cannot drift from
+    itself.
+    """
+
     title: str
     means: str
     fix: str
+    severity: str = ""
 
 
 DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
@@ -158,6 +171,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
             "Look just before that position for a missing comma between "
             "steps, an unclosed bracket or quote, or a stray word."
         ),
+        severity="error",
     ),
     "M001": DiagnosticHelp(
         title="two steps share one name",
@@ -166,6 +180,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
             "keeps one of them, so the other step's work is thrown away."
         ),
         fix="Rename one of them.",
+        severity="error",
     ),
     "M002": DiagnosticHelp(
         title="the web address is built, not written out",
@@ -178,6 +193,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
             "Write the address out in full where you can. If it genuinely "
             "has to vary, be sure nothing outside the query controls it."
         ),
+        severity="warning",
     ),
     "M003": DiagnosticHelp(
         title="a password or key is typed into the query",
@@ -189,6 +205,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
         fix=(
             "Take the value out of the query and pass it from the environment instead."
         ),
+        severity="warning",
     ),
     "M004": DiagnosticHelp(
         title="nothing uses this step",
@@ -197,6 +214,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
             "any other step that is."
         ),
         fix=("Delete it, or connect it to the chain. As written it changes nothing."),
+        severity="warning",
     ),
     "M005": DiagnosticHelp(
         title="a name nothing defines",
@@ -208,6 +226,7 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
             "Usually a misspelled step name, or a step that was deleted. "
             "Check the spelling against the step it should point at."
         ),
+        severity="warning",
     ),
     "M006": DiagnosticHelp(
         title="where the data comes in",
@@ -219,22 +238,8 @@ DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
             "Nothing. This is an inventory line, not a problem: it is here "
             "so every source a query touches is visible in one list."
         ),
+        severity="info",
     ),
-}
-
-
-# The severity each code is emitted with, so `pq explain M003` can say
-# "warning" without the reader having to produce one first. Kept beside the
-# help table on purpose: a code that gains an entry in one and not the other
-# is caught by test_every_emitted_diagnostic_code_is_explained.
-DIAGNOSTIC_SEVERITY: dict[str, str] = {
-    "M_PARSE_ERROR": "error",
-    "M001": "error",
-    "M002": "warning",
-    "M003": "warning",
-    "M004": "warning",
-    "M005": "warning",
-    "M006": "info",
 }
 
 
@@ -253,17 +258,16 @@ DIAGNOSTIC_SEVERITY: dict[str, str] = {
 # each other by test_the_failure_code_table_matches_the_documented_one, so
 # neither can quietly grow a code the other lacks.
 FAILURE_HELP: dict[str, DiagnosticHelp] = {
-    "M_PARSE_ERROR": DiagnosticHelp(
-        title="the query is not valid Power Query",
-        means=(
-            "Microsoft's own parser could not read the source, so nothing "
-            "else could run on it."
-        ),
-        fix=(
-            "Look just before the reported position - that is where the "
-            "parser gave up, usually a step or two after the real mistake."
-        ),
-    ),
+    # The SAME object as the lint table's, not a second wording of it.
+    # Round 26: these were two entries with different prose, and only the
+    # lint one could ever be shown - `diagnostic_help()` is consulted first,
+    # so this one was dead the day it was written and had already drifted
+    # ("the query is not valid Power Query" / a different fix). A parser
+    # failure is genuinely both things - `check()` reports it as a finding
+    # and `evaluate()` raises it - so it belongs in both tables, but a code
+    # has one meaning, so both tables point at one entry.
+    # `test_a_code_in_both_tables_has_one_entry` holds this.
+    "M_PARSE_ERROR": DIAGNOSTIC_HELP["M_PARSE_ERROR"],
     "M_EVAL_ERROR": DiagnosticHelp(
         title="the query started running and hit an error",
         means=(

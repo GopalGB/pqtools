@@ -11,6 +11,7 @@ import glob
 import io
 import json
 import os
+import re
 import stat
 import sys
 import textwrap
@@ -22,7 +23,8 @@ from . import catalog, containers
 from .builtins._shared import _DeferredRows, _type_name
 from .containers import ContainerError
 from .core import (
-    DIAGNOSTIC_SEVERITY,
+    DIAGNOSTIC_HELP,
+    FAILURE_HELP,
     Diagnostic,
     MQueryError,
     _snapshot,
@@ -833,6 +835,24 @@ def _run_diff(args: argparse.Namespace) -> int:
     return 0 if not diff else 1
 
 
+# A pqtools error code, by shape: an all-caps word with an underscore in it.
+# Deliberately not a list of the codes - the tables are that, and this has to
+# recognise a code that does NOT appear in them, which is the whole point.
+#
+# The first version of this was `M_[A-Z0-9_]+|NODE_ERROR|MQUERY_ERROR`, which
+# is a list of today's codes wearing a regex costume: it missed `NODE_ERROR2`
+# and every future code not starting `M_`, and it matched a bare `M_`, which
+# names nothing. Shape, not enumeration.
+#
+# Safe because no documented M name contains an underscore and none is
+# all-caps (checked against all 635 by
+# `test_a_code_shaped_name_is_never_answered_as_a_function_name`); M names are
+# dotted PascalCase, and `.` is not in the class. A bare `M_` is deliberately
+# NOT code-shaped - it carries no code name, and it is a legal M identifier,
+# so the function-name answer is the right one for it.
+_CODE_SHAPED = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+
+
 def _run_explain(args: argparse.Namespace) -> int:
     """``pq explain NAME`` - why pqtools refuses NAME, or that it does not.
 
@@ -856,7 +876,6 @@ def _run_explain(args: argparse.Namespace) -> int:
     code = name.upper()
     code_help = diagnostic_help(code)
     kind = "lint diagnostic"
-    severity = DIAGNOSTIC_SEVERITY.get(code, "")
     if code_help is None:
         # Round 25: only the lint table was consulted, so every FAILURE code -
         # M_IO_ERROR, M_EVAL_ERROR, NODE_ERROR and nine others - fell through
@@ -865,8 +884,12 @@ def _run_explain(args: argparse.Namespace) -> int:
         # wrong answer, not a gap, and llms.txt promised otherwise.
         code_help = failure_help(code)
         kind = "failure"
-        severity = ""
     if code_help is not None:
+        # Round 26: this was `DIAGNOSTIC_SEVERITY.get(code, "")` against a
+        # second dict, so a lint code missing from that dict silently
+        # printed "lint diagnostic" and reported `"severity": ""`. The
+        # severity is now carried by the entry itself and cannot be absent.
+        severity = code_help.severity
         # A lint code shows its severity ("M003 (warning)"); a failure code
         # has none, so it says what it is ("M_IO_ERROR (failure)"). Printing
         # "warning lint diagnostic" said the same thing twice.
@@ -886,7 +909,11 @@ def _run_explain(args: argparse.Namespace) -> int:
         else:
             print(f"{code} ({label}) - {code_help.title}")
             print()
-            for label, text in (
+            # `heading`, not `label`: `label` is the severity-or-kind used
+            # in the line above, and reusing the name for the two prose
+            # headings meant one identifier held two meanings sixteen lines
+            # apart, in the middle of the branch that prints both.
+            for heading, text in (
                 ("What it means:", code_help.means),
                 ("What to do:   ", code_help.fix),
             ):
@@ -894,13 +921,29 @@ def _run_explain(args: argparse.Namespace) -> int:
                     textwrap.fill(
                         text,
                         width=76,
-                        initial_indent=f"{label} ",
-                        subsequent_indent=" " * (len(label) + 1),
+                        initial_indent=f"{heading} ",
+                        subsequent_indent=" " * (len(heading) + 1),
                     )
                 )
         return 0
 
-    if name in BUILTINS:
+    if _CODE_SHAPED.match(code):
+        # Round 26: llms.txt promised "It never answers a real code as though
+        # it were an unrecognised function name", and only the test's
+        # derivation enforced it - the code itself had no idea. So
+        # `pq explain M_FUTURE_ERROR` answered "may be a typo ... a query
+        # name, a variable, a record field", which is true of no code that
+        # will ever exist. No documented M name contains an underscore or is
+        # all-caps, so this shape is decidable without guessing: if it looks
+        # like a code and is not one, say exactly that, and say which codes
+        # this version does report rather than sending the reader to a doc.
+        known = sorted(set(DIAGNOSTIC_HELP) | set(FAILURE_HELP))
+        message = (
+            f"{code} is not a code this version of pqtools reports. The "
+            f"codes it does report are: {', '.join(known)}."
+        )
+        supported = False
+    elif name in BUILTINS:
         message = f"{name} is implemented by pqtools - it is not refused."
         supported = True
     else:

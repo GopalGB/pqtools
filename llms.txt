@@ -160,11 +160,17 @@ not failures of pqtools. `pq check` exits 2 if any has severity `error`.
 
 `pq explain M003` prints what the code means and what to do, as JSON with
 `--json` (`{"code", "kind", "severity", "title", "means", "fix"}`, where `kind`
-is `lint diagnostic` or `failure`). `pq explain` takes **any** of the three
-things a user can be holding: a lint code from the table above, a FAILURE code
-from the table before it (`pq explain M_IO_ERROR`), or an M function name
-(`pq explain Table.FuzzyNestedJoin`). It never answers a real code as though it
-were an unrecognised function name.
+is `lint diagnostic` or `failure`, and `severity` is the lint severity from the
+table above or `""` for a failure code, which does not have one). `pq explain`
+takes **any** of the three things a user can be holding: a lint code from the
+table above, a FAILURE code from the table before it (`pq explain M_IO_ERROR`),
+or an M function name (`pq explain Table.FuzzyNestedJoin`). It never answers a
+real code as though it were an unrecognised function name, and a name that is
+CODE_SHAPED but is not a code this version reports (`pq explain
+M_FUTURE_ERROR`) is told exactly that, with the list of codes that do exist -
+never that it "may be a typo ... a query name, a variable, a record field",
+which is true of no code. A different JSON shape, `{"name", "supported",
+"message"}`, answers anything that is not a code.
 
 Human-readable `pq check` output prints the machine-parseable
 `file:line:column: severity code: message` line for every finding, plus one

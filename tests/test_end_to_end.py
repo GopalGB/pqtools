@@ -1552,7 +1552,7 @@ def test_every_diagnostic_code_that_can_be_emitted_has_an_explanation() -> None:
     and nothing would notice. This derives the codes from `check()` itself
     rather than from a hand-kept list, so the two cannot separate.
     """
-    from pqtools.core import DIAGNOSTIC_HELP, DIAGNOSTIC_SEVERITY, check
+    from pqtools.core import DIAGNOSTIC_HELP, FAILURE_HELP, check
 
     # BOTH branches of check(): the rule loop, and the ParseError branch that
     # only fires on source the parser rejects. The first version of this guard
@@ -1569,15 +1569,32 @@ def test_every_diagnostic_code_that_can_be_emitted_has_an_explanation() -> None:
     missing = sorted(code for code in emitted if code not in DIAGNOSTIC_HELP)
     assert not missing, f"emitted with no plain-English entry: {missing}"
 
-    # The severity table is consulted by `pq explain`, which never sees a
-    # Diagnostic object, so it can drift out of the help table independently.
-    assert set(DIAGNOSTIC_HELP) == set(DIAGNOSTIC_SEVERITY)
+    # `pq explain` prints a severity but never sees a Diagnostic object, so
+    # what it prints has to be checked against what `check()` really emits.
+    # Round 26: this severity used to live in a SECOND dict keyed by the same
+    # codes and was read with `.get(code, "")`, so the only thing standing
+    # between a missing key and a silently blank severity was the set
+    # equality this assertion used to make. It is now a field on the entry -
+    # structurally impossible to omit - so what is left to check is the one
+    # thing a shared table cannot enforce: that the value is TRUE.
     everything = list(check(_ALL_SIX, "query.pq")) + list(
         check("let A = = 1 in A", "bad.pq")
     )
     for code in emitted:
         actual = {item.severity for item in everything if item.code == code}
-        assert DIAGNOSTIC_SEVERITY[code] in actual, (code, actual)
+        assert DIAGNOSTIC_HELP[code].severity in actual, (code, actual)
+
+    # A lint code has a severity; a failure has none. Both halves matter: an
+    # empty severity makes `pq explain` fall back to printing the KIND, so a
+    # lint code that lost its severity would print "M003 (lint diagnostic)"
+    # and look deliberate.
+    for code, entry in DIAGNOSTIC_HELP.items():
+        assert entry.severity, f"{code} has no severity"
+    for code, entry in FAILURE_HELP.items():
+        if code not in DIAGNOSTIC_HELP:
+            assert not entry.severity, (
+                f"failure {code} claims severity {entry.severity}"
+            )
 
     for code, entry in DIAGNOSTIC_HELP.items():
         assert entry.means.endswith("."), code
@@ -1756,11 +1773,26 @@ def _every_code_the_cli_can_show(tmp_path: Path) -> set[str]:
     from pqtools.cli import main
     from pqtools.core import MQueryError, check
 
+    # Round 26: this was `except Exception: pass`, which is the one thing a
+    # derivation must not do - a module that stops importing takes its error
+    # classes out of the derived set, and every guard built on that set stays
+    # green while a real code loses its plain-English entry.
+    #
+    # The swallow was there for "optional extras may be absent". Measured:
+    # every third-party import in this package (openpyxl, pandas, pyarrow) is
+    # already INSIDE a function, so no pqtools module can fail to import
+    # because an extra is missing. The clause was protecting against a
+    # hazard that cannot happen while hiding every hazard that can - a
+    # syntax error, a circular import, a module that raises at import time.
+    # So there is no `except`: if a module will not import, that is the
+    # finding, and ModuleNotFoundError already names the package.
+    imported = 0
     for module in pkgutil.walk_packages(pqtools.__path__, "pqtools."):
-        try:
-            importlib.import_module(module.name)
-        except Exception:  # noqa: BLE001 - optional extras may be absent
-            pass
+        importlib.import_module(module.name)
+        imported += 1
+    # The instrument itself: a walk that imports nothing would make every
+    # assertion below pass by finding nothing to check.
+    assert imported >= 20, f"the module walk only imported {imported} modules"
 
     codes = {item.code for item in check(_ALL_SIX, "query.pq")}
     codes |= {item.code for item in check("let A = = 1 in A", "bad.pq")}
@@ -1812,6 +1844,25 @@ def test_every_code_the_cli_can_show_a_user_has_a_plain_english_entry(
     missing = sorted(code for code in codes if code not in explained)
     assert not missing, f"reachable codes with no plain-English entry: {missing}"
 
+    # Round 26: the assertion above only ran code -> entry, so an INVENTED
+    # code - one added to FAILURE_HELP and to llms.txt's table and raised by
+    # nothing - satisfied it, satisfied the llms.txt set equality (both sides
+    # were edited), and satisfied the "is this entry what a user is shown"
+    # check (`pq explain` will happily print any entry it holds). Three nets,
+    # all forward-facing, none of which asks whether the code exists.
+    #
+    # These are the same set, so say so. If a new code is genuinely reachable
+    # by a path this derivation cannot see - `M_IO_ERROR` was, until the
+    # OSError above was provoked to reveal it - extend the derivation to
+    # provoke it. Deleting this assertion to get green would restore exactly
+    # the hole it closes.
+    invented = sorted(code for code in explained if code not in codes)
+    assert not invented, (
+        f"explained codes nothing can report: {invented}. Either the code is "
+        "unreachable and its entry is fiction, or the derivation above cannot "
+        "see the path that reports it - find out which."
+    )
+
 
 def test_pq_explain_never_calls_a_real_code_an_unrecognized_function(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -1845,9 +1896,133 @@ def test_the_failure_code_table_matches_the_documented_one() -> None:
     )
     start = text.index("| Code | Meaning | What to do |")
     end = text.index("\n\n", start)
-    documented = set(re.findall(r"^\| `([A-Z_]+)`", text[start:end], re.M))
+    # `[A-Z0-9_]+`, not `[A-Z_]+`: the lint codes are M001..M006, and the
+    # same parser is used on their table below. With the digit class missing
+    # every one of them read as "not a row", so the lint table could have
+    # been empty and the assertion would still have had rows to compare.
+    documented = set(re.findall(r"^\| `([A-Z0-9_]+)`", text[start:end], re.M))
     assert documented, "llms.txt failure table stopped parsing"
     assert documented == set(FAILURE_HELP), {
         "only in llms.txt": sorted(documented - set(FAILURE_HELP)),
         "only in FAILURE_HELP": sorted(set(FAILURE_HELP) - documented),
     }
+
+
+def test_a_code_in_both_tables_has_one_entry() -> None:
+    """The round-26 MEDIUM: `M_PARSE_ERROR` had two entries and one was dead.
+
+    `_run_explain` consults `diagnostic_help()` first, so a code present in
+    both tables can only ever show the LINT entry. The failure entry was
+    therefore unreachable from the day it was written - and had already
+    drifted, carrying a different title and a different fix. Nothing noticed,
+    because the union assertion above only asks whether a code has AN entry.
+    """
+    from pqtools.core import DIAGNOSTIC_HELP, FAILURE_HELP
+
+    for code in set(DIAGNOSTIC_HELP) & set(FAILURE_HELP):
+        assert DIAGNOSTIC_HELP[code] is FAILURE_HELP[code], (
+            f"{code} has two entries; only the lint one can ever be shown"
+        )
+
+
+def test_every_explained_code_is_the_answer_a_user_actually_gets(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The round-26 LOW: nothing proved the REVERSE of the coverage guard.
+
+    Every existing check runs code -> entry: does this reachable code have an
+    explanation? An entry that no code reaches, or that a second entry
+    shadows, satisfies all of them. Run the other way, against the CLI rather
+    than the tables, this finds both: an invented code prints nothing a user
+    can reach, and a shadowed one prints somebody else's words.
+    """
+    from pqtools.cli import main
+    from pqtools.core import DIAGNOSTIC_HELP, FAILURE_HELP
+
+    for label, table in (
+        ("DIAGNOSTIC_HELP", DIAGNOSTIC_HELP),
+        ("FAILURE_HELP", FAILURE_HELP),
+    ):
+        for code, entry in table.items():
+            capsys.readouterr()
+            assert main(["explain", code]) == 0, code
+            out = capsys.readouterr().out
+            assert entry.title in out, (
+                f"{label}[{code}] is dead: `pq explain {code}` never prints "
+                f"its title {entry.title!r}. Printed: {out!r}"
+            )
+            assert entry.means in " ".join(out.split()), (label, code, out)
+
+
+def test_a_code_shaped_name_is_never_answered_as_a_function_name(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The round-26 MEDIUM: llms.txt's promise was enforced only by a test.
+
+    "It never answers a real code as though it were an unrecognised function
+    name" held for the codes this version happens to report, because the
+    guard above derives exactly those. A code from a NEWER pqtools, or a
+    typo'd one, still got "may be a typo, an internal or undocumented name,
+    or something outside the M standard library (a query name, a variable, a
+    record field)" - four suggestions, none of which is ever true of a code.
+    The shape is decidable, so the code decides it rather than the test.
+    """
+    from pqtools.cli import main
+
+    for name in ("M_FUTURE_ERROR", "m_future_error", "NODE_ERROR2", "MQUERY_ERROR2"):
+        capsys.readouterr()
+        assert main(["explain", name]) == 0, name
+        out = capsys.readouterr().out
+        assert "not a name pqtools recognizes" not in out, (name, out)
+        assert "is not a code this version of pqtools reports" in out, (name, out)
+        # It says what it DOES report, so the reader is not sent to a doc.
+        assert "M_IO_ERROR" in out and "M001" in out, (name, out)
+
+    # And the shape does not swallow a genuine M name. No documented name
+    # contains an underscore or is all-caps, which is what makes the test
+    # above safe; this is the half that proves it.
+    from pqtools.catalog import DOCUMENTED
+    from pqtools.cli import _CODE_SHAPED
+
+    caught = [n for n in DOCUMENTED if _CODE_SHAPED.match(n.upper())]
+    assert not caught, f"code shape swallows real M names: {caught}"
+
+    # The other boundary, pinned so it is a decision and not an accident: a
+    # bare `M_` names no code and IS a legal M identifier (`let M_ = 1 in M_`
+    # parses), so it keeps the function-name answer. The first version of the
+    # shape matched it, which would have told a user their variable was "not
+    # a code this version reports".
+    assert not _CODE_SHAPED.match("M_")
+    capsys.readouterr()
+    assert main(["explain", "M_"]) == 0
+    assert "not a name pqtools recognizes" in capsys.readouterr().out
+
+
+def test_the_lint_code_table_matches_the_documented_one() -> None:
+    """The other half of the failure-table check, which only had one half.
+
+    llms.txt lists the lint codes WITH their severities, and nothing compared
+    that table to the source of truth. It is also the table whose codes carry
+    digits, so it is the one the `[A-Z_]+` row pattern silently read as
+    empty - a parser that finds no rows cannot disagree with anything.
+    """
+    from pqtools.core import DIAGNOSTIC_HELP
+
+    text = (Path(__file__).resolve().parent.parent / "llms.txt").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("| Code | Severity | Means |")
+    end = text.index("\n\n", start)
+    rows = re.findall(r"^\| `([A-Z0-9_]+)` \| (\w+) \|", text[start:end], re.M)
+    assert len(rows) == len(DIAGNOSTIC_HELP), (rows, sorted(DIAGNOSTIC_HELP))
+    documented = dict(rows)
+    assert documented.keys() == DIAGNOSTIC_HELP.keys(), {
+        "only in llms.txt": sorted(documented.keys() - DIAGNOSTIC_HELP.keys()),
+        "only in DIAGNOSTIC_HELP": sorted(DIAGNOSTIC_HELP.keys() - documented.keys()),
+    }
+    for code, severity in documented.items():
+        assert severity == DIAGNOSTIC_HELP[code].severity, (
+            code,
+            severity,
+            DIAGNOSTIC_HELP[code].severity,
+        )
