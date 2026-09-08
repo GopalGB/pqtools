@@ -2,5 +2,5 @@
 # staged:  5 files changed, 163 insertions(+), 26 deletions(-)
 # src/pqtools/_bridge.cjs: unchanged in d53eb94..604b79c, not stubbed, not in the diff
 # package-lock.json: unchanged in d53eb94..604b79c, not stubbed, not in the diff
-# invoked 2026-09-08T04:19:33Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# invoked 2026-09-08T04:21:54Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
 
