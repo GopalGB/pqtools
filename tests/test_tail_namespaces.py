@@ -146,6 +146,7 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     longest this test can now take is about 32 seconds.
     """
     import time
+    from types import CodeType
 
     from pqtools.builtins import _misc
 
@@ -158,7 +159,7 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # alternatives were measured failing on one of those two shapes.
     invoke_after = _misc._function_invoke_after
 
-    def called_names(code: object) -> set[str]:
+    def called_names(code: CodeType) -> set[str]:
         """Every name this code object references, nested ones included.
 
         Round 41: the pin was on the TOP-LEVEL `co_names` only. A call inside
@@ -175,11 +176,9 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
         stack = [code]
         while stack:
             current = stack.pop()
-            found |= set(current.co_names)  # type: ignore[attr-defined]
+            found |= set(current.co_names)
             stack += [
-                const
-                for const in current.co_consts  # type: ignore[attr-defined]
-                if hasattr(const, "co_names")
+                const for const in current.co_consts if isinstance(const, CodeType)
             ]
         return found
 
@@ -208,12 +207,26 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # module-level import and a NESTED call, so it exercises the global
     # binding, the attribute, and the `co_consts` walk together: every
     # property the assertion above rests on.
-    control = compile(
-        _CONTROL_SOURCE,
-        "<sleep-control>",
-        "exec",
-    )
-    assert {"time", "sleep"} <= called_names(control)
+    control = compile(_CONTROL_SOURCE, "<sleep-control>", "exec")
+
+    # Round 42: assert over the CHILDREN only. `import time` at module level
+    # emits IMPORT_NAME, so `"time"` sits in the ROOT tuple - measured,
+    # `control.co_names == ("time", "_outer")` - and a check over the whole
+    # walk is satisfied for `"time"` by the import statement rather than by
+    # `_inner`'s LOAD_GLOBAL. It would still pass if LOAD_GLOBAL stopped
+    # contributing, which is precisely the property it exists to prove. The
+    # children-only union is `{"time", "sleep"}` where `"time"` can ONLY come
+    # from the nested global load (`_outer.co_names == ()`,
+    # `_inner.co_names == ("time", "sleep")`), so all three properties - the
+    # global binding, the attribute, and the `co_consts` walk - are each
+    # load-bearing here.
+    children = {
+        name
+        for const in control.co_consts
+        if isinstance(const, CodeType)
+        for name in called_names(const)
+    }
+    assert {"time", "sleep"} <= children, sorted(children)
 
     # Behavioural. The one-time `node --version` probe is paid here so it
     # lands outside both measurements instead of on whichever runs first -

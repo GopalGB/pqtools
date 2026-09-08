@@ -4107,9 +4107,16 @@ lookup only, never the global load the real defect would use
 "guard measured where the defect is not" pattern in miniature, inside a
 control written to prove an instrument.
 
-The control now compiles a module-level `import time` with a NESTED call, so
-one control exercises all three properties the assertion rests on: the global
-binding, the attribute, and the `co_consts` walk.
+The control now compiles a module-level `import time` with a NESTED call.
+
+> **CORRECTION, round 42.** As first written it did NOT exercise the
+> global-binding half it claimed. `import time` at module level emits
+> `IMPORT_NAME`, so `"time"` sits in the ROOT tuple - measured,
+> `control.co_names == ("time", "_outer")` - and asserting over the whole walk
+> is satisfied for `"time"` by the import statement, not by `_inner`'s
+> `LOAD_GLOBAL`. The round-40 LOW was restated, not closed, by the same
+> mechanism this very entry documents two paragraphs above. Round 42 asserts
+> over the CHILDREN only, where `"time"` can arrive by no other route.
 
 ### Controls
 
@@ -4141,3 +4148,50 @@ has now been mis-specified in five distinct ways: an absolute wall clock, an
 unbounded delay, a name-only check, a comment-satisfied check, and a
 top-level-only walk. That is worth stating plainly rather than reading the
 round count as instability in the product.
+
+## Round 42 - `f62da00..8f51417`, verdict **SHIP**, both taken
+
+`src/` untouched. Both findings are in the guard, and the first is the round-40
+LOW restated rather than closed - by the very mechanism round 41's own entry
+had just written down two paragraphs above it.
+
+### MEDIUM - the control was satisfied by the import, not by the load it claimed
+
+Round 41's control asserted `{"time","sleep"} <= called_names(control)` over
+the WHOLE walk. Measured: `control.co_names == ("time", "_outer")` - a
+module-level `import time` emits `IMPORT_NAME`, so `"time"` is in the ROOT
+tuple, and the assertion is satisfied for it by the import statement, never by
+`_inner`'s `LOAD_GLOBAL`. The global-binding half it was written to prove was
+not being measured at all.
+
+Asserts over the CHILDREN only now (`_outer.co_names == ()`,
+`_inner.co_names == ("time","sleep")`), where `"time"` can arrive by no other
+route.
+
+### LOW - two inert `# type: ignore`
+
+`mypy` is configured `files = ["src"]`, so this file is never type-checked, and
+ruff's rule set has no unused-ignore check. Both ignores read as "a checker
+verified this" where none ran, and they existed only because the parameter was
+typed `object`. Now `CodeType` with `isinstance` - which is also tighter than
+the `hasattr` duck-type it replaces.
+
+### Controls
+
+| # | What was measured | Observable | Verdict |
+|---|---|---|---|
+| S1 | a control source calling `sleep` but NOT on a global `time` (`d.sleep()`) | children-only check **False**, whole-walk check **True** | the shipped assertion discriminates; round 41's did not |
+| S2 | the `co_consts` walk deleted | - | RED, then GREEN restored |
+
+**S1 took two attempts and the first was wrong in a way its own output showed.**
+I first mutated the control source by deleting the call entirely; both checks
+then failed, and I printed a conclusion ("the whole-walk version passes BOTH
+ways") that the numbers on the line above it contradicted. Removing the call
+removes `sleep` too, so it cannot isolate the `"time"` question. The
+discriminating shape is one where `sleep` is still called but not on a global
+`time`. **A control has to fail for the reason under test, not merely fail** -
+which is the same sentence as "a guard has to pass for the reason it names",
+seen from the other side.
+
+**S2 also took two attempts**, the first with an anchor `ruff format` had
+rewrapped; its two identical GREEN results are what said so.

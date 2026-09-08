@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range f62da00..8f51417
+# Verdict SHIP. Both findings were taken in round 42; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 42".
+#
+# Exact claude-opus-5 wrapper review - range f62da00..8f514170ba7ab3594d3f9cf82e10078859f19eba (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 204 insertions(+), 22 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in f62da00..8f514170ba7ab3594d3f9cf82e10078859f19eba, not stubbed, not in the diff
+# package-lock.json: unchanged in f62da00..8f514170ba7ab3594d3f9cf82e10078859f19eba, not stubbed, not in the diff
+# invoked 2026-09-08T15:55:32Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified before writing (3.11.15, `PYTHONPATH=src`): `_function_invoke_after.__code__.co_names` is exactly the pinned seven, it has **no** nested code objects, and the new walk returns the identical set — so the tuple→set change and the `co_consts` walk are both green for a real reason, not by accident. The walk does genuinely close the round-40 hole: with the walk removed, the control's `"sleep"` disappears and the assertion goes red. `import time` is still used (line 224 `time.monotonic()`), so removing `_sleeps` leaves no dead import.
+
+- **MEDIUM — tests/test_tail_namespaces.py:216** — the control does not measure the global-binding half it claims at line 209 (and in the audit's "all three properties" sentence). Measured: `compile(_CONTROL_SOURCE, ...).co_names == ('time', '_outer')` — `import time` emits IMPORT_NAME/STORE_NAME, so `'time'` is in the **root** tuple. `{"time","sleep"} <= called_names(control)` is therefore satisfied for `'time'` by the import statement, not by `_inner`'s LOAD_GLOBAL; if LOAD_GLOBAL stopped contributing to `co_names` the control would still pass. That is the same defeating mechanism the audit itself documents two paragraphs earlier ("`import time` inside the function emits `IMPORT_NAME`, which DOES touch the outer `co_names`") — the round-40 LOW is restated, not closed. Fix: assert over the children-only union, which is `{'time','sleep'}` where `'time'` can only come from the nested global load — `children = {n for k in control.co_consts if hasattr(k, "co_names") for n in called_names(k)}; assert {"time","sleep"} <= children`. Measured: `_outer.co_names == ()`, `_inner.co_names == ('time','sleep')`, so this passes today and goes red if any of the three properties breaks. Correct the claim at .planning/AUDIT-2026-09-05-CLOSEOUT.md ("all three properties") in the same edit.
+
+- **LOW — tests/test_tail_namespaces.py:178,181** — both `# type: ignore[attr-defined]` are inert: mypy is `files = ["src"]` (pyproject.toml:138), so this file is never type-checked, and ruff's `select = ["E","F","I","UP","B"]` has no unused-ignore rule to catch it. They read as "a checker verified this" where none ran, and they only exist because the parameter is typed `object`. Fix: `def called_names(code: CodeType) -> set[str]` with `isinstance(const, CodeType)` instead of `hasattr` (also tighter — `hasattr` duck-types on a constant class it does not name), and drop both ignores.
+
+Neither is a shipped defect; `src/` is untouched and the structural guard is strictly stronger than round 40's.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
