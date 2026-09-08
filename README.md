@@ -209,7 +209,9 @@ diff = update_file(path, format_source, write=True)  # atomic write
 | `M005` | warning | a name nothing defines - usually a typo | unresolved unqualified reference |
 | `M006` | info | where the data comes in (not a problem) | source-function inventory (`*.Contents` dependency) |
 
-Ask for the long version, including what to do about it:
+Ask for the long version, including what to do about it. `pq explain` takes
+any of the three things you can be holding - a lint code, a failure code
+(`pq explain M_IO_ERROR`), or an M function name:
 
 ```bash
 pq explain M003

@@ -159,8 +159,12 @@ not failures of pqtools. `pq check` exits 2 if any has severity `error`.
 | `M006` | info | inventory of where the query reads from (`*.Contents`). Not a defect |
 
 `pq explain M003` prints what the code means and what to do, as JSON with
-`--json` (`{"code", "severity", "title", "means", "fix"}`). `pq explain` takes
-either a diagnostic code or an M function name.
+`--json` (`{"code", "kind", "severity", "title", "means", "fix"}`, where `kind`
+is `lint diagnostic` or `failure`). `pq explain` takes **any** of the three
+things a user can be holding: a lint code from the table above, a FAILURE code
+from the table before it (`pq explain M_IO_ERROR`), or an M function name
+(`pq explain Table.FuzzyNestedJoin`). It never answers a real code as though it
+were an unrecognised function name.
 
 Human-readable `pq check` output prints the machine-parseable
 `file:line:column: severity code: message` line for every finding, plus one

@@ -2753,9 +2753,12 @@ guarantees is safe).
 **A control script destroyed uncommitted work.** The cleanup step for one
 control ran `git checkout tests/test_end_to_end.py`, which restored the file to
 HEAD and deleted the three new tests and the guard widening - none of which
-were committed. The suite went from 72 to 68 and the two controls that
-followed were measuring a file that no longer contained what they were
-controlling. Re-applied from the edit script, and every subsequent control
+were committed. The suite went from 72 collected to 69 collected - 68 passed
+and 1 failed - and the two controls that followed were measuring a file that
+no longer contained what they were controlling. (The first version of this
+paragraph said "72 to 68", comparing a collected count against a passed count.
+Corrected after round 25 caught it: in a repo where the recorded numbers are
+the evidence, that is not a rounding slip.) Re-applied from the edit script, and every subsequent control
 restored from a scratchpad copy instead. `git checkout` is not a cleanup
 command when the work is uncommitted.
 
@@ -2777,3 +2780,80 @@ Four behavioural, each red with the defect and green after restoring:
 `M_PARSE_ERROR` dropped from the help table - dropped from both tables with the
 guard widened - the batch dedupe reverted to per-file - and, as the negative
 half of the second, the narrowed guard shown green against the same defect.
+
+---
+
+## Round 25 - `3000e35..dbd6f46`, verdict FIX-FIRST, four findings, all taken
+
+Round 24 fixed `pq explain` for one code. Round 25 found the same defect still
+live for twelve.
+
+### HIGH - every FAILURE code still answered as an unrecognised function name
+
+`_run_explain` consulted `DIAGNOSTIC_HELP` only, so each `M_*` failure code
+fell through to the function-name branch. Reproduced on this tree:
+
+    $ pq explain M_IO_ERROR
+    M_IO_ERROR is not a name pqtools recognizes as a documented Power Query
+    M function. It may be a typo, ...                            <- exit 0
+
+Same for `M_EVAL_ERROR`, `M_CONTAINER_ERROR`, `M_SAFE_WRITE_REFUSED`,
+`NODE_ERROR`, `MQUERY_ERROR` and the rest. Not hypothetical codes:
+`_run_check_batch` emits `M_IO_ERROR` at the user itself, and `llms.txt` had
+just been given a line promising `pq explain` takes "either a diagnostic code
+or an M function name" - which was false when it was written.
+
+**A wrong answer is worse than a gap.** A gap sends someone to the docs; this
+told them their real error code was probably a typo.
+
+`FAILURE_HELP` now carries all twelve, in plainer prose than the `llms.txt`
+table (which is written for an agent parsing error output rather than for a
+person), and `pq explain` consults both tables. The label was also simplified:
+a lint code shows its severity, `M003 (warning)`; a failure code has none and
+says what it is, `M_IO_ERROR (failure)`. The first version printed
+`M003 (warning lint diagnostic)`, which says the same thing twice.
+
+### MEDIUM - the guard was widened into a regime the defect still escaped
+
+Round 24 widened `test_every_diagnostic_code_that_can_be_emitted_has_an_
+explanation` from one branch of `check()` to two, closing the `M_PARSE_ERROR`
+hole - and the whole FAILURE family sat outside `check()` entirely.
+`M_IO_ERROR` in particular is built in `cli.py` from `getattr(error, "code",
+"M_IO_ERROR")` and never passes through `check()` at all.
+
+That is the regime error a fourth time (round 18: one of two size checks;
+round 19: a 3-entry fixture where SIGPIPE cannot occur; round 24: valid M only;
+here: `check()` only). The pattern is now explicit enough to name: **widening a
+guard to cover the case that just escaped it is not the same as asking what
+else is outside it.**
+
+The replacement derives the set from three runtime sources and no hand list:
+both branches of `check()`, every `MQueryError` subclass's `.code` walked at
+runtime, and - because the batch default is a literal in `cli.py`, not a class
+attribute - the code obtained by actually provoking an `OSError` through
+`pq check --json` on missing files.
+
+A second test asserts `FAILURE_HELP` and the `llms.txt` failure table hold the
+same code set. The prose differs on purpose; the code set cannot.
+
+### LOW x2
+
+`render_diagnostics` mutates a caller-owned set in place and is a public
+export - now stated in the docstring. And the closeout's "the suite went from
+72 to 68" compared a collected count against a passed count; the truth is 72
+collected to 69 collected, of which 68 passed and 1 failed. Corrected in
+place, because in this repo the recorded numbers are the evidence.
+
+### Controls
+
+Four behavioural, each red with the defect and green after restoring:
+`M_IO_ERROR` dropped from `FAILURE_HELP` · `pq explain` reverted to the lint
+table only · a code added to `FAILURE_HELP` that `llms.txt` does not document ·
+the batch path's `M_IO_ERROR` default changed to an undocumented code.
+
+The last was mis-specified on the first attempt and is recorded as such:
+`getattr(error, "code", "M_IO_ERROR")` appears **eight times** in `cli.py`, and
+the mutation hit the first occurrence, which is in a different function. The
+guard stayed green because nothing it exercises had changed. Re-run against the
+occurrence inside `_run_check_batch`, it goes red. A control that edits the
+wrong one of eight identical lines measures nothing.

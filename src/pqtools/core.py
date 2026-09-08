@@ -238,6 +238,158 @@ DIAGNOSTIC_SEVERITY: dict[str, str] = {
 }
 
 
+# The FAILURE codes - what pqtools reports when it stops, as opposed to the
+# lint codes above, which are findings ABOUT a query that ran.
+#
+# Round 25: `pq explain M_IO_ERROR` (and eleven others) fell through to the
+# function-name branch and answered "M_IO_ERROR is not a name pqtools
+# recognizes as a documented Power Query M function. It may be a typo" - an
+# actively wrong answer, while llms.txt promised `pq explain` takes "either a
+# diagnostic code or an M function name". Round 24 fixed exactly one of these
+# and left the rest, which is the same defect with a smaller blast radius.
+#
+# The prose here is deliberately shorter and plainer than the llms.txt table,
+# which is written for an agent parsing error output. Both are checked against
+# each other by test_the_failure_code_table_matches_the_documented_one, so
+# neither can quietly grow a code the other lacks.
+FAILURE_HELP: dict[str, DiagnosticHelp] = {
+    "M_PARSE_ERROR": DiagnosticHelp(
+        title="the query is not valid Power Query",
+        means=(
+            "Microsoft's own parser could not read the source, so nothing "
+            "else could run on it."
+        ),
+        fix=(
+            "Look just before the reported position - that is where the "
+            "parser gave up, usually a step or two after the real mistake."
+        ),
+    ),
+    "M_EVAL_ERROR": DiagnosticHelp(
+        title="the query started running and hit an error",
+        means=(
+            "The source was valid and pqtools began evaluating it, then "
+            "something in the query itself failed - a missing column, a value "
+            "of the wrong type, a division by zero."
+        ),
+        fix="The message names the step. Fix it the way you would in Power Query.",
+    ),
+    "M_EVAL_UNSUPPORTED": DiagnosticHelp(
+        title="the query needs something pqtools cannot do",
+        means=(
+            "A function or feature in this query is one pqtools has "
+            "deliberately not implemented, so it stopped rather than return "
+            "an answer that might be wrong."
+        ),
+        fix=(
+            "Run `pq explain <FunctionName>` on the name in the message to "
+            "see why. There is no flag that turns this into an answer."
+        ),
+    ),
+    "M_IO_BLOCKED": DiagnosticHelp(
+        title="the query tried to reach the network or a database",
+        means=(
+            "The query names a web address or a database, and reaching out is "
+            "off by default - the query decides the destination, not you."
+        ),
+        fix=(
+            "If you trust this query, re-run with --allow-net or --allow-db. "
+            "The message names the flag it needs."
+        ),
+    ),
+    "M_IO_ERROR": DiagnosticHelp(
+        title="a file could not be read or written",
+        means=(
+            "The path does not exist, is a directory, cannot be decoded as "
+            "UTF-8, or the operating system refused the read or write."
+        ),
+        fix="Check the path and its permissions. Nothing was changed.",
+    ),
+    "M_CONTAINER_ERROR": DiagnosticHelp(
+        title="the .pbix or .xlsx could not be opened",
+        means=(
+            "The file is not a shape pqtools recognises, or it holds no Power "
+            "Query at all - a workbook nobody has added a query to has "
+            "nothing for pqtools to read."
+        ),
+        fix=(
+            "Open it in Excel or Power BI and confirm it really contains "
+            "queries. pqtools will not create the container for you."
+        ),
+    ),
+    "M_SAFE_WRITE_REFUSED": DiagnosticHelp(
+        title="pqtools will not write to that file",
+        means=(
+            "The target is not a plain single file it is willing to replace - "
+            "a symlink, something that is not a regular file, one with extra "
+            "hard links, or an input over 10 MiB. Read commands report this "
+            "too, because those are facts about the target, not the write."
+        ),
+        fix=(
+            "Point it at a real file. Never work around it by writing the "
+            "file yourself. Nothing was changed."
+        ),
+    ),
+    "M_RENAME_REFUSED": DiagnosticHelp(
+        title="the rename could not be proven safe",
+        means=(
+            "`pq rename` only renames when it can prove nothing else breaks. "
+            "A reserved word, a name already in use, or a record field "
+            "anywhere in the file is enough to stop it."
+        ),
+        fix=(
+            "Choose another name, or make the edit by hand. It refuses rather "
+            "than half-renaming."
+        ),
+    ),
+    "M_ADAPTER_ERROR": DiagnosticHelp(
+        title="an optional external adapter failed",
+        means=(
+            "Something outside pqtools - the Fabric transport or the Windows "
+            "PQTest tool - returned nothing usable, timed out, or was "
+            "configured wrongly."
+        ),
+        fix=(
+            "The message names which adapter. A Fabric message is remote and "
+            "nothing local is wrong; a PQTest configuration message is local."
+        ),
+    ),
+    "NODE_ERROR": DiagnosticHelp(
+        title="Node.js is missing, or the parser bridge failed",
+        means=(
+            "Reading Power Query means running Microsoft's own parser, which "
+            "needs Node.js 22 or newer. Either it was not found, or the "
+            "bridge process itself timed out or its pipe broke."
+        ),
+        fix=(
+            "Install Node 22+, or point MQUERY_NODE at it. A timeout or pipe "
+            "message means nothing is wrong with your query - retry once."
+        ),
+    ),
+    "M_EXPORT_REFUSED": DiagnosticHelp(
+        title="the result cannot become a table without losing something",
+        means=(
+            "to_pandas / to_arrow / to_parquet stopped rather than produce a "
+            "frame that would read as data - a nested value, ragged rows, a "
+            "column mixing two types, or a missing optional library."
+        ),
+        fix=(
+            "The message names the column and what to do, usually expand or "
+            "select it in M first. Never fill the gap yourself."
+        ),
+    ),
+    "MQUERY_ERROR": DiagnosticHelp(
+        title="a typed failure with no more specific code",
+        means="Something pqtools refused, that does not fit the codes above.",
+        fix="Read the message - it says what it declined and why.",
+    ),
+}
+
+
+def failure_help(code: str) -> DiagnosticHelp | None:
+    """The plain-English entry for a FAILURE code, if there is one."""
+    return FAILURE_HELP.get(code)
+
+
 def diagnostic_help(code: str) -> DiagnosticHelp | None:
     """The plain-English entry for a diagnostic code, if there is one."""
     return DIAGNOSTIC_HELP.get(code)
@@ -264,6 +416,10 @@ def render_diagnostics(
     the set was per-call and therefore per-file, so `pq check 'src/**/*.pq'`
     - the README's own example - repeated every sentence once per matching
     file, which is the same defect at batch scale.
+
+    A passed-in `explained` is MUTATED IN PLACE and not returned - that is the
+    point of passing one, but it means a caller that also reads the set will
+    see it grow.
     """
     lines: list[str] = []
     if explained is None:

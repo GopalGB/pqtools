@@ -29,6 +29,7 @@ from .core import (
     check,
     dependencies,
     diagnostic_help,
+    failure_help,
     format_source,
     parse,
     rename,
@@ -852,14 +853,29 @@ def _run_explain(args: argparse.Namespace) -> int:
     # `pq explain`: `pq check` just printed `M003` at them. Answering only
     # for function names would send them to the README for the codes and to
     # the CLI for the functions, which is one lookup too many.
-    code_help = diagnostic_help(name.upper())
+    code = name.upper()
+    code_help = diagnostic_help(code)
+    kind = "lint diagnostic"
+    severity = DIAGNOSTIC_SEVERITY.get(code, "")
+    if code_help is None:
+        # Round 25: only the lint table was consulted, so every FAILURE code -
+        # M_IO_ERROR, M_EVAL_ERROR, NODE_ERROR and nine others - fell through
+        # to the function-name branch below and was answered with "is not a
+        # name pqtools recognizes as a documented Power Query M function". A
+        # wrong answer, not a gap, and llms.txt promised otherwise.
+        code_help = failure_help(code)
+        kind = "failure"
+        severity = ""
     if code_help is not None:
-        code = name.upper()
-        severity = DIAGNOSTIC_SEVERITY[code]
+        # A lint code shows its severity ("M003 (warning)"); a failure code
+        # has none, so it says what it is ("M_IO_ERROR (failure)"). Printing
+        # "warning lint diagnostic" said the same thing twice.
+        label = severity or kind
         if args.json:
             _print(
                 {
                     "code": code,
+                    "kind": kind,
                     "severity": severity,
                     "title": code_help.title,
                     "means": code_help.means,
@@ -868,7 +884,7 @@ def _run_explain(args: argparse.Namespace) -> int:
                 True,
             )
         else:
-            print(f"{code} ({severity}) - {code_help.title}")
+            print(f"{code} ({label}) - {code_help.title}")
             print()
             for label, text in (
                 ("What it means:", code_help.means),

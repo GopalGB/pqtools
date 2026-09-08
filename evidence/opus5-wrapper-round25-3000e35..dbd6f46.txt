@@ -1,0 +1,21 @@
+# Exact claude-opus-5 wrapper review - range 3000e35..dbd6f46 (bundle + lockfile shown as stub blobs)
+# staged:  6 files changed, 292 insertions(+), 9 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 3000e35..dbd6f46, not stubbed, not in the diff
+# package-lock.json: unchanged in 3000e35..dbd6f46, not stubbed, not in the diff
+# invoked 2026-09-08T03:01:03Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+**HIGH — src/pqtools/cli.py:855 — the round-24 HIGH is fixed for one code and still live for twelve.** `_run_explain` only consults `DIAGNOSTIC_HELP`, so every `M_*` failure code still falls through to the function-name branch. Verified on this tree: `pq explain M_IO_ERROR` / `M_EVAL_ERROR` / `M_CONTAINER_ERROR` / `M_SAFE_WRITE_REFUSED` each print *"…is not a name pqtools recognizes as a documented Power Query M function. It may be a typo…"* and exit 0. These are not hypothetical codes: `_run_check_batch` itself emits `M_IO_ERROR` at the user (cli.py:646-653), and llms.txt:131-146 documents all of them as the codes a user holds, under llms.txt:161-162 *"`pq explain` takes either a diagnostic code or an M function name"*, which is still false. Fix: before the `BUILTINS` lookup, match `^(M_[A-Z_]+|NODE_ERROR|MQUERY_ERROR)$` and either answer from a second table or say "that is a failure code, not a function name" plus where to read it, instead of answering as if it were M.
+
+**MEDIUM — tests/test_end_to_end.py:1555-1570 — the widened guard still runs only where the defect cannot appear.** It now unions both branches of `check()`, which closes the `M_PARSE_ERROR` hole, but its name and docstring claim "every diagnostic code that can be emitted". `pq check --json` over a batch emits `Diagnostic(code="M_IO_ERROR", …)` built in cli.py:646-651 (confirmed: `OSError` has no `.code`, so the `getattr` default is what fires), which never passes through `check()` and has no help entry. Same regime error the closeout names, one level out. Fix: drive the guard off the codes the CLI can put in front of a user (an explicit emitted-codes registry, asserted from both `core.check` and the `cli` error paths), not off `check()` alone.
+
+**LOW — src/pqtools/core.py:246 — `render_diagnostics` now mutates a caller-owned set in place and is a public `core` export.** A caller that passes a set it also reads gets it silently populated, and there is no return of the updated set. Fix: state "mutated in place" in the docstring signature line, or accept and return it.
+
+**LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:2755 — the recorded counts do not reconcile with the tree.** "The suite went from 72 to 68": the file collects 72 now and 69 at HEAD (54 → 57 `def test_`, none parametrized), so losing the three new tests gives 69. Fix: correct the number or name the fourth case that was lost, in a repo where recorded numbers are the evidence.
+
+Checked and clean: the batch dedupe is correct as claimed (reproduced on three files: one sentence, six `error M001:` lines, every filename present, both duplicate positions per file); `DIAGNOSTIC_SEVERITY[code]` is safe given the key-set equality assertion, and a `KeyError` there would at least be loud; the container `check` path (cli.py:1198) and the single-file path (cli.py:1233) are each one render call, so they need no shared set; the eight diagnostics tests pass on this tree; README:204 and llms.txt:133/153 already carried `M_PARSE_ERROR` before this diff, so the code is catching up to the docs rather than drifting from them.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

@@ -1736,3 +1736,118 @@ def test_pq_explain_answers_for_the_parse_error_code(
     assert "M_PARSE_ERROR (error)" in out, out
     assert "not a name pqtools recognizes" not in out, out
     assert "What to do:" in out, out
+
+
+def _every_code_the_cli_can_show(tmp_path: Path) -> set[str]:
+    """Every code that can reach a user, derived rather than listed.
+
+    Three sources, none of them a hand-kept list:
+      - `check()`, both branches (rule loop and ParseError)
+      - every `MQueryError` subclass's `.code`, walked at runtime
+      - the code `_run_check_batch` substitutes for a bare `OSError`, obtained
+        by actually provoking one - it is a literal in cli.py, not a class
+        attribute, so nothing but running it will reveal it
+    """
+    import importlib
+    import json as _json
+    import pkgutil
+
+    import pqtools
+    from pqtools.cli import main
+    from pqtools.core import MQueryError, check
+
+    for module in pkgutil.walk_packages(pqtools.__path__, "pqtools."):
+        try:
+            importlib.import_module(module.name)
+        except Exception:  # noqa: BLE001 - optional extras may be absent
+            pass
+
+    codes = {item.code for item in check(_ALL_SIX, "query.pq")}
+    codes |= {item.code for item in check("let A = = 1 in A", "bad.pq")}
+
+    def walk(cls: type) -> None:
+        for sub in cls.__subclasses__():
+            code = getattr(sub, "code", None)
+            if isinstance(code, str):
+                codes.add(code)
+            walk(sub)
+
+    walk(MQueryError)
+    base = getattr(MQueryError, "code", None)
+    if isinstance(base, str):
+        codes.add(base)
+
+    missing_a = tmp_path / "does-not-exist-a.pq"
+    missing_b = tmp_path / "does-not-exist-b.pq"
+    import contextlib
+    import io
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer), contextlib.suppress(SystemExit):
+        main(["check", str(missing_a), str(missing_b), "--json"])
+    payload = _json.loads(buffer.getvalue())
+    codes |= {row["code"] for row in payload}
+    return codes
+
+
+def test_every_code_the_cli_can_show_a_user_has_a_plain_english_entry(
+    tmp_path: Path,
+) -> None:
+    """The round-25 MEDIUM: the guard still ran where the defect could not appear.
+
+    Round 24 widened it from one branch of `check()` to two, which closed the
+    `M_PARSE_ERROR` hole - and left the whole FAILURE-code family outside it.
+    `pq explain M_IO_ERROR` answered "is not a name pqtools recognizes as a
+    documented Power Query M function", an actively wrong answer, for twelve
+    codes. `M_IO_ERROR` in particular is emitted by `_run_check_batch` itself
+    and never passes through `check()` at all.
+    """
+    from pqtools.core import DIAGNOSTIC_HELP, FAILURE_HELP
+
+    codes = _every_code_the_cli_can_show(tmp_path)
+    assert "M_IO_ERROR" in codes, "the OSError path stopped emitting its code"
+    assert "M_PARSE_ERROR" in codes and "M001" in codes, codes
+
+    explained = set(DIAGNOSTIC_HELP) | set(FAILURE_HELP)
+    missing = sorted(code for code in codes if code not in explained)
+    assert not missing, f"reachable codes with no plain-English entry: {missing}"
+
+
+def test_pq_explain_never_calls_a_real_code_an_unrecognized_function(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The round-25 HIGH, stated as the property that was actually violated.
+
+    A wrong answer is worse than a gap, and llms.txt promises `pq explain`
+    takes "either a diagnostic code or an M function name".
+    """
+    from pqtools.cli import main
+
+    for code in sorted(_every_code_the_cli_can_show(tmp_path)):
+        capsys.readouterr()
+        assert main(["explain", code]) == 0, code
+        out = capsys.readouterr().out
+        assert "is not a name pqtools recognizes" not in out, (code, out)
+        assert "What to do:" in out, (code, out)
+
+
+def test_the_failure_code_table_matches_the_documented_one() -> None:
+    """FAILURE_HELP and llms.txt's failure table cannot grow apart.
+
+    The prose differs on purpose - llms.txt is written for an agent parsing
+    error output, these are written for a person - but the CODE SET has to
+    agree, or one of them is lying about what pqtools can report.
+    """
+    from pqtools.core import FAILURE_HELP
+
+    text = (Path(__file__).resolve().parent.parent / "llms.txt").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("| Code | Meaning | What to do |")
+    end = text.index("\n\n", start)
+    documented = set(re.findall(r"^\| `([A-Z_]+)`", text[start:end], re.M))
+    assert documented, "llms.txt failure table stopped parsing"
+    assert documented == set(FAILURE_HELP), {
+        "only in llms.txt": sorted(documented - set(FAILURE_HELP)),
+        "only in FAILURE_HELP": sorted(set(FAILURE_HELP) - documented),
+    }
