@@ -3183,3 +3183,96 @@ with both arms on the same input, it separates cleanly. That is four
 mis-specified controls across rounds 26-29, every one the same failure - the
 mutation did not land where I believed - and every one caught by printing the
 observable before trusting the test.
+
+---
+
+## Round 30 - `d53eb94..604b79c` - **SHIP**, after two OOM kills
+
+### The kills, first, because they are part of the record
+
+Two runs were killed by the harness for host memory pressure before the model
+returned. Measured at the second: swap 4136.88M of 5120.00M used, 42% free -
+the recorded condition for this machine. The review spawns a second full
+`claude` process, and that is what does not fit.
+
+The wrapper cleaned up correctly under both SIGKILLs of the parent shell: no
+stale `/tmp/mq-gate-wt-*`, `git worktree list` clean. That is round 22's trap
+and pid-sweep working.
+
+What they left behind was worse than nothing: a 473-byte header in `evidence/`
+that reads like a review with no findings, committed twice by the estate
+autocommit bot. **An empty-looking review file is a false clean pass.** It was
+rewritten to say what it was - an attempt with no verdict, the measured swap,
+what WAS established for the tree (gate 8/8, both fixes controlled) and what
+was NOT (no independent review of this delta; round 29's SHIP covers its
+parent) - and shipped as `2edbf00` before the third attempt.
+
+The third attempt, at swap 3824M, returned **SHIP**.
+
+### What the reviewer verified rather than read
+
+It executed `pq explain` on a 17-name probe set, confirmed all 18 codes still
+match the anchored shape, and established something I had not: `catalog.explain`
+is an exact `DOCUMENTED.get` with no fuzzy fallback, **so moving the code branch
+below it cannot preempt a code reading with a typo suggestion** - the round-29
+reorder is behaviour-preserving on every reachable input, not just on the ones
+tested. It also diffed the gate log's certified content tree against HEAD and
+found exactly the two staged blobs, and checked that the autocommit sweep the
+gate header names did not alter the certified tree.
+
+### Three LOWs, all taken - all of them comments that outran the code
+
+- The `_CODE_SHAPED` comment said "BOTH branches now say both things"
+  unconditionally, but round 29 put the code branch under `reason is None`, so
+  a name that is both documented and code-shaped prints the catalog reason
+  alone. Unreachable today, and the right precedence - but the sentence read
+  as absolute. Now stated with its condition.
+- The canary comment said the assertion "stays as a canary ... not as the thing
+  holding this claim up". It did not stop holding something up; it changed
+  WHAT. It is now the only thing keeping llms.txt's leading-reading heuristic
+  from acquiring a silent second exception. Said so.
+- `NODE__` was pinned but `M__` was not - the family the anchor was written for
+  was the only one whose double-underscore case sat outside the guard. All
+  three families are pinned bare and doubled now.
+
+## Round 30b - `pq rename` says which construct, and where
+
+Not from a review. From running all twelve verbs end to end, which is the half
+of "test it" a green suite does not cover.
+
+`pq rename` refused every binding in an ordinary query with **"quoted, record,
+lambda, or non-ASCII rename is unsupported"**. The refusal is CORRECT and the
+scope is documented precisely in `SUPPORT-MATRIX.md` - the guard is textual and
+whole-file, and `[` appears in `each [Region] <> ""`, which is in almost every
+real Power BI query. But the message is four things to hunt for by hand across
+a file that may be hundreds of lines, and the plain-English work of rounds
+24-29 reached `check` and `explain` and never came here.
+
+The guard already knew which one it found. It simply was not saying. It now
+reports the construct and its line and column, and `pq explain
+M_RENAME_REFUSED` names all four blockers instead of three, two of which were
+not blockers at all.
+
+**The predicate is byte-identical.** That is not a claim - the standing
+constraint on this guard is that it may not be loosened without binding-aware
+parse-tree analysis, so `test_the_rename_guard_refuses_exactly_what_it_always_did`
+holds the decision against the original one-line expression over a 13-source
+corpus, and asserts the corpus contains both answers so it cannot pass by being
+one-sided.
+
+### Controls
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | `=>` dropped from the blocker list (loosening the guard) | RED |
+| B | the message reverted, the net kept | RED on the message test, GREEN on the equivalence test - which is the point: they measure different things |
+| C | the corpus made one-sided | RED |
+| D | the anchor dropped from `MQUERY_` only | RED |
+
+**C failed first, and the way it failed is the lesson.** I removed three
+entries and printed "mutated: every remaining corpus entry is a blocker" - a
+CLAIM, not a measurement. Two plain sources remained, the vacuity assertion was
+satisfied, and the control stayed green. Fifth mis-specified control in this
+audit, and the first one where I had already written down the habit that
+prevents it. Redone, the mutation prints the measured decision set
+(`{True}` after, `{False, True}` before) instead of asserting it.

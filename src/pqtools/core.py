@@ -349,13 +349,18 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
     "M_RENAME_REFUSED": DiagnosticHelp(
         title="the rename could not be proven safe",
         means=(
-            "`pq rename` only renames when it can prove nothing else breaks. "
-            "A reserved word, a name already in use, or a record field "
-            "anywhere in the file is enough to stop it."
+            "`pq rename` changes one plain top-level step name, and only when "
+            "it can prove nothing else in the file breaks. Four things stop "
+            "it anywhere in the source - even inside a string or a comment: a "
+            'quoted name (#"..."), a square bracket (a record or a field '
+            "reference), a lambda arrow (=>), or any non-ASCII character. A "
+            "reserved word or a name already in use stops it too."
         ),
         fix=(
-            "Choose another name, or make the edit by hand. It refuses rather "
-            "than half-renaming."
+            "The message names which one it found and where. Rename that step "
+            "by hand, or pick a different target. It refuses rather than "
+            "half-renaming, because a query that is quietly wrong is worse "
+            "than one that was not changed."
         ),
         severity="",
     ),
@@ -854,10 +859,56 @@ def _dependencies_from(parsed: dict[str, Any]) -> list[str]:
     )
 
 
+# The four constructs the whole-file textual guard refuses on, in words a
+# person can act on. `SUPPORT-MATRIX.md` states the scope and why it is
+# deliberately over-strict; this is only about SAYING WHICH ONE fired.
+_RENAME_BLOCKERS: tuple[tuple[str, str], ...] = (
+    ('#"', 'a quoted identifier (#"...")'),
+    ("[", "a record literal or field access ([...])"),
+    ("=>", "a lambda (=>)"),
+)
+
+
+def _rename_blocker(source: str) -> tuple[str, int, int] | None:
+    """The FIRST construct that makes a whole-file rename unprovable, and where.
+
+    The predicate is exactly the one this guard has always used - `#"`, `[`,
+    `=>`, or any non-ASCII character, anywhere in the source including inside a
+    string or a comment. Nothing here changes WHAT is refused; it changes only
+    what the refusal says, from a list of four things to hunt for across the
+    file to the one that actually fired and its position.
+
+    That distinction is the whole point of the constraint on this guard: it may
+    not be loosened without binding-aware analysis of the parse tree, so the
+    fix for an unhelpful refusal is a better sentence, never a smaller net.
+    `test_the_rename_guard_refuses_exactly_what_it_always_did` holds the
+    decision to the original expression, source by source.
+    """
+    found: list[tuple[int, str]] = []
+    for needle, what in _RENAME_BLOCKERS:
+        offset = source.find(needle)
+        if offset != -1:
+            found.append((offset, what))
+    for index, char in enumerate(source):
+        if not char.isascii():
+            found.append((index, f"a non-ASCII character ({char!r})"))
+            break
+    if not found:
+        return None
+    offset, what = min(found)
+    line = source.count("\n", 0, offset) + 1
+    column = offset - (source.rfind("\n", 0, offset) + 1) + 1
+    return what, line, column
+
+
 def _rename_plan(source: str, old: str) -> dict[str, Any]:
-    if '#"' in source or "[" in source or "=>" in source or not source.isascii():
+    blocker = _rename_blocker(source)
+    if blocker is not None:
+        what, line, column = blocker
         raise RenameRefusal(
-            "quoted, record, lambda, or non-ASCII rename is unsupported"
+            f"cannot prove the rename safe: {what} at line {line} column "
+            f"{column}. The check is whole-file on purpose - see "
+            "`pq explain M_RENAME_REFUSED`"
         )
     try:
         return _bridge(source, "rename", old=old)

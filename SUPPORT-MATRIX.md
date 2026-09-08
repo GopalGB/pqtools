@@ -161,6 +161,13 @@ worse than one that declines, because the failure is a silently altered query.
 Narrowing the guard requires binding-aware analysis of the parse tree, not a
 smaller set of forbidden characters.
 
+The refusal names **which of the four it found and at what line and column**,
+so the scope above is something you can act on rather than four things to hunt
+for by hand across a file. `pq explain M_RENAME_REFUSED` says the same in plain
+English. That is the only thing that changed: the decision is held to the
+original expression, source by source, by
+`test_the_rename_guard_refuses_exactly_what_it_always_did`.
+
 ## Getting the rows out
 
 `to_pandas()`, `to_arrow()`, `to_parquet()` (and `pq eval --to parquet`).

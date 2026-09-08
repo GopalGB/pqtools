@@ -851,12 +851,19 @@ def _run_diff(args: argparse.Namespace) -> int:
 #        instead of closing.
 #
 # It does not close entirely either - a step named `M_TOTAL` still matches -
-# so no message here depends on the shape being right. BOTH branches now say
-# both things: not a code, and not a documented function name. The shape
-# decides only which reading LEADS and whether the code list is worth
-# printing; it can no longer make either answer wrong. A dotted name is the
-# one unambiguous case (no code contains a dot) and keeps the plain
-# function-name wording.
+# so no message here depends on the shape being right. Both branches say both
+# things: not a code, and not a documented function name. The shape decides
+# only which reading LEADS and whether the code list is worth printing; it can
+# no longer make either answer wrong. A dotted name is the one unambiguous
+# case (no code contains a dot) and keeps the plain function-name wording.
+#
+# Round 29 moved this below `catalog.explain`, which makes that "both
+# branches" true only where the catalog has nothing to say: a name that is
+# BOTH documented and code-shaped prints the catalog's reason alone. That is
+# the right precedence - a real documented name deserves its real reason - and
+# it is unreachable today (no documented or builtin name is code-shaped, held
+# by `test_a_code_shaped_name_is_never_answered_as_a_function_name`). Stated
+# because the sentence above would otherwise read as unconditional.
 #
 # Matched against the RAW input. Lower case is not a code: `pq explain
 # m_future_error` is answered as a name, because it is indistinguishable from

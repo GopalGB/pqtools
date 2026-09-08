@@ -2044,8 +2044,10 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
     # their alternatives lacked the trailing-alnum anchor `M_` has - so a bare
     # `NODE_` led with the code reading while a bare `M_` did not, and the
     # asymmetry sat outside the regime this guard measures. Ninth instance.
-    # Every family the shape knows about is pinned here now, so the anchor
-    # cannot be dropped from one of them again without this going red.
+    # Every family the shape knows about is pinned here now - bare AND
+    # double-underscore for all three, since round 29 pinned `NODE__` but not
+    # `M__`, leaving the family the anchor was originally written for as the
+    # only one whose double-underscore case sat outside the guard.
     for name in (
         "TOTAL_SALES",
         "CHANGED_TYPE",
@@ -2056,9 +2058,11 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
         "raw_data_2",
         "Result_2",
         "M_",
+        "M__",
         "NODE_",
-        "MQUERY_",
         "NODE__",
+        "MQUERY_",
+        "MQUERY__",
         "m007",
     ):
         assert not _CODE_SHAPED.match(name), name
@@ -2100,14 +2104,20 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
 
     # And the shape swallows no name pqtools already knows.
     #
-    # This used to be load-bearing: the code branch ran BEFORE the `BUILTINS`
-    # and `catalog.explain` lookups yet printed "not a name pqtools recognizes
-    # as a documented Power Query M function", a claim nothing in that branch
-    # had checked - this assertion was the only thing making it true. Round 29
-    # moved the branch below both lookups, so the sentence verifies itself.
-    # The assertion stays as a canary: a code-shaped builtin would still be a
-    # confusing thing to ship, and it now reports that rather than propping up
-    # a message. BUILTINS as well as DOCUMENTED - 93 builtins are in neither.
+    # This used to hold up a SENTENCE: the code branch ran BEFORE the
+    # `BUILTINS` and `catalog.explain` lookups yet printed "not a name pqtools
+    # recognizes as a documented Power Query M function", a claim nothing in
+    # that branch had checked, and this assertion was the only thing making it
+    # true. Round 29 moved the branch below both lookups, so the sentence
+    # verifies itself.
+    #
+    # It did not stop holding something up - it changed WHAT. It is now the
+    # only thing keeping llms.txt's stated heuristic ("a code PREFIX family
+    # leads with the code reading") from acquiring a silent second exception:
+    # a code-shaped name that is also a builtin or documented would lead with
+    # the catalog reading instead, and nothing else would say so. Still worth
+    # having, still load-bearing, for a different claim.
+    # BUILTINS as well as DOCUMENTED - 93 builtins are in neither.
     from pqtools.catalog import DOCUMENTED
     from pqtools.evaluate import BUILTINS
 
@@ -2143,3 +2153,96 @@ def test_the_lint_code_table_matches_the_documented_one() -> None:
             severity,
             DIAGNOSTIC_HELP[code].severity,
         )
+
+
+# The sources the rename guard's decision is held against. Deliberately mixed:
+# legal M, illegal M, blockers inside strings and comments (where they are
+# still blockers, because the guard is textual on purpose), and the shapes a
+# real Power BI query has.
+_RENAME_CORPUS = (
+    "",
+    "let a = 1 in a",
+    "let Source = 1, Result = Source + 1 in Result",
+    'let #"My Step" = 1 in #"My Step"',
+    "let a = [x = 1] in a[x]",
+    'let a = Table.SelectRows(t, each [Region] <> "") in a',
+    "let f = (x) => x + 1 in f(1)",
+    'let a = "a [bracket] in a string" in a',
+    "let a = 1 in a // a [bracket] in a comment\n",
+    'let a = "café" in a',
+    "let a = 1 in a // café\n",
+    "let\n    Source = 1,\n    Next = Source\nin\n    Next\n",
+    'let Source = Csv.Document(File.Contents("d.csv")) in Source',
+)
+
+
+def test_the_rename_guard_refuses_exactly_what_it_always_did() -> None:
+    """The refusal message got better. The net did not get smaller.
+
+    The standing constraint on this guard is explicit: it may not be loosened
+    without binding-aware analysis of the parse tree, because a rename that is
+    right most of the time silently alters a query. So the DECISION is held
+    here against the original one-line expression, source by source - the
+    improvement is only allowed to change what the refusal SAYS.
+    """
+    from pqtools.core import _rename_blocker
+
+    def original(source: str) -> bool:
+        return '#"' in source or "[" in source or "=>" in source or not source.isascii()
+
+    for source in _RENAME_CORPUS:
+        assert (_rename_blocker(source) is not None) == original(source), source
+
+    # And the corpus is not vacuous in either direction - a corpus of all
+    # blockers, or of none, would satisfy the equality above while proving
+    # nothing about the half it does not contain.
+    decisions = {original(source) for source in _RENAME_CORPUS}
+    assert decisions == {True, False}, decisions
+
+
+def test_a_refused_rename_names_the_construct_and_where_it_is() -> None:
+    """The round-24..29 plain-English work reached `check` but not this verb.
+
+    "quoted, record, lambda, or non-ASCII rename is unsupported" is four things
+    to hunt for by hand across a whole file, and a real Power BI query is
+    hundreds of lines. The guard already knows which one it found; it simply
+    was not saying.
+    """
+    from pqtools.core import RenameRefusal, _rename_blocker, rename
+
+    cases = (
+        ('let #"A B" = 1 in #"A B"', 'a quoted identifier (#"...")', 1, 5),
+        ("let a = [x = 1] in a", "a record literal or field access ([...])", 1, 9),
+        ("let f = (x) => x in f", "a lambda (=>)", 1, 13),
+        ('let a = "café" in a', "a non-ASCII character", 1, 13),
+    )
+    for source, what, line, column in cases:
+        blocker = _rename_blocker(source)
+        assert blocker is not None, source
+        assert blocker[0].startswith(what), (source, blocker)
+        assert (blocker[1], blocker[2]) == (line, column), (source, blocker)
+
+    # Multi-line: the position has to be the line and column a person can
+    # navigate to, not a byte offset.
+    multi = "let\n    Source = 1,\n    Next = [x = 1]\nin\n    Next\n"
+    blocker = _rename_blocker(multi)
+    assert blocker is not None
+    assert (blocker[1], blocker[2]) == (3, 12), blocker
+    assert multi.splitlines()[2][11] == "[", multi.splitlines()[2]
+
+    # The earliest blocker wins when several are present, so the position
+    # always points at something real rather than at whichever check ran first.
+    both = "let f = (x) => x, a = [y = 1] in a"
+    blocker = _rename_blocker(both)
+    assert blocker is not None and blocker[0] == "a lambda (=>)", blocker
+
+    # And the message a user actually sees carries all of it.
+    try:
+        rename("let a = [x = 1] in a", "a", "b")
+    except RenameRefusal as error:
+        text = str(error)
+    else:  # pragma: no cover - the guard must fire
+        raise AssertionError("the guard did not refuse")
+    assert "record literal or field access" in text, text
+    assert "line 1 column 9" in text, text
+    assert "pq explain M_RENAME_REFUSED" in text, text

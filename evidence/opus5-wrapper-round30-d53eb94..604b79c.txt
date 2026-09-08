@@ -1,32 +1,21 @@
-# Exact claude-opus-5 wrapper review - range d53eb94..604b79c
-# NOT A REVIEW. This file records an ATTEMPT THAT DID NOT PRODUCE A VERDICT.
-#
-# Two runs (2026-09-08T04:19Z and 04:34Z) were both killed by the harness for
-# host memory pressure before the model returned. Measured at the second kill:
-#   vm.swapusage: total 5120.00M, used 4136.88M, free 983.12M
-#   system-wide memory free: 42%
-# This matches the recorded condition for this machine - the gate and the
-# review wrapper pass only when nothing else substantial is running. The
-# review spawns a second full claude process; that is what does not fit.
-#
-# The wrapper cleaned up correctly both times: no stale /tmp/mq-gate-wt-*
-# worktrees, `git worktree list` shows only the repo. That is the round-22
-# trap + pid-sweep behaving as designed under SIGKILL of the parent shell.
-#
-# WHAT IS AND IS NOT ESTABLISHED FOR 604b79c:
-#   ESTABLISHED - `bash scripts/release_gate.sh` passed 8/8 on this tree
-#     (evidence/release-gate-2026-09-08-round29-fixes.log, 4154 tests), and
-#     each of the two fixes in this delta was positive-controlled red-then-
-#     green (closeout, "Round 29", controls A and B).
-#   ESTABLISHED - the PARENT commit d53eb94 received an independent SHIP in
-#     round 29 (evidence/opus5-wrapper-round29-23b471d..d53eb94.txt), with the
-#     reviewer verifying the gate log's certified tree against the staged
-#     blobs.
-#   NOT ESTABLISHED - independent adversarial review of THIS delta. The three
-#     LOWs fixed here were taken voluntarily after a SHIP verdict; they are
-#     not re-reviewed by a second model. Do not read the round-29 SHIP as
-#     covering d53eb94..604b79c. It covers 23b471d..d53eb94.
-#
-# Re-run when the machine is idle:
-#   bash evidence/run-opus-gate.sh d53eb94 604b79c \
-#     "$(pwd)/evidence/opus5-wrapper-round30-d53eb94..604b79c.txt"
+# Exact claude-opus-5 wrapper review - range d53eb94..604b79c (bundle + lockfile shown as stub blobs)
+# staged:  5 files changed, 163 insertions(+), 26 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in d53eb94..604b79c, not stubbed, not in the diff
+# package-lock.json: unchanged in d53eb94..604b79c, not stubbed, not in the diff
+# invoked 2026-09-08T12:38:23Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified against the tree, not read: executed `pq explain` on the 17-name probe set (all five code-shaped names lead with the code reading and print all 18 codes; `M_`/`NODE_`/`MQUERY_`/`NODE__`/`TOTAL_SALES`/`m007` lead with the name reading; `Table.Zzz` keeps the dotted wording; `M_IO_ERROR`/`m_io_error` still resolve through the table; `Text.From` still answers "implemented"). Confirmed all 18 real codes still match the anchored `_CODE_SHAPED`, and `DOCUMENTED | BUILTINS` ∩ shape is empty. `catalog.explain` is an exact `DOCUMENTED.get` (catalog.py:725) with no fuzzy fallback, so moving the code branch below it cannot preempt a code reading with a typo suggestion — the reorder is behaviour-preserving on every reachable input. The new gate log's certified content tree `0d10a4e0` diffs against `HEAD` over `src/ tests/ llms.txt` in exactly the two staged blobs `5207a9d` / `6953487` and nothing else, so its `4154 passed` certifies this tree.
+
+- **LOW — src/pqtools/cli.py:854** — the comment asserts unconditionally "BOTH branches now say both things: not a code, and not a documented function name", but this round put the code branch under `reason is None`, so a documented *and* code-shaped name would now print the catalog reason alone — one half only. Unreachable today (canary green), yet the comment states a property the new ordering made conditional. Fix: append "unless `catalog.explain` answers first, which takes precedence" to that sentence.
+- **LOW — tests/test_end_to_end.py:2108** — the comment says the assertion "stays as a canary … not as the thing holding this claim up", but it changed which claim it holds, not that it stopped holding one: it is now the only thing keeping llms.txt's stated heuristic ("a code PREFIX family … leads with the code reading") from having a silent second exception at cli.py:955. Fix: say it now guards the leading-reading heuristic rather than the sentence's truth.
+- **LOW — tests/test_end_to_end.py:2059** — `NODE__` is pinned but `M__` is not, so the `M_` family — the one the anchor was originally written for — is the only family whose double-underscore case sits outside the guard. Fix: add `"M__"`, `"MQUERY__"` to that tuple.
+
+Not filed, checked and clean: exit code and `{"name","supported","message"}` JSON shape unchanged; `message` is bound on every path through the new if/elif chain; `M[0-9]{3}` unaffected by the anchor (`M0007`/`M07` still reject); llms.txt's `M_...`/`NODE_...`/`MQUERY_...` ellipsis wording still matches the anchored shape, and no stale copy of the rule survives in README/SUPPORT-MATRIX; the auto-commit `0800941` the gate header names touched only `evidence/opus5-wrapper-round29-...txt` and its content is byte-identical to the staged copy, so the sweep did not alter the certified tree.
+
+One process note, not a defect: `feat/connectors-and-real-m-0.9.0` already carries this exact content (same three blobs, Round 29 closeout present); the branch is one commit ahead with `evidence/opus5-wrapper-round30-d53eb94..604b79c.txt` recording round 30 as NOT RUN. Committing here would duplicate work already landed.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
