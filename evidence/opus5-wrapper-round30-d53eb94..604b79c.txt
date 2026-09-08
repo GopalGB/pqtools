@@ -1,6 +1,32 @@
-# Exact claude-opus-5 wrapper review - range d53eb94..604b79c (bundle + lockfile shown as stub blobs)
-# staged:  5 files changed, 163 insertions(+), 26 deletions(-)
-# src/pqtools/_bridge.cjs: unchanged in d53eb94..604b79c, not stubbed, not in the diff
-# package-lock.json: unchanged in d53eb94..604b79c, not stubbed, not in the diff
-# invoked 2026-09-08T04:21:54Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
-
+# Exact claude-opus-5 wrapper review - range d53eb94..604b79c
+# NOT A REVIEW. This file records an ATTEMPT THAT DID NOT PRODUCE A VERDICT.
+#
+# Two runs (2026-09-08T04:19Z and 04:34Z) were both killed by the harness for
+# host memory pressure before the model returned. Measured at the second kill:
+#   vm.swapusage: total 5120.00M, used 4136.88M, free 983.12M
+#   system-wide memory free: 42%
+# This matches the recorded condition for this machine - the gate and the
+# review wrapper pass only when nothing else substantial is running. The
+# review spawns a second full claude process; that is what does not fit.
+#
+# The wrapper cleaned up correctly both times: no stale /tmp/mq-gate-wt-*
+# worktrees, `git worktree list` shows only the repo. That is the round-22
+# trap + pid-sweep behaving as designed under SIGKILL of the parent shell.
+#
+# WHAT IS AND IS NOT ESTABLISHED FOR 604b79c:
+#   ESTABLISHED - `bash scripts/release_gate.sh` passed 8/8 on this tree
+#     (evidence/release-gate-2026-09-08-round29-fixes.log, 4154 tests), and
+#     each of the two fixes in this delta was positive-controlled red-then-
+#     green (closeout, "Round 29", controls A and B).
+#   ESTABLISHED - the PARENT commit d53eb94 received an independent SHIP in
+#     round 29 (evidence/opus5-wrapper-round29-23b471d..d53eb94.txt), with the
+#     reviewer verifying the gate log's certified tree against the staged
+#     blobs.
+#   NOT ESTABLISHED - independent adversarial review of THIS delta. The three
+#     LOWs fixed here were taken voluntarily after a SHIP verdict; they are
+#     not re-reviewed by a second model. Do not read the round-29 SHIP as
+#     covering d53eb94..604b79c. It covers 23b471d..d53eb94.
+#
+# Re-run when the machine is idle:
+#   bash evidence/run-opus-gate.sh d53eb94 604b79c \
+#     "$(pwd)/evidence/opus5-wrapper-round30-d53eb94..604b79c.txt"
