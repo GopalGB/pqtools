@@ -2039,6 +2039,13 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
     # underscore") answered every one of them "is not a code this version of
     # pqtools reports". The list is built from what a person names a step,
     # not from what happens to fall outside today's regex.
+    #
+    # Round 29: `M_` was pinned here but `NODE_` and `MQUERY_` were not, and
+    # their alternatives lacked the trailing-alnum anchor `M_` has - so a bare
+    # `NODE_` led with the code reading while a bare `M_` did not, and the
+    # asymmetry sat outside the regime this guard measures. Ninth instance.
+    # Every family the shape knows about is pinned here now, so the anchor
+    # cannot be dropped from one of them again without this going red.
     for name in (
         "TOTAL_SALES",
         "CHANGED_TYPE",
@@ -2049,6 +2056,9 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
         "raw_data_2",
         "Result_2",
         "M_",
+        "NODE_",
+        "MQUERY_",
+        "NODE__",
         "m007",
     ):
         assert not _CODE_SHAPED.match(name), name
@@ -2088,10 +2098,16 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
         assert main(["explain", spelling]) == 0, spelling
         assert "is not a code" not in capsys.readouterr().out, spelling
 
-    # And the shape swallows no name pqtools already knows. BUILTINS as well
-    # as DOCUMENTED: 93 builtins are not in the documented list, and this
-    # branch sits BEFORE the `elif name in BUILTINS` that would have answered
-    # them, so checking only the documented set left those 93 unchecked.
+    # And the shape swallows no name pqtools already knows.
+    #
+    # This used to be load-bearing: the code branch ran BEFORE the `BUILTINS`
+    # and `catalog.explain` lookups yet printed "not a name pqtools recognizes
+    # as a documented Power Query M function", a claim nothing in that branch
+    # had checked - this assertion was the only thing making it true. Round 29
+    # moved the branch below both lookups, so the sentence verifies itself.
+    # The assertion stays as a canary: a code-shaped builtin would still be a
+    # confusing thing to ship, and it now reports that rather than propping up
+    # a message. BUILTINS as well as DOCUMENTED - 93 builtins are in neither.
     from pqtools.catalog import DOCUMENTED
     from pqtools.evaluate import BUILTINS
 

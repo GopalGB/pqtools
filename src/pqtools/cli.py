@@ -863,7 +863,10 @@ def _run_diff(args: argparse.Namespace) -> int:
 # a variable. Real codes resolve either way - the table lookup above
 # upper-cases, so `pq explain m_io_error` still works, and that is asserted.
 _CODE_SHAPED = re.compile(
-    r"^(M_[A-Z0-9_]*[A-Z0-9]|NODE_[A-Z0-9_]*|MQUERY_[A-Z0-9_]*|M[0-9]{3})$"
+    r"^(M_[A-Z0-9_]*[A-Z0-9]"
+    r"|NODE_[A-Z0-9_]*[A-Z0-9]"
+    r"|MQUERY_[A-Z0-9_]*[A-Z0-9]"
+    r"|M[0-9]{3})$"
 )
 
 
@@ -941,27 +944,7 @@ def _run_explain(args: argparse.Namespace) -> int:
                 )
         return 0
 
-    if _CODE_SHAPED.match(name):
-        # Round 26: llms.txt promised "It never answers a real code as though
-        # it were an unrecognised function name", and only the test's
-        # derivation enforced it - the code itself had no idea. So
-        # `pq explain M_FUTURE_ERROR` answered "may be a typo ... a query
-        # name, a variable, a record field", which is true of no code that
-        # will ever exist. If it looks like a code and is not one, say
-        # exactly that, and say which codes this version does report rather
-        # than sending the reader to a doc. Round 27 fixed WHAT this branch
-        # reads (see `_CODE_SHAPED`) and added the `M007` family, which has
-        # no underscore and so was still getting the wrong answer - and those
-        # are the codes `pq check` prints, the likeliest thing a user holds.
-        known = sorted(set(DIAGNOSTIC_HELP) | set(FAILURE_HELP))
-        message = (
-            f"{name} is not a code this version of pqtools reports, and not "
-            "a name pqtools recognizes as a documented Power Query M "
-            f"function either. The codes it does report are: "
-            f"{', '.join(known)}."
-        )
-        supported = False
-    elif name in BUILTINS:
+    if name in BUILTINS:
         message = f"{name} is implemented by pqtools - it is not refused."
         supported = True
     else:
@@ -969,6 +952,32 @@ def _run_explain(args: argparse.Namespace) -> int:
         supported = False
         if reason is not None:
             message = reason
+        elif _CODE_SHAPED.match(name):
+            # Round 26: llms.txt promised "It never answers a real code as
+            # though it were an unrecognised function name", and only the
+            # test's derivation enforced it - the code itself had no idea, so
+            # `pq explain M_FUTURE_ERROR` answered "may be a typo ... a query
+            # name, a variable, a record field", true of no code that will
+            # ever exist. If it looks like a code and is not one, say exactly
+            # that, and say which codes this version does report rather than
+            # sending the reader to a doc.
+            #
+            # Round 29 moved this BELOW the two lookups. It used to run first
+            # and then assert "not a name pqtools recognizes as a documented
+            # Power Query M function" without consulting either set - true
+            # only because a test asserted no builtin is code-shaped, which
+            # made that test load-bearing for a sentence printed here. Now
+            # both halves of the sentence are established above it: `name` is
+            # not in `BUILTINS` and `catalog.explain` returned nothing. The
+            # test is kept as a canary for a confusing name, not as the thing
+            # holding this claim up.
+            known = sorted(set(DIAGNOSTIC_HELP) | set(FAILURE_HELP))
+            message = (
+                f"{name} is not a code this version of pqtools reports, and "
+                "not a name pqtools recognizes as a documented Power Query M "
+                "function either. The codes it does report are: "
+                f"{', '.join(known)}."
+            )
         elif "." in name:
             # A dot settles it: no pqtools code contains one, so this is a
             # function name and only the function answer is relevant.

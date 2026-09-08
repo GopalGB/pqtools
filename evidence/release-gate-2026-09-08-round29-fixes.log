@@ -1,0 +1,40 @@
+# release gate
+# commit:  0800941d8a39c35a290f689b127abe96e67f0389 (working tree DIRTY)
+# content: 0d10a4e040e30605fb356e8493a7094a2cd43b11 (tracked + untracked; read it with git ls-tree -r)
+# branch:  feat/connectors-and-real-m-0.9.0
+# collect: 4154 tests collected in 0.38s
+# date:    2026-09-08T04:14:04Z
+
+=== 1. Import integrity ===
+  640 builtins registered
+  PASS  registry imports and merges cleanly
+
+=== 2. Test suite ===
+  PASS  full suite (detail: /tmp/pq-gate-tests.log)
+4154 passed in 148.55s (0:02:28)
+
+=== 3. Lint, format, types ===
+  PASS  ruff check
+  PASS  ruff format
+  PASS  mypy strict
+
+=== 4. Documented coverage is computed, not remembered ===
+  PASS  sync_builtin_list.py runs
+  PASS  README/llms.txt coverage already current
+coverage: 547/635 documented M functions
+
+=== 5. No invented function names ===
+  PASS  registry matches Microsoft's reference
+12 passed in 1.56s
+
+=== 6. Positive control on the refusal machinery ===
+  PASS  documented-vs-typo distinction holds
+
+=== 7. Real Power Query M, end to end ===
+  PASS  unmodified workbook-authored query runs and types correctly
+
+=== 8. Microsoft's own worked examples ===
+  PASS  documented examples run and reproduce their output
+953 passed in 141.79s (0:02:21)
+
+GATE PASSED

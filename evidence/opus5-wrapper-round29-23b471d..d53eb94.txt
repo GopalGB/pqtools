@@ -4,3 +4,14 @@
 # package-lock.json: unchanged in 23b471d..d53eb94, not stubbed, not in the diff
 # invoked 2026-09-08T04:08:05Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
 
+Verified against the tree (executed `pq explain` on the probe set, ran the four affected tests, and checked the gate log's certified tree object against the staged blobs). Both round-28 HIGHs are genuinely closed: `TOTAL_SALES`, `CHANGED_TYPE`, `A_1`, `REMOVED_COLUMNS` now lead with the name reading, all 18 real codes still match `_CODE_SHAPED`, `DOCUMENTED | BUILTINS` ∩ shape is empty, and `evidence/release-gate-...log`'s content tree `c98ca41d` contains exactly the staged blobs `70070ad` / `fa346a6` / `a83310d`, so the evidence certifies this tree.
+
+- **LOW — src/pqtools/cli.py:866** — the `NODE_`/`MQUERY_` alternatives use `[A-Z0-9_]*` (no trailing-alnum anchor) while the `M_` alternative uses `[A-Z0-9_]*[A-Z0-9]`, so the bare prefixes are code-shaped where bare `M_` deliberately is not. Reproduced: `_CODE_SHAPED.match("NODE_")` and `("MQUERY_")` and `("NODE__")` are all truthy, and `pq explain NODE_` leads with the code reading plus the 18-code list — contradicting the rule the comment above states ("a bare `M_` ... carries no code name and is a legal M identifier"). Fix: `NODE_[A-Z0-9_]*[A-Z0-9]|MQUERY_[A-Z0-9_]*[A-Z0-9]`.
+- **LOW — tests/test_end_to_end.py:2051** — the not-code-shaped tuple pins `"M_"` but not `"NODE_"` / `"MQUERY_"`, so the asymmetry above sits outside the regime the guard measures — the same shape of gap this round's own HIGH was filed for. Fix: add `"NODE_", "MQUERY_"` to that tuple; it goes red until the regex anchor lands.
+- **LOW — src/pqtools/cli.py:944** — the code branch now asserts positively that the name is "not a name pqtools recognizes as a documented Power Query M function", but it runs *before* `name in BUILTINS` and before `catalog.explain(name)`, so it never consults either set; only the end-of-test `DOCUMENTED | BUILTINS` guard keeps the claim true. Fix: move the `_CODE_SHAPED` check after the `BUILTINS` / `catalog.explain` lookups, which makes the sentence self-verifying and retires the guard's load-bearing role.
+
+Nothing filed on: message wording and JSON shape (`{"name","supported","message"}`, exit 0) reproduce as documented; `m_io_error`/`m001` still resolve through the upper-casing table lookup; the dotted branch is unreachable from `_CODE_SHAPED` (the char classes exclude `.`); the hoisted `llms.txt` read plus `assert shared == {"M_PARSE_ERROR"}` closes the vacuous-loop path, and the earlier unguarded intersection loop in the same test is covered by that assert; llms.txt's rewritten paragraph matches observed behaviour and no stale copy of the caps rule survives in README/SUPPORT-MATRIX/docs; the round-27 "Five behavioural" correction matches its five-row A–E table.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

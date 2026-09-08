@@ -3128,3 +3128,58 @@ no executable control, and it is not given one: the behaviour it describes is
 covered by the dotted-name and both-readings assertions above, and asserting
 its wording would be theatre. The one `llms.txt` claim that IS surprising - the
 `M_PARSE_ERROR` exception - keeps the phrase-level test round 27 gave it.
+
+---
+
+## Round 29 - `23b471d..d53eb94` - **SHIP**, and three LOWs taken anyway
+
+The first SHIP of this loop. The reviewer verified both round-28 HIGHs closed
+by executing the probe set, and independently checked that the gate log's
+certified content tree `c98ca41d` contains exactly the staged blobs - so the
+evidence certifies the tree it claims, which is the property round 22 was about.
+
+Three LOWs came with it. The verdict was SHIP, so none of this was required;
+all three are on code this round touched, all three reproduce, and one of them
+retires a test from a load-bearing role. Fixing them is cheaper than carrying
+them.
+
+### The bare-prefix asymmetry, and the ninth instance
+
+`M_` used `M_[A-Z0-9_]*[A-Z0-9]` - anchored, so a bare `M_` is not code-shaped,
+which the comment above it states as a deliberate rule. `NODE_` and `MQUERY_`
+used `[A-Z0-9_]*` with no anchor, so bare `NODE_` and `MQUERY_` WERE
+code-shaped, contradicting that rule in the same regex. Reproduced: `pq explain
+NODE_` led with the code reading and printed all 18 codes.
+
+And the guard pinned `M_` but not `NODE_` / `MQUERY_` - so the asymmetry sat
+outside the regime it measures. **Ninth instance**, in the round after the
+round that shipped the eighth. Every family the shape knows about is pinned
+now, so the anchor cannot be dropped from one of them again silently.
+
+### A sentence that depended on a test to be true
+
+The code branch asserted "not a name pqtools recognizes as a documented Power
+Query M function" while running BEFORE the `BUILTINS` and `catalog.explain`
+lookups. It never consulted either set. The claim was true only because a test
+asserted no builtin is code-shaped - **a test holding up a sentence printed to
+users**, which is the same arrangement round 27 removed from the severity
+field.
+
+The branch moved below both lookups. Both halves of the sentence are now
+established before it runs. The test stays as a canary - a code-shaped builtin
+would still be confusing to ship - but it no longer props anything up.
+
+### Controls
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | the anchor dropped from `NODE_` only | RED, `pq explain NODE_` led with the code reading |
+| B | the code branch moved back above the lookups | with a real builtin `M_HELPER` registered: old order printed "M_HELPER is not a code ... and not a name pqtools recognizes"; new order printed "M_HELPER is implemented by pqtools" |
+
+**B was mis-run first** and is recorded: the first attempt registered the
+builtin but never reordered the branch, so it measured the fix twice and the
+red it produced came from the canary assertion, not from the ordering. Redone
+with both arms on the same input, it separates cleanly. That is four
+mis-specified controls across rounds 26-29, every one the same failure - the
+mutation did not land where I believed - and every one caught by printing the
+observable before trusting the test.
