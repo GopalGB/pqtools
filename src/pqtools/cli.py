@@ -411,43 +411,75 @@ def _run_add(args: argparse.Namespace) -> int:
     body = args.source.rstrip()
     if body.endswith(";"):
         body = body[:-1].rstrip()
-
-    # Round 31b: NOTHING validated here before `--write`. `pq add c.pbix
-    # --name Bad --source "let x = = 1 in x"` printed the composed document
-    # and exited 0 - a preview whose entire purpose is "show me what would
-    # happen" answering with something that cannot happen. The write path
-    # refused the same input, so the two verbs disagreed about the same bytes.
-    #
-    # The body is parsed ON ITS OWN first, because that is the source the user
-    # wrote and so the only one whose line and column they can navigate to.
-    # The write path reported `65:22` for a one-line `--source`: a real
-    # position in a composed document the user never sees.
-    try:
-        parse(body)
-    except ParseError as error:
-        raise ParseError(
-            f"--source does not parse: {error.message}. The position is in "
-            "the source you supplied. Nothing was added."
-        ) from error
     text = sections[0].source.rstrip()
     new_source = f"{text}\n\nshared {_quote_identifier(args.name)} = {body};\n"
-    # And the composed document, which a body that parses alone can still
-    # break. Said separately so the position is not mistaken for the snippet's.
+
+    # Round 31b: NOTHING validated here before `--write`. `pq add c.pbix
+    # --name Bad --source "let x = = 1 in x"` printed the composed document and
+    # exited 0 - a preview whose entire purpose is "show me what would happen"
+    # answering with something that cannot happen, while the write path refused
+    # the identical bytes.
+    #
+    # Round 32: the first cut parsed the body AND the composition, so the
+    # SUCCESS path - the common one - paid two Node subprocesses where it used
+    # to pay none, in the same change whose other half removed a Python loop
+    # for cost. The body parse only ever chose a better MESSAGE, so it belongs
+    # in the failure branch, paid for by the run that already failed.
     try:
         parse(new_source)
     except ParseError as error:
-        raise ParseError(
-            f"the query parses alone but not inside this section: "
-            f"{error.message}. That position is in the composed section "
-            "document, not in your --source. Nothing was added."
-        ) from error
+        raise _add_parse_refusal(text, body, error) from error
+
     if not args.write:
-        print(new_source)
+        if args.json:
+            _print({"name": args.name, "source": new_source, "written": False}, True)
+        else:
+            print(new_source)
         return 0
     backup = _container_backup(args.file)
     containers.write_sections(args.file, new_source, write=True)
-    print(f"// added {args.name}; backup: {backup}", file=sys.stderr)
+    if args.json:
+        # Round 32: `--json` was classified as meaningful for `add` and then
+        # read by nothing but the shared error path, so a SUCCESS dropped it
+        # silently - the exact defect this round refuses everywhere else.
+        _print({"name": args.name, "backup": str(backup), "written": True}, True)
+    else:
+        print(f"// added {args.name}; backup: {backup}", file=sys.stderr)
     return 0
+
+
+def _add_parse_refusal(text: str, body: str, error: ParseError) -> ParseError:
+    """Which of the three sources is broken - asked, not assumed.
+
+    The composed document failed. That can mean the user's snippet is invalid;
+    or the snippet is fine but does not survive being appended (a query ending
+    in a `//` comment swallows the section's `;`); or the CONTAINER's existing
+    M never parsed, in which case blaming the snippet - as the first cut did
+    unconditionally - sends the reader to inspect the one thing not at fault.
+
+    Only reached on the failure path, so the extra parses cost nothing on the
+    run that works.
+    """
+    try:
+        parse(body)
+    except ParseError as inner:
+        return ParseError(
+            f"--source does not parse: {inner.message}. The position is in the "
+            "source you supplied. Nothing was added."
+        )
+    try:
+        parse(text)
+    except ParseError as inner:
+        return ParseError(
+            "the container's existing section does not parse, so nothing can "
+            f"be added to it: {inner.message}. That position is in the "
+            "container, not in your --source. Nothing was added."
+        )
+    return ParseError(
+        f"the query parses alone but not inside this section: {error.message}. "
+        "That position is in the composed section document, not in your "
+        "--source. Nothing was added."
+    )
 
 
 def _quote_identifier(name: str) -> str:
@@ -1193,23 +1225,39 @@ _OPTION_VERBS: dict[str, frozenset[str]] = {
 }
 
 
-def _refuse_irrelevant_options(
-    args: argparse.Namespace, parser: argparse.ArgumentParser
-) -> None:
-    """Refuse a flag this verb does not read, by name, instead of ignoring it.
+def _options_present(tokens: list[str]) -> set[str]:
+    """The option dests the user actually TYPED, asked of argparse itself.
 
-    A flag counts as PASSED when its value differs from THE PARSER'S OWN
-    default, asked for rather than assumed. The first cut of this compared
-    against a hardcoded `(None, False, [])` and reported `--format` on every
-    single verb, because `--format` defaults to `"json"` - a check that fires
-    on correct input is worse than the silence it replaced, and it took
-    probing the legitimate invocations, not just the broken ones, to see it.
+    Not inferred from values. Round 31b compared each value against the
+    parser's default, which silently drops an option passed AT its default:
+    `pq check q.pq --format json` was ignored while `--format csv` on the same
+    verb was refused - and `--format` is the very option whose non-None default
+    drove that design. Presence and value are different questions.
+
+    Nor is it a scan of `tokens` for `--name`: argparse also accepts
+    `--format=json`, the unambiguous abbreviation `--form`, and `--`
+    termination, and a hand-rolled scan gets one of those wrong. So the same
+    parser parses them again with every default SUPPRESSED, which leaves a
+    namespace holding exactly the options that appeared.
     """
+    probe = _build_parser()
+    for action in probe._actions:  # noqa: SLF001 - argparse exposes no public API
+        action.default = argparse.SUPPRESS
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            seen, _ = probe.parse_known_args(tokens)
+        except SystemExit:
+            return set()
+    return set(vars(seen))
+
+
+def _refuse_irrelevant_options(args: argparse.Namespace, tokens: list[str]) -> None:
+    """Refuse a flag this verb does not read, by name, instead of ignoring it."""
+    present = _options_present(tokens)
     passed = sorted(
         name
         for name, verbs in _OPTION_VERBS.items()
-        if args.command not in verbs
-        and getattr(args, name, parser.get_default(name)) != parser.get_default(name)
+        if args.command not in verbs and name in present
     )
     if passed:
         flags = ", ".join(f"--{name.replace('_', '-')}" for name in passed)
@@ -1219,7 +1267,16 @@ def _refuse_irrelevant_options(
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """The one parser object.
+
+    `main` parses with it, `_options_present` re-parses with a suppressed
+    copy, and the drift test reads its actions and its `command` choices -
+    so the option table is checked against the parser rather than against a
+    regex over this file, which could not see an option declared with a
+    short alias first, or one containing a digit, and so could not catch
+    the drift it existed for.
+    """
     parser = argparse.ArgumentParser(prog="pq")
     parser.add_argument(
         "command",
@@ -1342,6 +1399,11 @@ def main(argv: list[str] | None = None) -> int:
     # paths back as leftovers. They are the files, in order, so they are
     # folded back below - while a leftover that looks like an option is still
     # the unknown-option error argparse would have raised.
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
     args, extra = parser.parse_known_args(argv)
     if any(item.startswith("-") for item in extra):
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
@@ -1350,7 +1412,9 @@ def main(argv: list[str] | None = None) -> int:
         # Before anything reads a file: a flag this verb does not use is a
         # misunderstanding about what is about to happen, and the write verbs
         # are exactly where that is expensive.
-        _refuse_irrelevant_options(args, parser)
+        _refuse_irrelevant_options(
+            args, list(argv) if argv is not None else sys.argv[1:]
+        )
         _normalise_targets(args)
         if args.command == "explain":
             return _run_explain(args)

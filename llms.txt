@@ -29,7 +29,7 @@ affiliated with or endorsed by Microsoft.
 - `pq check report.pq` - lint, with CI-shaped exit codes.
 - `pq format report.pq` - format, via Microsoft's own pinned
   `@microsoft/powerquery-formatter`.
-- `pq rename report.pq --from Old --to New` - rename a `let` binding without a
+- `pq rename report.pq --old Old --new New` - rename a `let` binding without a
   find-and-replace hitting a matching string literal.
 - Reads `.pbix` / `.pbit` / `.xlsx` containers to analyse the M inside them.
   `pq format` / `pq rename` / `pq replace-source` print the edited M and

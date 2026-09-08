@@ -3406,3 +3406,98 @@ Every mutation printed its measured observable before the test ran, per the
 habit written down after round 29's mis-run. Control C's line shows why that
 matters: the probe output and the test failure ran together, so a mutation that
 had not applied would have been visible immediately.
+
+---
+
+## Round 32 - `ef70e16..d14bc32`, seven findings, all seven taken
+
+The round that reviewed my own round-31b fix and found it defeating itself.
+
+### The check compared the wrong thing
+
+`_refuse_irrelevant_options` compared each option's VALUE against the parser's
+default - so an option passed AT its default was still silently dropped.
+Measured: `pq check q.pq --format json` exits 0 and ignores `--format`, while
+`--format csv` on the same verb is refused. **`--format` is the very option
+whose non-None default drove that design**, and the docstring said so while the
+code got it wrong in the other direction.
+
+Presence and value are different questions. The fix asks argparse: the same
+parser re-parses the tokens with every default SUPPRESSED, so the namespace
+holds exactly the options that appeared. Not a scan of the tokens for `--name`
+either - argparse also accepts `--format=json`, the unambiguous abbreviation
+`--form`, and `--` termination, and a hand-rolled scan gets one of those wrong.
+All three spellings are now asserted.
+
+That required one parser object rather than an inline one, which also fixed the
+next finding.
+
+### The anti-drift guard could not see drift
+
+It read the parser through a **regex over cli.py's text**. An option declared
+with a short alias first (`add_argument("-o", "--out2")`), or containing a digit
+or a capital, never entered the set - so the equality still passed and the new
+flag was universal by default, which is exactly what that test exists to
+prevent. The verb list was a hardcoded alternation, so a verb REMOVED from the
+parser could not be detected either. Both now come off the parser object.
+
+### Two guards that skipped in every clone but mine
+
+`_one_section_container` copied `.samples/real-powerbi-fuzzy-matching.pbix`,
+which `.gitignore` excludes and this repo's CLAUDE.md says is never committed.
+**Both round-31c guards therefore SKIPPED in every clean checkout** - the
+preview/write disagreement they were written for was unguarded for anyone but
+me. A test that always skips is not a test. The container is synthesised in the
+test now, the way `tests/test_containers.py` already does it.
+
+### A documented command that cannot run
+
+`llms.txt` said `pq rename report.pq --from Old --to New`. `--from` is not an
+option - argparse exits 2 with a usage dump - and `--to` is refused on `rename`
+as of round 31b, so that round turned a doc example that merely ignored a flag
+into one that hard-fails. That is the file written to be quoted VERBATIM by
+assistants.
+
+`test_every_documented_pq_command_uses_options_that_exist` now checks the flags
+of every `pq ...` example in `llms.txt`, `README.md`, `SUPPORT-MATRIX.md` and
+`CLAUDE.md` against the parser. Deliberately narrow - flags, not execution -
+because the docs are full of placeholders and mid-sentence fragments, and a
+test that tried to run them would fail on those instead of on defects. It
+checks 114 commands and found exactly this one, with no false positives.
+
+### Three in `pq add`
+
+`--json` was classified as meaningful for `add` and read by nothing but the
+shared error path, so a SUCCESS dropped it - the defect this round refuses
+everywhere else. It emits JSON now on both preview and write.
+
+The round-31c fix parsed the body AND the composition, so the SUCCESS path paid
+two Node subprocesses where it used to pay none - in the same diff whose other
+half removed a Python loop for cost. The body parse only ever chose a better
+MESSAGE, so it moved into the failure branch.
+
+And "the query parses alone but not inside this section" was asserted
+unconditionally, so a container whose EXISTING M does not parse blamed the
+user's snippet. `_add_parse_refusal` now asks which of the three is broken.
+
+### Controls
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | value comparison instead of presence | RED |
+| B | the drift guard back on a regex, with `-Q/--quiet2` declared alias-first | RED - the probe printed "regex sees it: False, parser object sees it: True" |
+| C | `--from Old --to New` restored in llms.txt | RED |
+| D | the add fixture back on `.samples/` | not run as a mutation; the fixture change is verified directly - both guards now RUN (`2 passed`) where they previously skipped |
+
+**A needed three attempts and both failures are the same one.** The first two
+measured nothing: the test had no case where an option is passed at its
+default, so it ran in the one regime where that defect cannot appear - the
+TENTH instance of that pattern in this audit, and this time in a test written
+in the same hour as the fix it was guarding. The third attempt failed because
+the edit adding those cases did not apply (ruff had reformatted the tuple), and
+I ran the control anyway on the unchanged test.
+
+Both were caught by the same cheap habit and nothing else: printing the
+observable - `pq check f --format json -> exit 0` / `exit 2` - beside the test
+result, so a mutation that had not landed, or a test that could not see it, is
+visible in the same output rather than inferred from a green.

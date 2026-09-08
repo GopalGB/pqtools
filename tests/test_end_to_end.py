@@ -2279,19 +2279,28 @@ def test_every_option_is_classified_for_every_verb() -> None:
     verb. A new flag added without a decision fails here rather than being
     accepted everywhere by default.
     """
-    import pqtools.cli as cli_module
-    from pqtools.cli import _OPTION_VERBS
+    from pqtools.cli import _OPTION_VERBS, _build_parser
 
-    source = Path(cli_module.__file__).read_text(encoding="utf-8")
-    defined = set(re.findall(r'parser\.add_argument\(\s*"--([a-z-]+)"', source))
-    defined = {name.replace("-", "_") for name in defined}
-    verbs = set(
-        re.findall(
-            r'"(parse|format|check|dependencies|rename|replace-source|eval'
-            r'|list|add|show|explain|diff)"',
-            source,
-        )
-    )
+    # Round 32: this read the parser through a regex over cli.py's TEXT
+    # (`parser.add_argument(\s*"--([a-z-]+)"`), so an option declared with a
+    # short alias first, or containing a digit or a capital, never entered
+    # `defined` - the set equality below still passed and the new flag was
+    # universal by default, which is exactly the drift this test exists for.
+    # The verb list was a hardcoded alternation, so a verb REMOVED from the
+    # parser could not be detected either. Both come off the parser object now.
+    parser = _build_parser()
+    defined = {
+        action.dest
+        for action in parser._actions  # noqa: SLF001 - argparse has no public API
+        if action.option_strings and action.dest != "help"
+    }
+    verbs = {
+        choice
+        for action in parser._actions  # noqa: SLF001
+        if action.dest == "command" and action.choices
+        for choice in action.choices
+    }
+    assert verbs, "the parser stopped declaring its verbs"
 
     assert defined == set(_OPTION_VERBS), {
         "parser has, table lacks": sorted(defined - set(_OPTION_VERBS)),
@@ -2343,6 +2352,14 @@ def test_a_verb_refuses_a_flag_it_does_not_use_instead_of_ignoring_it(
         (["check", str(target), "--to", "parquet"], "--to"),
         (["check", str(target), "--write"], "--write"),
         (["list", str(target), "--old", "X"], "--old"),
+        # Round 32: every case above passes an option at a value that DIFFERS
+        # from its default, so all of them passed while the check compared
+        # values instead of presence - the guard ran in the one regime where
+        # that defect cannot appear. `--format` defaults to "json", so these
+        # three are the missing regime, in the spellings argparse accepts.
+        (["check", str(target), "--format", "json"], "--format"),
+        (["check", str(target), "--format=json"], "--format"),
+        (["check", str(target), "--form", "json"], "--format"),
     )
     for argv, flag in refused:
         capsys.readouterr()
@@ -2372,13 +2389,44 @@ def test_a_verb_refuses_a_flag_it_does_not_use_instead_of_ignoring_it(
 
 
 def _one_section_container(tmp_path: Path) -> Path:
-    """A private copy of the sample container. Never the sample itself."""
-    source = Path(__file__).resolve().parent.parent / ".samples"
-    source = source / "real-powerbi-fuzzy-matching.pbix"
-    if not source.exists():  # pragma: no cover - .samples is gitignored
-        pytest.skip("sample container not present")
+    """A one-section .pbix built here, not read from `.samples/`.
+
+    Round 32: this copied `.samples/real-powerbi-fuzzy-matching.pbix`, which
+    `.gitignore` excludes and CLAUDE.md says is never committed - so both
+    round-31c guards SKIPPED in every clean clone, and the preview/write
+    disagreement they were written for was unguarded for anyone but me. A test
+    that always skips is not a test. `tests/test_containers.py` already
+    synthesises this shape; the same construction is inlined here rather than
+    imported across test modules, which pytest's rootdir does not guarantee.
+    """
+    import io
+    import struct
+    import zipfile
+
+    m_text = "section Section1;\n\nshared Existing = let x = 1 in x;\n"
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, "w") as archive:
+        archive.writestr("Config/Package.xml", "<Package/>")
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("Formulas/Section1.m", m_text.encode("utf-8"))
+    parts = inner.getvalue()
+    out = [struct.pack("<I", 0)]
+    for segment in (
+        parts,
+        b"\xef\xbb\xbf<permissions/>",
+        b"\x00\x00\x00\x00\xef\xbb\xbf<metadata/>",
+        b"\x01\x02\x03\x04binding",
+    ):
+        out.append(struct.pack("<I", len(segment)))
+        out.append(segment)
+    blob = b"".join(out)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("Version", "1.0")
+        archive.writestr("DataMashup", blob)
     target = tmp_path / "container.pbix"
-    target.write_bytes(source.read_bytes())
+    target.write_bytes(buffer.getvalue())
     return target
 
 
@@ -2473,3 +2521,72 @@ def test_pq_add_separates_a_bad_query_from_one_that_breaks_the_section(
     capsys.readouterr()
     assert main(["eval", str(container), "--member", "C"]) == 0
     assert capsys.readouterr().out.strip() == "1"
+
+
+def test_every_documented_pq_command_uses_options_that_exist() -> None:
+    """The round-32 MEDIUM: `llms.txt` told agents to run a command that cannot.
+
+    `pq rename report.pq --from Old --to New` - `--from` is not an option
+    (argparse exits 2 with a usage dump) and `--to` is refused on `rename`.
+    That is the file written to be quoted VERBATIM by assistants, and nothing
+    checked it, so the flag-refusal work of round 31b turned a doc example that
+    merely ignored a flag into one that hard-fails.
+
+    Deliberately narrow: it checks the FLAGS in each documented command, not
+    whether the whole command would run. The docs are full of placeholders
+    (`report.pq`, `FILE`, `'queries/**/*.pq'`) and fragments quoted mid-
+    sentence (`pq check`), and a test that tried to execute them would fail on
+    those rather than on a defect. Every flag naming an option that does not
+    exist, or one this verb refuses, IS a defect - and it is the one that
+    happened.
+    """
+    from pqtools.cli import _OPTION_VERBS, _build_parser
+
+    parser = _build_parser()
+    known = {
+        option
+        for action in parser._actions  # noqa: SLF001 - argparse has no public API
+        for option in action.option_strings
+    }
+    verbs = {
+        choice
+        for action in parser._actions  # noqa: SLF001
+        if action.dest == "command" and action.choices
+        for choice in action.choices
+    }
+    root = Path(__file__).resolve().parent.parent
+
+    def commands(text: str) -> list[str]:
+        found = [match.group(1) for match in re.finditer(r"`(pq [^`\n]+)`", text)]
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("pq ") and "`" not in stripped:
+                found.append(stripped.split("#")[0].strip().rstrip("\\").strip())
+        return found
+
+    problems: list[str] = []
+    checked = 0
+    for name in ("llms.txt", "README.md", "SUPPORT-MATRIX.md", "CLAUDE.md"):
+        path = root / name
+        if not path.exists():
+            continue
+        for command in commands(path.read_text(encoding="utf-8")):
+            tokens = command.split()
+            verb = next((t for t in tokens[1:] if not t.startswith("-")), None)
+            if verb not in verbs:
+                continue  # a fragment or a prose reference, not an invocation
+            checked += 1
+            for token in tokens:
+                if not token.startswith("--"):
+                    continue
+                flag = token.split("=")[0]
+                if flag not in known:
+                    problems.append(f"{name}: {command} -> {flag} is not an option")
+                    continue
+                dest = flag[2:].replace("-", "_")
+                if dest in _OPTION_VERBS and verb not in _OPTION_VERBS[dest]:
+                    problems.append(f"{name}: {command} -> {flag} is refused on {verb}")
+    assert not problems, problems
+    # The scan must actually be finding commands; a broken extractor would
+    # satisfy the assertion above by checking nothing at all.
+    assert checked >= 50, checked
