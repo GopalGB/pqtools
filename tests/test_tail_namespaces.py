@@ -204,9 +204,10 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # `import time`, which makes `time` a FREEVAR (`co_names == ('sleep',)`),
     # so it exercised only the attribute half - a control measuring a
     # different regime from the defect, in miniature. This one compiles a
-    # module-level import and a NESTED call, so it exercises the global
-    # binding, the attribute, and the `co_consts` walk together: every
-    # property the assertion above rests on.
+    # module-level import and a NESTED call - the SOURCE carries all three
+    # properties; the assertion below is what makes each of them load-bearing.
+    # (Round 41 wrote that clause about the assertion, and round 42 had to
+    # retract it: see below.)
     control = compile(_CONTROL_SOURCE, "<sleep-control>", "exec")
 
     # Round 42: assert over the CHILDREN only. `import time` at module level
@@ -220,12 +221,13 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # `_inner.co_names == ("time", "sleep")`), so all three properties - the
     # global binding, the attribute, and the `co_consts` walk - are each
     # load-bearing here.
-    children = {
-        name
-        for const in control.co_consts
-        if isinstance(const, CodeType)
-        for name in called_names(const)
-    }
+    children = set().union(
+        *(
+            called_names(const)
+            for const in control.co_consts
+            if isinstance(const, CodeType)
+        )
+    )
     assert {"time", "sleep"} <= children, sorted(children)
 
     # Behavioural. The one-time `node --version` probe is paid here so it

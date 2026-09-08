@@ -4195,3 +4195,39 @@ seen from the other side.
 
 **S2 also took two attempts**, the first with an anchor `ruff format` had
 rewrapped; its two identical GREEN results are what said so.
+
+## Round 43 - `8f51417..2f2168f`, verdict **SHIP**, both taken
+
+`src/` untouched for the fourth round running. The reviewer ran its own
+inverted controls first and reported them: with the `co_consts` descent removed
+the new assertion goes False, and with a control calling `sleep` on a
+non-global (`d.sleep(1)`) the new assertion is False while round 41's
+whole-walk version is True. That is the round-42 fix independently confirmed to
+discriminate, by someone re-deriving it rather than reading my claim.
+
+Two LOWs, both cosmetic, both taken:
+
+- The comment above `compile(...)` still carried round 41's sentence "every
+  property the assertion above rests on" - the exact clause round 42 retracted
+  three lines below. A reader met the claim before the correction. It now says
+  the SOURCE carries all three properties and the assertion is what makes each
+  load-bearing.
+- `children` re-implemented one level of `called_names`'s own traversal
+  predicate inline, so `isinstance(const, CodeType)` lived in two places.
+  Collapsed to `set().union(*(called_names(k) for k in ...))`. Verified the
+  assertion is unchanged: both forms give `{'sleep','time'}`.
+
+### Controls
+
+| # | What was measured | Observable | Verdict |
+|---|---|---|---|
+| T1 | traversal deleted from the one remaining copy | - | RED, then GREEN restored |
+| T2 | non-global control source (`d.sleep()`) after the dedupe | `children=['sleep']`, accepted=**False**; global form accepted=**True** | still discriminates |
+
+### State of the loop after round 43
+
+Rounds 34, 35, 37, 38, 40, 41, 42 and 43 returned SHIP. `src/` has been
+untouched by the last four diffs; every finding in them was in a test, its
+comment, or the closeout's own precision. The shipped behaviour has been
+confirmed by execution in each of those reviews - the round-33 containment fix
+was attacked seven ways in round 34 and has not moved since.

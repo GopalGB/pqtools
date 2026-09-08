@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range 8f51417..2f2168f
+# Verdict SHIP. Both findings were taken in round 43; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 43".
+#
+# Exact claude-opus-5 wrapper review - range 8f51417..2f2168f0a41b252f0818ef5ee16395d54c27c01b (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 144 insertions(+), 14 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 8f51417..2f2168f0a41b252f0818ef5ee16395d54c27c01b, not stubbed, not in the diff
+# package-lock.json: unchanged in 8f51417..2f2168f0a41b252f0818ef5ee16395d54c27c01b, not stubbed, not in the diff
+# invoked 2026-09-08T16:08:22Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified before writing (CPython 3.11.15, this worktree): `compile(_CONTROL_SOURCE).co_names == ('time', '_outer')`, `_outer.co_names == ()`, and the children-only union is exactly `{'sleep','time'}` — so the round-42 claim is measured, not asserted. Inverted controls of my own: with the `co_consts` descent removed the new assertion goes False (old whole-walk one also False); with a control that calls `sleep` on a non-global (`d.sleep(1)`) the new assertion is **False** while the round-41 whole-walk assertion is **True** — the fix genuinely discriminates where the old one did not. `pytest tests/test_tail_namespaces.py -q` → 52 passed. `--collect-only -q` → 4167, matching the count the staged gate log certifies. `src/` untouched.
+
+- **LOW — tests/test_tail_namespaces.py:202-209** — the comment block immediately above `compile(...)` still carries the round-41 sentence "so it exercises the global binding, the attribute, and the `co_consts` walk together: every property the assertion above rests on", which is exactly the claim the round-42 comment three lines below retracts for the assertion. True of the control *source*, false of the check as round 41 wrote it; a reader hits the claim before the correction. Fix: end that sentence at "...compiles a module-level import and a NESTED call — the source carries all three properties; the assertion below is what makes each of them load-bearing," and drop the "every property the assertion above rests on" clause.
+
+- **LOW — tests/test_tail_namespaces.py:223-229** — `children` re-implements one level of `called_names`'s own `isinstance(const, CodeType)` traversal inline, so the traversal predicate now exists in two places. Non-defect (I confirmed a broken predicate in either copy still turns the assertion red), but it drifts. Fix: `children = set().union(*(called_names(k) for k in control.co_consts if isinstance(k, CodeType)))` or give `called_names` a `skip_root=True` path.
+
+No correctness, security, or gate-weakening issue. The two `# type: ignore` removals are safe (mypy is `files = ["src"]`, so the file was never checked; `isinstance(const, CodeType)` is strictly tighter than the `hasattr` duck-type it replaces), and the main pin at line 192 is unchanged and still exact-set, which is what catches an over-broad walk.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
