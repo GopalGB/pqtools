@@ -1,0 +1,26 @@
+# Exact claude-opus-5 wrapper review - range 5a77b22..895691c
+# Verdict SHIP. The four LOWs it raised were taken in round 34; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 34".
+#
+# Exact claude-opus-5 wrapper review - range 5a77b22..895691c (bundle + lockfile shown as stub blobs)
+# staged:  7 files changed, 441 insertions(+), 36 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 5a77b22..895691c, not stubbed, not in the diff
+# package-lock.json: unchanged in 5a77b22..895691c, not stubbed, not in the diff
+# invoked 2026-09-08T13:56:55Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified by execution against this worktree (`4165` collected — matches the gate log's count exactly; ruff check / ruff format / mypy --strict all clean; `tests/test_end_to_end.py tests/test_containers.py tests/test_write_validation.py tests/test_container_workflow.py` → 155 passed, 9 skipped, all skips the pre-existing `.samples` gate).
+
+The round-33 HIGH fix holds. I attacked it 7 ways (`1; shared Y = 2`, `1; shared Existing = 2`, `1; shared #"Existing" = 2`, `1; Hidden = 2`, `1; [Description="x"] shared Y = 2`, `1 meta [x=1]; shared Y = 2`, `1; shared Y = 2; shared Z = 3`) — every one exits 2 with the file byte-identical and no `.bak`. And 24 legitimate adds across 6 container shapes (multi-member, non-`shared` private member, trailing comment, CRLF, leading comment, `[Description=...]` attribute) × 4 bodies (incl. `";"` inside a text literal and inside `Text.Split`) all exit 0 — no false refusal. Subprocess count is unchanged at 2, as claimed.
+
+- **LOW — src/pqtools/cli.py:491** — the `else "changes the section"` fallback is reachable and is the branch a *non-`shared`* smuggle takes: `pq add c.pbix --name X --source '1; Hidden = 2'` is correctly refused (measured, exit 2, file untouched) but names nothing, because `split_shared_parsed` only tracks `KeywordShared`, so `introduced` and `disturbed` are both empty. The verb whose whole point is refusing *by name* falls back to "changes the section" for a whole class of input, and no test covers this branch. Fix: when `changes` is empty, show the difference directly — `composed.get(name)` vs `expected[name]` (i.e. "the text after the first top-level `;` is a second declaration: `Hidden = 2`") — and add the `'1; Hidden = 2'` case to `test_pq_add_refuses_a_source_that_smuggles_a_second_query`.
+- **LOW — llms.txt:38** — follows from the above: the doc says a value "that declares a second `shared` member … is refused by name", which is narrower than the behaviour (a non-`shared` member is refused too, and *not* by name). Fix: drop `shared` from the sentence — "a value that declares a second section member".
+- **LOW — src/pqtools/cli.py:1330** — the round hardened dest-inference in `_options_present` (:1310) and in the doc test (:2696), but left the third site: the user-facing refusal still renders the flag from the dest with `f"--{name.replace('_','-')}"`. An option declared `dest="out"` on `--out-file` would be detected correctly and then named `--out` in the message — the exact mechanism audit item D demonstrated standalone, at the one site where a user reads the output. Fix: `flag_of = {a.dest: a.option_strings[0] for a in _build_parser()._actions if a.option_strings}` and render `flag_of[name]`.
+- **LOW — src/pqtools/containers.py:382** — `split_shared_parsed` is the only unprefixed helper of its kind in the module (`_member_end`, `_rebuild`, `_replace_zip_member` are all underscored), so it reads as supported API, but it silently returns wrong text if `parsed` was not produced from that exact `section_source` — it slices `section_source[start:end]` with the other document's token offsets and raises nothing. Fix: rename to `_split_shared_parsed` (only `cli._refuse_uncontained_add` and `split_shared` call it), or assert `int(parsed["tokens"][-1]["end"]) <= len(section_source)` at entry.
+
+Everything else in the diff checked out: the guard's comparison is sound (equality of the whole appended text means `body` can hold no top-level `;`, which is exactly the containment property); `_options_present`'s new raise is unreachable in normal use (main's `parse_known_args` on the same tokens has already succeeded, and `default=SUPPRESS` on the `nargs='*'` positional cannot trigger `_check_value` — it has no `choices`) and I confirmed 10 invocation shapes incl. `--format=json`, `--form`, `--` termination and multi-file leftovers still return the right dests; `_pbix(_blob(m_text))` is a correct substitution; the gate log's commit `46241ce` is the autocommit tip on `feat/connectors-and-real-m-0.9.0` rather than an ancestor of `5a77b22`, but its 4165 collect count matches this tree, so it certifies the right content.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

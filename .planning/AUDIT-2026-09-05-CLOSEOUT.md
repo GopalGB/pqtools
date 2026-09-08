@@ -3599,3 +3599,65 @@ verification theatre this loop keeps catching.
 
 Control A was re-run AFTER `ruff format` touched the tree, because round 32's
 control A measured nothing twice for exactly that reason.
+
+## Round 34 - `5a77b22..895691c`, verdict **SHIP**, four LOWs taken anyway
+
+The first SHIP since round 31, and the reviewer earned it: it attacked the
+round-33 containment fix seven ways (`shared Y`, `shared Existing`,
+`#"Existing"`, a private `Hidden`, an attributed `[Description=...] shared Y`,
+`1 meta [x=1]; shared Y`, and a double `shared Y; shared Z`) - every one exits
+2 with the file byte-identical and no `.bak` - and then checked 24 legitimate
+adds across 6 container shapes x 4 bodies (including `";"` inside a text
+literal and inside `Text.Split`) for false refusals. None. Subprocess count
+confirmed unchanged at 2.
+
+SHIP was the terminal condition for this loop. The four LOWs were taken anyway,
+because two of them are the product's core promise rather than polish.
+
+### LOW - the refusal stopped naming things for a whole class of input
+
+`pq add c.pbix --name X --source '1; Hidden = 2'` was refused correctly and
+said "changes the section". A private (non-`shared`) section member is in
+neither dict, so neither `introduced` nor `disturbed` can name it, and the
+fallback fired. This is the `pq rename` defect of round 31 in a new place: the
+verb whose whole point is refusing BY NAME, refusing anonymously. It now shows
+the text that rode along - `declares a second section member (Hidden = 2;)`.
+
+`llms.txt` followed the same error, promising the refusal for a second
+`shared` member when a private one is refused too. Corrected to "section
+member". Documenting narrower behaviour than the code has is the same class of
+untruth as documenting wider.
+
+### LOW - the third dest-inference site, the one a user reads
+
+Round 33 removed flag-text inference from `_options_present` and from the
+documented-command check, and left it in the refusal MESSAGE. An option
+declared `dest="out"` on `--out-file` is detected correctly and then reported
+as `--out` - a flag that does not exist, in the sentence telling someone which
+flag to remove. Rendered from `option_strings` now.
+
+**And the guard I wrote for it was the regime error again.** The first version
+walked the real parser asserting every dest renders to an existing option
+string. No shipped option declares a divergent `dest`, so it passed whether or
+not the fix was present - measuring the one regime where the defect cannot
+appear, in the very round whose finding was about that. Caught before it
+shipped by asking the question, and replaced with a guard that SUPPLIES the
+divergence via a monkeypatched parser, which is the only way it can go red.
+
+### LOW - the reused-parse helper could invent a member
+
+`split_shared_parsed` read as supported API and, handed a parse of a different
+document, sliced with foreign offsets and returned plausible wrong text.
+Renamed `_split_shared_parsed` and it now refuses the mismatch. The control's
+observable is the argument for it: without the check,
+`_split_shared_parsed(short, parse(longer))` returns
+`{'A': 'shared A = 1;', 'B': ''}` - a member `B` that does not exist in the
+document it was asked about.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| F | bare `"changes the section"` fallback | names-the-member=False | RED | names-the-member=True, GREEN |
+| G | flag rendered from the dest | message names `'--out'` | RED | names `'--out-file'`, GREEN |
+| H | pairing check removed | returns `{'A': ..., 'B': ''}` - invents B | RED | refuses, GREEN |

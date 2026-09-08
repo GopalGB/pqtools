@@ -35,8 +35,8 @@ affiliated with or endorsed by Microsoft.
   `pq format` / `pq rename` / `pq replace-source` print the edited M and
   save it with `--write`. `pq add --name N --source '...' --write` adds a
   brand-new query. `--source` must be ONE query body: a value that declares a
-  second `shared` member (`'1; shared Other = 2'`) is refused by name, because
-  composing it would add or redefine a query you did not name - use
+  second section member (`'1; shared Other = 2'`, or a private `'1; Other = 2'`)
+  is refused, naming the query it would have added or redefined - use
   `replace-source` to change a query that already exists.
   Any `--write` on a container writes a backup first, to the
   first free `<file>.bak`, `<file>.bak.1`, ... - an existing backup is never

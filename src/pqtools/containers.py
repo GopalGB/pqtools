@@ -376,17 +376,26 @@ def split_shared(section_source: str, container: str = "<string>") -> dict[str, 
         parsed = core.parse(section_source)
     except MQueryError as error:
         raise ContainerError(f"{container}: {error.message}") from error
-    return split_shared_parsed(section_source, parsed)
+    return _split_shared_parsed(section_source, parsed)
 
 
-def split_shared_parsed(section_source: str, parsed: dict[str, Any]) -> dict[str, str]:
+def _split_shared_parsed(section_source: str, parsed: dict[str, Any]) -> dict[str, str]:
     """The same split, over a parse the caller has already paid for.
 
     `pq add` has to check that composing its snippet into the section added
     exactly one member, and it has just parsed the composed document to decide
     the snippet is valid at all. Going back through `split_shared` would spend
     a second Node subprocess on the success path for a parse already in hand.
+
+    Private, and `parsed` MUST be the parse of this exact `section_source`:
+    the slices below are token offsets into it, so a parse of some other
+    document returns plausible wrong text rather than raising. Underscored for
+    that reason - `split_shared` is the supported entry point.
     """
+    if int(parsed["tokens"][-1]["end"]) > len(section_source):
+        raise ContainerError(
+            "internal: token offsets do not belong to this section source"
+        )
     tokens: list[dict[str, Any]] = parsed["tokens"]
     members: dict[str, str] = {}
     depth = 0

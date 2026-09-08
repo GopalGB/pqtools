@@ -2553,6 +2553,20 @@ def test_pq_add_refuses_a_source_that_smuggles_a_second_query(
     )
     assert "adds 'Y'" in capsys.readouterr().err
 
+    # Round 34: a member that is not `shared` is in neither dict, so neither
+    # "adds" nor "redefines" can name it. It was refused - correctly - with
+    # "changes the section", which tells the reader nothing, from the verb
+    # whose whole point is refusing BY NAME. The text that rode along is what
+    # they need to see.
+    capsys.readouterr()
+    assert (
+        main(["add", str(container), "--name", "X", "--source", "1; Hidden = 2"]) != 0
+    )
+    private = capsys.readouterr().err
+    assert "second section member" in private, private
+    assert "Hidden = 2" in private, private
+    assert "changes the section" not in private, private
+
     # --write is the expensive half. Nothing may have reached the file, by
     # either route, and no backup should exist for a write that never began.
     assert container.read_bytes() == before
@@ -2617,6 +2631,66 @@ def test_pq_add_answers_in_json_when_asked_on_both_paths(
     assert written["name"] == "X"
     assert written["written"] is True
     assert Path(written["backup"]).exists()
+
+
+def test_a_refusal_names_the_flag_the_user_typed_not_one_built_from_the_dest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round 34: the third dest-inference site, and the one a user READS.
+
+    The round that removed flag-text inference from `_options_present` and
+    from the documented-command check left the refusal MESSAGE rendering the
+    flag as `--{dest}` with underscores swapped for dashes. An option declared
+    `dest="out"` on `--out-file` is detected correctly and then reported as
+    `--out` - a flag that does not exist, in the sentence telling someone
+    which flag to remove.
+
+    No shipped option declares a divergent `dest` today, so a test that only
+    walks the real parser would pass whether or not the fix is present: it
+    would run in the one regime where the defect cannot appear. This supplies
+    the divergence instead, which is the only way the guard can go red.
+    """
+    import argparse
+
+    from pqtools import cli
+    from pqtools.core import MQueryError
+
+    probe = argparse.ArgumentParser(prog="pq")
+    probe.add_argument("command")
+    probe.add_argument("--out-file", dest="out")
+    monkeypatch.setattr(cli, "_build_parser", lambda: probe)
+    monkeypatch.setattr(cli, "_OPTION_VERBS", {"out": frozenset({"eval"})})
+
+    with pytest.raises(MQueryError) as caught:
+        cli._refuse_irrelevant_options(
+            argparse.Namespace(command="check"), ["check", "--out-file", "x"]
+        )
+    message = str(caught.value)
+    assert "--out-file" in message, message
+
+
+def test_the_member_split_refuses_a_parse_of_a_different_document() -> None:
+    """Round 34: the reused-parse helper sliced with foreign token offsets.
+
+    `_split_shared_parsed` exists so `pq add` can check containment against a
+    parse it has already paid for. Handed a parse of some OTHER document it
+    slices `section_source[start:end]` with that document's offsets and
+    returns plausible wrong text, raising nothing - the failure mode this
+    package refuses everywhere else. Underscored so it does not read as
+    supported API, and it now checks the pairing.
+    """
+    from pqtools import containers
+    from pqtools.core import parse
+
+    short = "section S;\n\nshared A = 1;\n"
+    longer = "section S;\n\nshared A = 1;\n\nshared B = 22222;\n"
+
+    with pytest.raises(containers.ContainerError):
+        containers._split_shared_parsed(short, parse(longer))
+
+    # Vacuity: correctly paired, it still splits - so the refusal above is
+    # about the mismatch and not about the helper being broken.
+    assert set(containers._split_shared_parsed(longer, parse(longer))) == {"A", "B"}
 
 
 def test_option_presence_never_reports_a_positional() -> None:

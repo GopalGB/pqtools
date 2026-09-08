@@ -474,7 +474,7 @@ def _refuse_uncontained_add(
     adding one query would have produced. It reuses the caller's parse, so the
     success path still pays exactly one subprocess.
     """
-    composed = containers.split_shared_parsed(new_source, parsed)
+    composed = containers._split_shared_parsed(new_source, parsed)
     expected = dict(existing)
     expected[name] = f"shared {_quote_identifier(name)} = {body};"
     if composed == expected:
@@ -488,7 +488,26 @@ def _refuse_uncontained_add(
         changes.append("adds " + ", ".join(repr(other) for other in introduced))
     if disturbed:
         changes.append("redefines " + ", ".join(repr(other) for other in disturbed))
-    reason = " and ".join(changes) if changes else "changes the section"
+    if changes:
+        reason = " and ".join(changes)
+    else:
+        # Round 34: a member that is not `shared` - a private section member -
+        # appears in neither dict, so neither set above can name it, and this
+        # fell back to "changes the section". `pq add c.pbix --name X --source
+        # '1; Hidden = 2'` was refused correctly and told the reader nothing
+        # they could act on, from the verb whose whole point is refusing BY
+        # NAME. Show the text that rode along instead.
+        kept = composed.get(name, "")
+        extra = (
+            expected[name][len(kept) :].strip()
+            if expected[name].startswith(kept)
+            else ""
+        )
+        reason = (
+            f"declares a second section member ({extra})"
+            if extra
+            else "changes the section"
+        )
     raise MQueryError(
         f"{file}: --source must be ONE query body - composing this one also "
         f"{reason}, which is not what adding {name!r} should do. Pass one query "
@@ -1327,7 +1346,16 @@ def _refuse_irrelevant_options(args: argparse.Namespace, tokens: list[str]) -> N
         if args.command not in verbs and name in present
     )
     if passed:
-        flags = ", ".join(f"--{name.replace('_', '-')}" for name in passed)
+        # Round 34: the round that removed dest-inference from `_options_present`
+        # and from the doc test left it at the third site - the one a user reads.
+        # An option declared `dest="out"` on `--out-file` would be detected
+        # correctly and then named `--out` in the refusal.
+        flag_of = {
+            action.dest: action.option_strings[0]
+            for action in _build_parser()._actions  # noqa: SLF001
+            if action.option_strings
+        }
+        flags = ", ".join(flag_of[name] for name in passed)
         raise MQueryError(
             f"{args.command} does not use {flags} - remove it rather than "
             "assume it did something. Nothing was changed."
