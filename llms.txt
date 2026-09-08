@@ -169,17 +169,22 @@ found the code in. `pq explain`
 takes **any** of the three things a user can be holding: a lint code from the
 table above, a FAILURE code from the table before it (`pq explain M_IO_ERROR`),
 or an M function name (`pq explain Table.FuzzyNestedJoin`). It never answers a
-real code as though it were an unrecognised function name. A name that is
-code-SHAPED - literally ALL-CAPS with an underscore (`M_FUTURE_ERROR`,
-`NODE_ERROR2`) or `M` plus three digits (`M007`) - but is not a code this
-version reports is told exactly that, with the list of codes that do exist,
-never that it "may be a typo ... a query name, a variable, a record field",
-which is true of no code. The shape reads the input as typed: `m_future_error`
-is answered as a NAME, because a lower-case identifier with an underscore is a
-perfectly ordinary M step name (`my_step`, `source_data`) and pqtools will not
-tell you your variable is a broken error code. A real code still resolves in
-any case - `pq explain m_io_error` works. Anything that is not a code answers
-with a different JSON shape: `{"name", "supported", "message"}`.
+real code as though it were an unrecognised function name.
+
+For a name that is NEITHER a code it reports NOR a documented function, the
+answer states both, because the two cannot be told apart reliably: `M_TOTAL` is
+a legal M step name and `M_FUTURE_ERROR` is a plausible code, and they are the
+same shape. Which reading leads is a heuristic - a code PREFIX family
+(`M_...`, `NODE_...`, `MQUERY_...`) or `M` plus three digits leads with the
+code reading and prints the list of codes that do exist; anything else leads
+with the name reading - but nothing depends on the heuristic being right,
+because neither answer omits the other possibility. The one exception is a
+name containing a dot (`Table.Zzz`): no pqtools code contains one, so that is
+unambiguously a function name and gets the function answer alone. Case is read
+as typed, so `m_io_error` still resolves to the real code through the table,
+while an unknown lower-case name leads with the name reading. Anything that is
+not a code answers with a different JSON shape: `{"name", "supported",
+"message"}`.
 
 Human-readable `pq check` output prints the machine-parseable
 `file:line:column: severity code: message` line for every finding, plus one

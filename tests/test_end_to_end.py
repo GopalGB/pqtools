@@ -1937,17 +1937,22 @@ def test_a_code_in_both_tables_has_one_entry() -> None:
     # the lint table is consulted first. An agent branching on which table it
     # found the code in gets the opposite of what it is told. The document
     # now names the exception; this holds the document to it.
-    for code in sorted(set(DIAGNOSTIC_HELP) & set(FAILURE_HELP)):
+    # Both loops here iterate the intersection, so both go quietly vacuous if
+    # it ever empties - drop `M_PARSE_ERROR` from `FAILURE_HELP` and these
+    # assertions stop running rather than fail. Name the expected member.
+    shared = set(DIAGNOSTIC_HELP) & set(FAILURE_HELP)
+    assert shared == {"M_PARSE_ERROR"}, shared
+    llms = (Path(__file__).resolve().parent.parent / "llms.txt").read_text(
+        encoding="utf-8"
+    )
+    for code in sorted(shared):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             assert main(["explain", code, "--json"]) == 0, code
         payload = json.loads(buffer.getvalue())
         assert payload["kind"] == "lint diagnostic", (code, payload)
         assert payload["severity"] == DIAGNOSTIC_HELP[code].severity, (code, payload)
-        text = (Path(__file__).resolve().parent.parent / "llms.txt").read_text(
-            encoding="utf-8"
-        )
-        assert f"`{code}`, which appears in BOTH tables" in text, (
+        assert f"`{code}`, which appears in BOTH tables" in llms, (
             f"{code} answers as a lint diagnostic despite being documented as "
             "a failure code, and llms.txt does not name the exception"
         )
@@ -2005,34 +2010,78 @@ def test_a_code_shaped_name_is_never_answered_as_a_function_name(
     """
     from pqtools.cli import _CODE_SHAPED, main
 
-    # Code-shaped: answered as a code that does not exist, never as a name.
-    # `M007` matters most - `pq check` prints M001..M006, so the next lint
-    # code is the likeliest thing a user holds, and it has no underscore.
+    # Code-shaped: the CODE reading leads, and the code list is printed so the
+    # reader is not sent to a document. `M007` matters most - `pq check`
+    # prints M001..M006, so the next lint code is the likeliest thing a user
+    # holds, and it has no underscore.
+    #
+    # This used to assert `"not a name pqtools recognizes" not in out`, which
+    # is no longer the property: round 28 made BOTH branches say both things,
+    # because the shape cannot be made exact and no answer may depend on it
+    # being exact. What is asserted is which reading LEADS.
     for name in ("M_FUTURE_ERROR", "NODE_ERROR2", "MQUERY_ERROR2", "M007", "M999"):
         capsys.readouterr()
         assert main(["explain", name]) == 0, name
-        out = capsys.readouterr().out
-        assert "not a name pqtools recognizes" not in out, (name, out)
-        assert f"{name} is not a code this version of pqtools reports" in out, (
-            name,
-            out,
-        )
-        # It says what it DOES report, so the reader is not sent to a doc.
+        out = " ".join(capsys.readouterr().out.split())
+        assert out.startswith(
+            f"{name} is not a code this version of pqtools reports"
+        ), (name, out)
         assert "M_IO_ERROR" in out and "M001" in out, (name, out)
 
-    # NOT code-shaped: every one of these is a legal M identifier, and a step
-    # called `source_data` is far commoner than an error code spelled that
-    # way. `m_future_error` is here on purpose: lower case is exactly what
-    # separates the two, so a lower-cased code is ambiguous and loses - the
-    # cost of reading the raw input instead of the upper-cased one, paid
-    # deliberately. Real codes still resolve either way; that is asserted
-    # below, because it is the half that makes this cost acceptable.
-    for name in ("my_step", "source_data", "raw_data_2", "Result_2", "M_", "m007"):
+    # NOT code-shaped: every one of these is a legal M identifier, so the NAME
+    # reading leads.
+    #
+    # Round 27 listed only lower/mixed-case names here, so it ran in a regime
+    # where its own residual defect could not appear - the EIGHTH instance of
+    # the pattern, written by the round that named the pattern. The ALL-CAPS
+    # entries are the ones that matter: `TOTAL_SALES`, `CHANGED_TYPE`, `A_1`
+    # are ordinary M identifiers, and round 27's shape ("ALL-CAPS with an
+    # underscore") answered every one of them "is not a code this version of
+    # pqtools reports". The list is built from what a person names a step,
+    # not from what happens to fall outside today's regex.
+    for name in (
+        "TOTAL_SALES",
+        "CHANGED_TYPE",
+        "A_1",
+        "REMOVED_COLUMNS",
+        "my_step",
+        "source_data",
+        "raw_data_2",
+        "Result_2",
+        "M_",
+        "m007",
+    ):
         assert not _CODE_SHAPED.match(name), name
         capsys.readouterr()
         assert main(["explain", name]) == 0, name
-        out = capsys.readouterr().out
+        out = " ".join(capsys.readouterr().out.split())
+        assert out.startswith(f"{name} is not a name pqtools recognizes"), (name, out)
+
+    # The property that survives the shape being WRONG, which it will be:
+    # `M_TOTAL` is a legal step name that matches the prefix families, and
+    # some future code family will not match them. So both readings are
+    # stated either way, and nothing is ever told flatly that it is the other
+    # thing. A dotted name is the one unambiguous case (no code contains a
+    # dot) and keeps the plain function-name wording.
+    for name in (
+        "M_TOTAL",
+        "TOTAL_SALES",
+        "M_FUTURE_ERROR",
+        "M007",
+        "my_step",
+        "NODE_COUNT",
+    ):
+        capsys.readouterr()
+        assert main(["explain", name]) == 0, name
+        out = " ".join(capsys.readouterr().out.split())
+        assert "not a code" in out or "not one of the codes" in out, (name, out)
         assert "not a name pqtools recognizes" in out, (name, out)
+
+    capsys.readouterr()
+    assert main(["explain", "Table.Zzz"]) == 0
+    dotted = " ".join(capsys.readouterr().out.split())
+    assert "not a name pqtools recognizes" in dotted, dotted
+    assert "codes pqtools reports" not in dotted, dotted
 
     for spelling in ("M_IO_ERROR", "m_io_error", "M001", "m001"):
         capsys.readouterr()

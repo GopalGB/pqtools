@@ -3034,7 +3034,7 @@ upper-cased one; that fell out of the HIGH.
 
 ### Controls
 
-Four behavioural, red-then-green, against file copies:
+Five behavioural, red-then-green, against file copies:
 
 | # | defect reintroduced | result |
 |---|---|---|
@@ -3055,3 +3055,76 @@ round 27's D). All three failed the same way: **the mutation did not land where
 I believed it landed.** The check that catches it is cheap and is now habit -
 after mutating, print the thing that should have changed before running the
 test.
+
+---
+
+## Round 28 - `dccca7b..23b471d`, five findings, all five taken
+
+Two HIGH. The second is the pattern this audit named last round, written by
+the round that named it.
+
+### HIGH - the false-positive class narrowed instead of closing
+
+Round 27 shipped "ALL-CAPS with an underscore" and wrote, in a comment, that
+"only the all-caps convention separates a code from a step name". **That
+premise is false.** `TOTAL_SALES`, `CHANGED_TYPE`, `A_1`, `REMOVED_COLUMNS` are
+ordinary M identifiers - the same grammar that makes `M_` legal makes those
+legal - and every one of them was answered "is not a code this version of
+pqtools reports". Reproduced on the shipped tree.
+
+That is three rounds in a row on one heuristic: r26 matched the upper-cased
+name, r27 matched all-caps, both wrong in opposite directions. **The lesson is
+not a better regex.** The shape narrows to the prefix families pqtools actually
+names codes with (`M_...`, `NODE_...`, `MQUERY_...`, `M###` - all 18 current
+codes match, the identifiers above do not), and then **no message depends on
+the shape being right**. Both branches state both readings: not a code, and not
+a documented function name. A step called `M_TOTAL` still matches the families,
+and some future code family will not - so the shape decides only which reading
+LEADS and whether the code list is worth printing. It can no longer make either
+answer wrong. A name containing a dot is the one unambiguous case (no code
+contains one) and keeps the plain function-name wording.
+
+This is the repo's own rule applied to itself: an honest statement of both
+possibilities beats a confident guess a user cannot tell apart from knowledge.
+
+### HIGH - the guard ran where the residual defect could not appear, again
+
+Round 27's not-code-shaped list was `my_step`, `source_data`, `raw_data_2`,
+`Result_2`, `M_`, `m007` - **not one ALL-CAPS entry**, against a shape whose
+whole rule was "ALL-CAPS". The eighth instance, and the most pointed: the
+closeout section directly above it names the pattern and states the question to
+ask. Writing the question down did not make me ask it.
+
+The list is built from what a person names a step now, not from what falls
+outside today's regex. And the test asserts the property that survives the
+shape being wrong - both readings present, whichever leads - rather than the
+branch taken.
+
+### MEDIUM + LOW x2
+
+`llms.txt` sold the caps rule as the discriminator and promised "pqtools will
+not tell you your variable is a broken error code", which the code did not
+keep. Rewritten to describe what is actually true: which reading leads is a
+heuristic, and nothing depends on it, because neither answer omits the other
+possibility. Both intersection loops in the both-tables test iterate
+`DIAGNOSTIC_HELP & FAILURE_HELP` and would have gone silently vacuous if that
+ever emptied - the expected member is named before the loop now, and the
+`llms.txt` read is hoisted out of it. And the round-27 section said "Four
+behavioural" above a five-row table; corrected.
+
+### Controls
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | the round-27 shape (ALL-CAPS + underscore) | RED, `pq explain TOTAL_SALES` reproduced the wrong answer |
+| B | the code branch stops naming the name reading | RED |
+| C | the dotless fall-through stops naming the code reading | RED |
+| D | `M_PARSE_ERROR` dropped, emptying the intersection | RED (it went vacuous-green before this round) |
+
+**E did not run.** The mutation meant to delete the `llms.txt` heuristic
+paragraph failed on a quoting error and never applied, so its green measured
+nothing - recorded rather than reported as a pass. That paragraph is prose with
+no executable control, and it is not given one: the behaviour it describes is
+covered by the dotted-name and both-readings assertions above, and asserting
+its wording would be theatre. The one `llms.txt` claim that IS surprising - the
+`M_PARSE_ERROR` exception - keeps the phrase-level test round 27 gave it.

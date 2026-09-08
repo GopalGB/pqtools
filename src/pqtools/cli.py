@@ -835,31 +835,36 @@ def _run_diff(args: argparse.Namespace) -> int:
     return 0 if not diff else 1
 
 
-# A pqtools error code, by shape: an ALL-CAPS word with an underscore
-# (`M_IO_ERROR`, `NODE_ERROR`), or a three-digit lint code (`M007`).
-# Deliberately not a list of the codes - the tables are that, and this has to
-# recognise a code that does NOT appear in them, which is the whole point.
+# A pqtools error code, by shape: one of the PREFIX FAMILIES pqtools names its
+# codes with (`M_...`, `NODE_...`, `MQUERY_...`), or a three-digit lint code
+# (`M007`). Still not an enumeration - the point is to recognise a code that is
+# NOT in the tables - but a much tighter shape than "looks like a constant".
 #
-# Matched against the RAW input, not `name.upper()`. Round 26 matched the
-# upper-cased form and so shipped round 25's defect with the sign flipped:
-# every ordinary snake_case step name a person could type - `my_step`,
-# `source_data`, `Result_2` - upper-cased into this shape and was answered
-# "is not a code this version of pqtools reports". M identifiers DO take
-# underscores; only the all-caps convention separates a code from a step
-# name, and upper-casing destroys exactly the evidence this test weighs. The
-# cost is that a lower-case `m_future_error` gets the function-name answer,
-# which is correct - it is indistinguishable from a variable. Real codes are
-# unaffected: the table lookup above upper-cases, so `pq explain m_io_error`
-# still resolves.
+# Two rounds got this wrong in opposite directions and both shipped:
+#   r26 matched `name.upper()`, so `my_step` became `MY_STEP` and an ordinary
+#        step name was answered "is not a code this version reports".
+#   r27 fixed the case but kept "ALL-CAPS with an underscore", writing that
+#        "only the all-caps convention separates a code from a step name".
+#        That premise is false. `TOTAL_SALES`, `CHANGED_TYPE`, `A_1` are
+#        perfectly ordinary M identifiers - the same grammar that makes `M_`
+#        legal makes those legal - so the false-positive class narrowed
+#        instead of closing.
 #
-# Round 26's guard "no documented M name matches this shape" was measured on
-# the wrong set. This branch is reached only by names that are NOT documented
-# and NOT builtins, so `DOCUMENTED` could not have held a counter-example
-# even in principle. What had to be checked was ordinary user identifiers.
+# It does not close entirely either - a step named `M_TOTAL` still matches -
+# so no message here depends on the shape being right. BOTH branches now say
+# both things: not a code, and not a documented function name. The shape
+# decides only which reading LEADS and whether the code list is worth
+# printing; it can no longer make either answer wrong. A dotted name is the
+# one unambiguous case (no code contains a dot) and keeps the plain
+# function-name wording.
 #
-# A bare `M_` is deliberately NOT code-shaped: it carries no code name and is
-# a legal M identifier, so the function-name answer is right for it.
-_CODE_SHAPED = re.compile(r"^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|M[0-9]{3})$")
+# Matched against the RAW input. Lower case is not a code: `pq explain
+# m_future_error` is answered as a name, because it is indistinguishable from
+# a variable. Real codes resolve either way - the table lookup above
+# upper-cases, so `pq explain m_io_error` still works, and that is asserted.
+_CODE_SHAPED = re.compile(
+    r"^(M_[A-Z0-9_]*[A-Z0-9]|NODE_[A-Z0-9_]*|MQUERY_[A-Z0-9_]*|M[0-9]{3})$"
+)
 
 
 def _run_explain(args: argparse.Namespace) -> int:
@@ -950,8 +955,10 @@ def _run_explain(args: argparse.Namespace) -> int:
         # are the codes `pq check` prints, the likeliest thing a user holds.
         known = sorted(set(DIAGNOSTIC_HELP) | set(FAILURE_HELP))
         message = (
-            f"{name} is not a code this version of pqtools reports. The "
-            f"codes it does report are: {', '.join(known)}."
+            f"{name} is not a code this version of pqtools reports, and not "
+            "a name pqtools recognizes as a documented Power Query M "
+            f"function either. The codes it does report are: "
+            f"{', '.join(known)}."
         )
         supported = False
     elif name in BUILTINS:
@@ -962,12 +969,26 @@ def _run_explain(args: argparse.Namespace) -> int:
         supported = False
         if reason is not None:
             message = reason
-        else:
+        elif "." in name:
+            # A dot settles it: no pqtools code contains one, so this is a
+            # function name and only the function answer is relevant.
             message = (
                 f"{name} is not a name pqtools recognizes as a documented "
                 "Power Query M function. It may be a typo, an internal or "
                 "undocumented name, or something outside the M standard "
                 "library (a query name, a variable, a record field)."
+            )
+        else:
+            # Dotless and not code-shaped: it could be either, and guessing
+            # is what produced two shipped defects in a row. Say both. This
+            # is what makes a miss by `_CODE_SHAPED` (`M_TOTAL`, or a future
+            # code family) a gap rather than a wrong answer.
+            message = (
+                f"{name} is not a name pqtools recognizes as a documented "
+                "Power Query M function, and it is not one of the codes "
+                "pqtools reports. It may be a typo, or something outside the "
+                "M standard library (a query name, a variable, a record "
+                "field)."
             )
     if args.json:
         _print({"name": name, "supported": supported, "message": message}, True)
