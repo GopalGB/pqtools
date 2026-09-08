@@ -1,0 +1,20 @@
+# Exact claude-opus-5 wrapper review - range 9fad5c0..d823d02
+# Verdict SHIP. Both findings were taken in round 38; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 38".
+#
+# Exact claude-opus-5 wrapper review - range 9fad5c0..d823d020c2447a597839f4b393cd66c760b029fc (bundle + lockfile shown as stub blobs)
+# staged:  5 files changed, 135 insertions(+), 23 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 9fad5c0..d823d020c2447a597839f4b393cd66c760b029fc, not stubbed, not in the diff
+# package-lock.json: unchanged in 9fad5c0..d823d020c2447a597839f4b393cd66c760b029fc, not stubbed, not in the diff
+# invoked 2026-09-08T14:53:43Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified by execution in this worktree: the gate log's content tree `2eec473` contains byte-identical blobs to the staged `containers.py` (`296746c`) and `test_end_to_end.py` (`f18cf12`), so the evidence certifies the tree it ships with. `ParsedSection("section S;", {...})` raises `ParsedSection.__init__() takes 2 positional arguments but 3 were given` — the new `match=` pin matches reality. Both new docstring claims hold: `dataclasses.replace(p, source=...)` → `TypeError: got an unexpected keyword argument 'source'`, and `deepcopy` preserves the pair.
+
+- **MEDIUM — tests/test_end_to_end.py:2717-2718** — the pin measures CPython's *positional-arity* message, not pairability, so it cannot see the most likely way the defect returns. Executed the substitution: `def __init__(self, section_source, *, parsed=None)` still raises `takes 2 positional arguments but 3 were given` for `C("alpha", {...})` — the guard stays **green** — while `C("alpha", parsed={"of": "zed"})` reconstructs the exact round-35/36 mismatched pair. The test asserts `inspect.signature(ParsedSection.members)` but never `ParsedSection.__init__`, so nothing in the file constrains the constructor's parameter list. That is the round-35→36 shape again (the defect moves to a different call form and every assertion stays green). Fix: add `assert list(inspect.signature(containers.ParsedSection.__init__).parameters) == ["self", "section_source"]` beside the existing `members` shape assertion.
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:3846 (control L4)** — the observable recorded for "`init=False` reverted" is `{'Zed': 'shared Alpha = '}`, which this test cannot produce: with the generated two-arg `__init__` the construction *succeeds* and pytest reports `Failed: DID NOT RAISE <class 'TypeError'>`; the `{'Zed': ...}` value comes from a separate `.members()` call the test never makes. The row silently merges two measurements, which is the precision this file's own L1 row exists to enforce. Fix: split the row, or name the observable the test actually printed.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

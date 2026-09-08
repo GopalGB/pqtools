@@ -2719,6 +2719,18 @@ def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
 
     # Shape, kept because it names WHY the above holds rather than only that
     # it does - but on its own it proves nothing, which is the lesson here.
+    # Round 38: the `match=` above pins CPython's POSITIONAL-arity message, so
+    # it survives the likeliest way this defect returns. Measured: adding a
+    # keyword-only `parsed` parameter leaves the positional call raising the
+    # same words - the assertion above stays GREEN - while
+    # `ParsedSection(alpha, parsed=parse(zed))` rebuilds the round-35 mismatch
+    # exactly. Nothing in the file constrained the constructor's parameter
+    # list. This does.
+    constructor = inspect.signature(containers.ParsedSection.__init__)
+    assert list(constructor.parameters) == ["self", "section_source"], list(
+        constructor.parameters
+    )
+
     signature = inspect.signature(containers.ParsedSection.members)
     assert list(signature.parameters) == ["self"], list(signature.parameters)
     assert not hasattr(containers, "_split_shared_parsed")

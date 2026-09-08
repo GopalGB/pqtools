@@ -104,18 +104,38 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     to hand control back to, so a real `time.sleep(delay)` here would only
     make every query - and this suite - as slow as the longest delay any
     query happens to name, for zero difference in the RESULT. "Invoke now"
-    is the honest behaviour for a deterministic, single-shot evaluator; a
-    regression to an actual sleep would make this test (and the whole
-    suite) measurably slower without changing what it asserts, which is
-    exactly the signal that would catch it.
+    is the honest behaviour for a deterministic, single-shot evaluator.
+
+    Round 38: this asserted `elapsed < 1.0` for a call naming a delay of ONE
+    DAY. A regression to a real sleep costs 86400 seconds, so 1.0 never
+    measured that - it measured how fast the host could start the Node bridge,
+    and it went red at 1.71s on a machine deep in swap while `InvokeAfter` was
+    costing 0.000s more than a plain `1 + 1`. Comparing two delays that differ
+    by a factor of 43200 asks the real question: an evaluator that sleeps
+    scales with the delay, and one that does not is flat. Host speed lands on
+    both measurements and cancels, so this cannot be reduced to a machine-speed
+    assertion the way an absolute budget can.
     """
     import time
 
-    start = time.monotonic()
-    result = evaluate("Function.InvokeAfter(() => 1 + 1, #duration(1, 0, 0, 0))")
-    elapsed = time.monotonic() - start
-    assert result == 2
-    assert elapsed < 1.0
+    def timed(source: str) -> tuple[object, float]:
+        start = time.monotonic()
+        value = evaluate(source)
+        return value, time.monotonic() - start
+
+    two_seconds, short_elapsed = timed(
+        "Function.InvokeAfter(() => 1 + 1, #duration(0, 0, 0, 2))"
+    )
+    one_day, long_elapsed = timed(
+        "Function.InvokeAfter(() => 1 + 1, #duration(1, 0, 0, 0))"
+    )
+
+    assert two_seconds == 2
+    assert one_day == 2
+    # Sleeping would put 86398 seconds between these two. Not sleeping puts
+    # the difference between two bridge round-trips - milliseconds - and the
+    # margin is wide enough that no amount of host load closes it.
+    assert abs(long_elapsed - short_elapsed) < 5.0, (short_elapsed, long_elapsed)
 
 
 def test_function_invoke_after_rejects_a_non_duration_delay():

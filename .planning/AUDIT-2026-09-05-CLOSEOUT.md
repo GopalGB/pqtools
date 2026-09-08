@@ -3844,8 +3844,96 @@ the contract plus one sentence pointing here.
 | L1 | bridge `TypeError` against both test shapes | old shape: SATISFIED by it; new shape: it escapes the test | the hoist works |
 | L2 | `match=` against a wrong-message `TypeError` | REJECTED (`AssertionError`) | the pin works |
 | L3 | the real two-argument call | `takes 2 positional arguments but 3 were given` | the pin matches reality |
-| L4 | `init=False` reverted | `{'Zed': 'shared Alpha = '}` | RED, then GREEN restored |
+| L4 | `init=False` reverted | the test prints `Failed: DID NOT RAISE TypeError` | RED, then GREEN restored |
+
+> **CORRECTION, round 38.** L4's observable was first recorded as
+> `{'Zed': 'shared Alpha = '}`. That is what a SEPARATE probe printed by
+> calling `.members()` on the wrongly-paired object; the test itself never
+> makes that call, and what it actually reports is `DID NOT RAISE`. The row
+> silently merged two measurements - which is the precision the L1 row exists
+> to enforce, missed one row below it. Corrected above; the `{'Zed': ...}`
+> value remains the right observable for controls I and K, which do probe
+> `.members()`.
 
 L1 is the one worth keeping: it shows the OLD assertion passing for the wrong
 reason and the NEW one refusing to. A control that only re-runs the fix cannot
 tell those apart.
+
+## Round 38 - `9fad5c0..d823d02`, verdict **SHIP**, both taken
+
+Fourth SHIP. The reviewer confirmed the round-37 fixes by execution and checked
+the gate log's blobs against the staged tree byte for byte.
+
+### MEDIUM - the `match=` pin measures arity, not pairability
+
+Round 37 pinned `match=r"takes 2 positional arguments"` so the `TypeError`'s
+provenance was part of the assertion. That message is CPython's POSITIONAL
+arity error, and it survives the likeliest way this defect comes back.
+Measured:
+
+    def __init__(self, section_source: str, *, parsed: Any = None) -> None: ...
+
+    ParsedSection(alpha, parse(zed))          -> same TypeError, guard GREEN
+    ParsedSection(alpha, parsed=parse(zed))   -> {'Zed': 'shared Alpha = '}
+
+The round-35-to-36 shape once more: the defect moves to a different call form
+and every assertion stays green. Nothing in the file constrained the
+constructor's parameter list - the test asserted `members`'s signature but
+never `__init__`'s. It does now.
+
+That is three consecutive rounds in which the guard, not the code, was the
+finding. Worth naming: each fix was correct, and each time the test written
+beside it could pass for a reason other than the one it named.
+
+### LOW - a control row merged two measurements
+
+L4's observable was recorded as `{'Zed': 'shared Alpha = '}`. The test cannot
+print that: with the generated two-argument `__init__` the construction
+SUCCEEDS and pytest reports `Failed: DID NOT RAISE TypeError`. The
+`{'Zed': ...}` value came from a separate probe calling `.members()`, which
+that test never does. Corrected in place with a CORRECTION note rather than
+edited away - the same treatment round 36's LOW got, and for the same reason.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| M | keyword-only `parsed=` on `__init__` | params `['self','section_source','parsed']`; `.members()` -> `{'Zed': 'shared Alpha = '}` | RED | params `['self','section_source']`, GREEN |
+
+### Round 38, addendum - the gate went red on a test this round never touched
+
+`test_function_invoke_after_invokes_immediately_rather_than_sleeping` failed
+with `assert 1.713426166003046 < 1.0`. Not a regression, and not dismissed as
+one either - measured first:
+
+| | |
+|---|---|
+| isolated, 5 runs | plain `1 + 1` 0.133s, `InvokeAfter(1 day)` 0.133s, delta **+0.000s** |
+| suite wall-clock across today's gates | 122s (r30) -> 182s (r36) -> **249s** (r38) as swap filled |
+| the delay the call names | **one day** |
+
+So a regression to a real `time.sleep(delay)` costs 86400 seconds. `< 1.0`
+never measured that; it measured how fast this host could start the Node
+bridge, and the host had got slower all evening. An absolute wall-clock budget
+in a test about proportionality is a machine-speed assertion wearing a
+behaviour assertion's name.
+
+Not loosened - re-aimed. It now times TWO delays that differ by a factor of
+43200 (`#duration(0,0,0,2)` and `#duration(1,0,0,0)`) and asserts the
+difference between them is small. An evaluator that sleeps scales with the
+delay; one that does not is flat. Host speed lands on both measurements and
+cancels, so no amount of load can turn this red, and no amount of speed can
+hide a sleep.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| N | `time.sleep(delay/10000)` in `_function_invoke_after` | short 0.232s, long 8.829s, delta **8.597s** | RED | delta **0.041s**, GREEN |
+
+The scaled divisor is only so the control is runnable in nine seconds instead
+of a day; the shape it proves - elapsed tracking the named delay - is the
+regression the test exists for.
+
+The re-run that certifies this round took **337s** for the suite - slower than
+the 249s run that went red - and the re-aimed test passed. That is the fix
+measured against worse conditions than the ones that broke it, rather than
+against a quiet machine.
