@@ -1,0 +1,24 @@
+# Exact claude-opus-5 wrapper review - range d233ac5..9d501a5
+# Verdict SHIP. All four findings were taken in round 40; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 40".
+#
+# Exact claude-opus-5 wrapper review - range d233ac5..9d501a5a0f7ca4efe7c90538a2149ad284762409 (bundle + lockfile shown as stub blobs)
+# staged:  5 files changed, 188 insertions(+), 19 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in d233ac5..9d501a5a0f7ca4efe7c90538a2149ad284762409, not stubbed, not in the diff
+# package-lock.json: unchanged in d233ac5..9d501a5a0f7ca4efe7c90538a2149ad284762409, not stubbed, not in the diff
+# invoked 2026-09-08T15:30:55Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified in this worktree before writing: `_function_invoke_after.__code__.co_names` is `('_arity','isinstance','datetime','timedelta','EvalError','_type_name','invoke')` and `inspect.getsource` does contain "sleep" (the comment), so both new structural asserts pass on today's tree; `pytest --collect-only -q` gives **4167**, matching `collect: 4167` / `4167 passed` in `evidence/release-gate-2026-09-08-round39-fixes.log`, so that log certifies the tree it ships with; and the round-38 HIGH was real — `pyproject.toml:155-156` has `testpaths` only, no `addopts`, and `pytest_timeout` is absent, so nothing would have bounded an in-process 86400 s sleep.
+
+- **MEDIUM — tests/test_tail_namespaces.py:146** — `assert "sleep" in inspect.getsource(invoke_after)` can only ever go red on a *comment* edit in `src/pqtools/builtins/_misc.py:996-1013`. It adds no detection power (no defect makes it fail) and one failure mode (reword "an actual `time.sleep(delay)`" and this test fails, pointing at the wrong file). It is also the mirror of the round-36 lesson: a guard that cannot go red for a real reason. If the intent is to prove the co_names instrument distinguishes comment from call, prove it on an instrument, not on the subject. Fix: replace with a local positive control — `def _ctl(d): time.sleep(d)` then `assert "sleep" in _ctl.__code__.co_names` — which asserts the check would catch the defect, and drop the now-unused `inspect` import if nothing else uses it.
+- **LOW — tests/test_tail_namespaces.py:145** — `co_names` sees the literal name `sleep`, so it catches `time.sleep`, `import time as _t`, and `from time import sleep as _s` (verified: `IMPORT_FROM`/`LOAD_ATTR` both index `co_names`), but not `threading.Event().wait(delay)`, `select.select([], [], [], delay)`, or delegation to a module-level helper. A *clamped* form of any of those evades both halves — the exact hole round 39 opened the structural check to close. Fix: pin the whole tuple (`assert invoke_after.__code__.co_names == (...)`), the same "pin the exact parameter list" idiom `test_end_to_end.py:2727-2731` already uses; any new call site then goes red.
+- **LOW — tests/test_tail_namespaces.py:168-171** — the comment says "The 15x ratio is what is being measured, so no absolute host speed can fake it", but the assertion is an absolute 5.0 s delta, not a ratio, and `_bridge` spawns a **fresh** node process per `evaluate` (`src/pqtools/core.py:521-527`, `666-682`; only `_require_node` is `lru_cache`d, `core.py:645`). Spawn-to-spawn jitter lands directly in the delta — the warm-up removes the one-time probe, not the per-call spawn. The margin is defensible against a 28 s signal; the claim of host-speed immunity is not. Fix: say "an absolute 5 s margin against a 28 s signal, wide enough for spawn jitter" rather than implying a ratio test.
+- **LOW — tests/test_end_to_end.py:2732-2735** — the re-scoped comment says the two below are shape only and "on their own they prove nothing", but `assert not hasattr(containers, "_split_shared_parsed")` goes red if that helper is reintroduced, and the `members` signature pin goes red if it gains a parameter — so "one of the two that can go red" undercounts. Fix: scope the sentence to the `members` signature pin, or say "these name the shape the assertions above depend on" without the "prove nothing" claim.
+
+No correctness or security defect in the shipped code; `src/` is untouched by this diff and the two evidence files match the tree.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

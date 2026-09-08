@@ -2729,10 +2729,12 @@ def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
         constructor.parameters
     )
 
-    # These two are shape only: they name WHY the assertions above hold rather
-    # than only that they do, and on their own they prove nothing - which is
-    # the round-36 lesson this test carries. The `__init__` assertion above is
-    # NOT in that category; it is one of the two that can go red.
+    # Round 40: these two name the shape the assertions above depend on. Both
+    # CAN go red - the `hasattr` if the old two-argument helper is
+    # reintroduced, the signature pin if `members` gains a parameter - so the
+    # earlier "on their own they prove nothing" undercounted them. What is
+    # true is narrower: neither would have caught the round-35 defect, which
+    # is why the constructor pin above exists.
     signature = inspect.signature(containers.ParsedSection.members)
     assert list(signature.parameters) == ["self"], list(signature.parameters)
     assert not hasattr(containers, "_split_shared_parsed")

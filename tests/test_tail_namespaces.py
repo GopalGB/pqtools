@@ -129,7 +129,6 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     So the property is asked twice, structurally and behaviourally, and the
     longest this test can now take is about 32 seconds.
     """
-    import inspect
     import time
 
     from pqtools.builtins import _misc
@@ -142,8 +141,36 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
     # function-local `import time as _t` leaves no module attribute. Both
     # alternatives were measured failing on one of those two shapes.
     invoke_after = _misc._function_invoke_after
-    assert "sleep" not in invoke_after.__code__.co_names, invoke_after.__code__.co_names
-    assert "sleep" in inspect.getsource(invoke_after)  # the comment, not a call
+
+    # Round 40: pin the WHOLE tuple, not just the absence of "sleep".
+    # `co_names` holds the literal name, so it catches `time.sleep`,
+    # `import time as _t`, and `from time import sleep as _s` (all three
+    # measured) - but NOT `threading.Event().wait(delay)` or
+    # `select.select([], [], [], delay)`, and a clamped form of either would
+    # evade the timing half below as well. Pinning the tuple means any new
+    # call site in this function goes red and a person looks at it, the same
+    # idiom as the `ParsedSection.__init__` parameter pin.
+    assert invoke_after.__code__.co_names == (
+        "_arity",
+        "isinstance",
+        "datetime",
+        "timedelta",
+        "EvalError",
+        "_type_name",
+        "invoke",
+    ), invoke_after.__code__.co_names
+
+    # A positive control ON THE INSTRUMENT. This previously asserted
+    # `"sleep" in inspect.getsource(invoke_after)`, which is true only because
+    # the function's own COMMENT says the word: no defect could make it fail,
+    # and rewording that comment would fail this test while pointing at the
+    # wrong file. A guard that cannot go red for a real reason is the round-36
+    # lesson wearing the opposite face. This one fails only if `co_names`
+    # stops seeing a call - the property the assertion above rests on.
+    def _sleeps(seconds: float) -> None:
+        time.sleep(seconds)
+
+    assert "sleep" in _sleeps.__code__.co_names
 
     # Behavioural. The one-time `node --version` probe is paid here so it
     # lands outside both measurements instead of on whichever runs first -
@@ -164,10 +191,13 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
 
     assert short_result == 2
     assert long_result == 2
-    # A delay-proportional sleep puts 28 seconds between these two. Not
-    # sleeping puts the difference between two bridge round-trips. The 15x
-    # ratio is what is being measured, so no absolute host speed can fake it,
-    # and the worst case is a 32-second red rather than a day-long hang.
+    # A delay-proportional sleep puts 28 seconds between these two; not
+    # sleeping puts the difference between two bridge round-trips. So this is
+    # an absolute 5-second margin against a 28-second signal - wide enough for
+    # spawn jitter, NOT a ratio test and NOT immune to host speed. `_bridge`
+    # spawns a fresh node per `evaluate` (only `_require_node` is cached), so
+    # the warm-up above removes the one-time probe, not the per-call spawn.
+    # Worst case here is a 32-second red rather than a day-long hang.
     assert abs(long_elapsed - short_elapsed) < 5.0, (short_elapsed, long_elapsed)
 
 

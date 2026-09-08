@@ -4008,3 +4008,62 @@ round-38 `__init__` assertion, which does prove something; re-scoped to the
 P' is the one that matters: it shows the two halves are not redundant. Timing
 catches the proportional sleep, structure catches the clamped one, and neither
 alone is the guard.
+
+## Round 40 - `d233ac5..9d501a5`, verdict **SHIP**, all four taken
+
+"No correctness or security defect in the shipped code; `src/` is untouched by
+this diff." All four findings are in the guard round 39 wrote.
+
+### MEDIUM - I wrote a guard that cannot go red, in the round about guards that cannot go red
+
+`assert "sleep" in inspect.getsource(invoke_after)` was meant to document that
+the `co_names` instrument sees the call and not the comment. But it is true
+only because the function's own comment says the word: **no defect can make it
+fail**, and rewording that comment would fail this test while pointing at the
+wrong file. Zero detection power, one new failure mode.
+
+Replaced with a positive control on the INSTRUMENT rather than on the subject -
+a local `def _sleeps(seconds): time.sleep(seconds)` and
+`assert "sleep" in _sleeps.__code__.co_names`. That fails only if `co_names`
+stops seeing a call, which is the property the real assertion rests on.
+
+### LOW - `co_names` sees a name, and sleeping has other names
+
+Measured: it catches `time.sleep`, `import time as _t` and
+`from time import sleep as _s` - all three - and MISSES
+`threading.Event().wait(delay)` and `select.select([], [], [], delay)`. A
+CLAMPED form of either evades the timing half too, so that pair was a hole
+straight through both checks.
+
+The whole `co_names` tuple is pinned now, the same idiom as the
+`ParsedSection.__init__` parameter pin: any new call site in this function
+goes red and a person looks at it.
+
+### LOW - the comment claimed a ratio test and an immunity it does not have
+
+It said "the 15x ratio is what is being measured, so no absolute host speed can
+fake it". The assertion is an absolute 5-second delta, not a ratio. And
+`_bridge` spawns a **fresh node process per `evaluate`** - only `_require_node`
+is `lru_cache`d - so per-call spawn jitter lands directly in the delta; the
+warm-up removes the one-time probe, not the spawn. The margin is defensible
+against a 28-second signal, which is what it now says.
+
+### LOW - and the comment I re-scoped last round still undercounted
+
+"On their own they prove nothing" was wrong about both: the `hasattr` goes red
+if the old helper returns, and the `members` pin goes red if it gains a
+parameter. The true statement is narrower - neither would have caught the
+round-35 defect - and that is what it says now.
+
+### Controls
+
+| # | Defect reintroduced | `'sleep' in co_names` | Timing delta | Test |
+|---|---|---|---|---|
+| Q1 | `threading.Event().wait(min(delay, 1.0))` | **False** | ~0 (clamped) | **RED in 0.14s** on the tuple pin |
+| Q2 | `select.select([], [], [], min(delay, 1.0))` | **False** | ~0 (clamped) | **RED in 0.14s** on the tuple pin |
+
+Both are the case that was open through every previous version of this guard:
+invisible to the name check because they are not called `sleep`, invisible to
+the timing check because they are clamped. This is the fourth round in a row
+where the finding was in the test rather than the code, and the third distinct
+way the same one-line property has been mis-guarded.
