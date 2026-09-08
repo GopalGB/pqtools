@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range 17295ff..bb849f5
+# Verdict FIX-FIRST. Both MEDIUMs and the LOW were taken in round 36; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 36".
+#
+# Exact claude-opus-5 wrapper review - range 17295ff..bb849f5 (bundle + lockfile shown as stub blobs)
+# staged:  6 files changed, 227 insertions(+), 72 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 17295ff..bb849f5, not stubbed, not in the diff
+# package-lock.json: unchanged in 17295ff..bb849f5, not stubbed, not in the diff
+# invoked 2026-09-08T14:30:04Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified by execution against this worktree (`PYTHONPATH=…/mq-gate-wt-88565/src`, main-checkout venv): the mismatch this round claims to have eliminated is still constructible and returns the identical wrong result.
+
+- **MEDIUM — src/pqtools/containers.py:386** — `@dataclass(frozen=True)` generates a two-argument `__init__`, so the round-34 defect is *not* unrepresentable, only unreachable through `of()`. Executed: `ParsedSection('section S;\n\nshared Alpha = 111;\n', parse('section S;\n\nshared Zed = 1;\n')).members()` → `{'Zed': 'shared Alpha = '}` — byte-identical to the failure the round exists to close, now behind a **public** name (round 34's own finding was that an un-underscored helper reads as supported API; the footgun moved from a private function to a public constructor). Not live — `_run_add` (cli.py:429) and `split_shared` (containers.py:427) both build via `of()` — so this is contract only, but the docstring at containers.py:382 asserts a property the code does not have. Fix: `@dataclass(frozen=True, init=False)` with `def __init__(self, section_source: str) -> None:` doing `object.__setattr__(self, "source", section_source)` / `object.__setattr__(self, "parsed", core.parse(section_source))`; `of()` becomes a one-line alias and there is then exactly one construction path.
+- **MEDIUM — tests/test_end_to_end.py:2678** — the guard runs in a regime where the defect cannot appear. It asserts `members()`'s arity and `not hasattr(containers, "_split_shared_parsed")`; both stay green while the finding above is live, and the test's own name ("cannot be handed a parse of another document") describes something it never attempts. This is the pattern the audit already paid for in r33 — a control measured where the defect isn't. Fix: after the `init=False` change, add `with pytest.raises(TypeError): containers.ParsedSection(doc, parse(other))` — that assertion is red today and green after, which the current two are not.
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:3689 and control row I (line 3714)** — "the mismatch is made **unrepresentable**" and "unrepresentable, GREEN" are the certified-number failure this repo has recorded before: the closeout will suppress the next check of a property that does not hold. Control I's stated defect (`members(source=None)`) is also not the shape that was shipped-and-removed. Fix: either land the constructor change and keep the wording, or reword to "one supported construction path" and say the raw constructor is still pairable-wrong.
+
+Checked and not findings: `flag_of[name]` cannot `KeyError` (`present` and `flag_of` are built from the same `option_strings`-filtered action set); the long-form `next(...)` falls back correctly for a short-only option and renders `--help` for `-h/--help`; `assert "-o " not in message` is sound rather than vacuous because the message renders flags bare (`does not use -o - remove it`), and `--out-file` contains no `-o` + space; `_refuse_uncontained_add` no longer references `new_source`/`parsed` anywhere in its body, including the round-34 `kept`/`extra` fallback branch, so the signature change leaves no NameError path; widening `split_shared`'s `try` to cover `members()` introduces no new error class — `core.unquote_identifier` swallows `ParseError` itself (core.py:798) and returns the raw body.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

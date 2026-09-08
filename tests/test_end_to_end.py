@@ -2676,32 +2676,46 @@ def test_a_refusal_names_the_flag_the_user_typed_not_one_built_from_the_dest(
 
 
 def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
-    """Round 35: the pairing check was a length inequality, which cannot be exact.
+    """Round 35's fix, and round 36's finding that it did not hold.
 
     Round 34 guarded the reused-parse split with
     `last_token_end > len(source)`. That catches a parse of a LONGER document
     and misses a shorter one: asked about `shared Alpha = 111;` with a parse of
     `shared Zed = 1;` it returned `{'Zed': 'shared Alpha = '}` - a member the
-    document does not contain, with truncated text. The exact failure the
-    check was added to close, surviving in the direction it did not test.
+    document does not contain, with truncated text. A length inequality cannot
+    be made exact, so round 35 replaced it with a paired object.
 
-    Narrowing the inequality is the trap this package has walked into before:
-    a heuristic tightened round after round, wrong in a new direction each
-    time. So the mismatch is unrepresentable now - one object holds the source
-    and its own parse, and `members()` has no second argument to get wrong.
-    That is what this test pins, because a passing split proves nothing about
-    a shape that can no longer be expressed.
+    Round 36: the pairing was a claim, not a property. `@dataclass(frozen=True)`
+    generates a two-argument `__init__`, so the identical wrong result was
+    still one call away - and now behind a PUBLIC constructor rather than a
+    private helper.
+
+    **And this test could not see it.** It asserted `members()`'s arity and
+    the absence of the old helper; both stayed green while the defect was
+    live, and its own name described something it never attempted. That is the
+    regime error, in the guard written for a finding about the regime error.
+    The first assertion below is the one that was red before `init=False` and
+    green after - the others cannot distinguish the two states.
     """
     import inspect
 
     from pqtools import containers
+    from pqtools.core import parse
 
+    doc = "section S;\n\nshared Alpha = 111;\n\nshared Beta = 2;\n"
+    other = "section S;\n\nshared Zed = 1;\n"
+
+    # The assertion that actually measures it: there is no second argument.
+    with pytest.raises(TypeError):
+        containers.ParsedSection(doc, parse(other))  # type: ignore[call-arg]
+
+    # Shape, kept because it names WHY the above holds rather than only that
+    # it does - but on its own it proves nothing, which is the lesson here.
     signature = inspect.signature(containers.ParsedSection.members)
     assert list(signature.parameters) == ["self"], list(signature.parameters)
     assert not hasattr(containers, "_split_shared_parsed")
 
-    doc = "section S;\n\nshared Alpha = 111;\n\nshared Beta = 2;\n"
-    paired = containers.ParsedSection.of(doc)
+    paired = containers.ParsedSection(doc)
     assert paired.source is doc
     assert paired.members() == containers.split_shared(doc)
     assert set(paired.members()) == {"Alpha", "Beta"}

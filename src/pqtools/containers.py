@@ -364,7 +364,7 @@ def _read_pbip(path: Path) -> list[QuerySection]:
     return sections
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ParsedSection:
     """A section document and the parse OF THAT document, bound together.
 
@@ -379,17 +379,25 @@ class ParsedSection:
 
     Tightening that inequality is the trap this package has walked into
     before - a heuristic narrowed round after round, wrong in a new direction
-    each time. So the mismatch is made unrepresentable instead: there is one
-    object, and `members()` takes no source argument to get wrong.
+    each time. So the mismatch is made unrepresentable instead.
+
+    Round 36: "unrepresentable" was a claim this class did not honour.
+    `@dataclass(frozen=True)` generates a two-argument `__init__`, so
+    `ParsedSection(alpha_source, parse(zed_source)).members()` still returned
+    `{'Zed': 'shared Alpha = '}` - the identical defect, moved from a private
+    function to a PUBLIC constructor, which is worse than where it started.
+    `init=False` plus the constructor below leaves exactly one way to build
+    one: from a source, which is then parsed here. There is no second argument
+    to pass, so there is no pair to mismatch.
     """
 
     source: str
     parsed: dict[str, Any]
 
-    @classmethod
-    def of(cls, section_source: str) -> ParsedSection:
+    def __init__(self, section_source: str) -> None:
         """Parse `section_source`. Raises whatever `core.parse` raises."""
-        return cls(section_source, core.parse(section_source))
+        object.__setattr__(self, "source", section_source)
+        object.__setattr__(self, "parsed", core.parse(section_source))
 
     def members(self) -> dict[str, str]:
         """Split into ``shared Name = ...;`` members.
@@ -424,7 +432,7 @@ class ParsedSection:
 def split_shared(section_source: str, container: str = "<string>") -> dict[str, str]:
     """Split a section document into its ``shared Name = ...;`` members."""
     try:
-        return ParsedSection.of(section_source).members()
+        return ParsedSection(section_source).members()
     except MQueryError as error:
         raise ContainerError(f"{container}: {error.message}") from error
 

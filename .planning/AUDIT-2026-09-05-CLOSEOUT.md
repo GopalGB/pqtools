@@ -3685,8 +3685,19 @@ cannot be made exact.*
 This is [[feedback_stop_depending_on_a_heuristic_you_cannot_make_exact]] for
 the second time in one audit. Three rounds were once spent narrowing a
 classifier regex, each narrowing wrong in a new direction; the fix there was to
-stop depending on it. Same answer here: the mismatch is made
-**unrepresentable** rather than detected. `ParsedSection` holds a source and
+stop depending on it. Same answer here: the mismatch is made unrepresentable
+rather than detected.
+
+> **CORRECTION, round 36.** "Unrepresentable" was false as shipped in round 35,
+> and this paragraph is left standing so the correction is visible rather than
+> edited away. `@dataclass(frozen=True)` generates a two-argument `__init__`,
+> so `ParsedSection(alpha_source, parse(zed_source)).members()` still returned
+> `{'Zed': 'shared Alpha = '}` - the identical defect, moved from a private
+> helper to a PUBLIC constructor. The property holds from round 36
+> (`init=False`), not from here. Writing "unrepresentable" into the record
+> before checking it is the
+> [[reference_certified_numbers_are_the_dangerous_ones_2026-08-12]] failure:
+> a certified claim suppresses the next check. `ParsedSection` holds a source and
 the parse OF that source, and `members()` takes no second argument to get
 wrong. `_split_shared_parsed` is gone.
 
@@ -3711,7 +3722,7 @@ one round earlier for this exact code path. The probe now declares
 
 | # | Defect reintroduced | Observable with defect | Test | Restored |
 |---|---|---|---|---|
-| I | `members(source=None)` accepts a foreign source | `{'Zed': 'shared Alpha = '}` expressible again | RED | unrepresentable, GREEN |
+| I | `members(source=None)` accepts a foreign source | `{'Zed': 'shared Alpha = '}` expressible again | RED | GREEN - but see round 36: this was not the shape that shipped, and the property it claims did not hold until `init=False` |
 | J | `action.option_strings[0]` | message names `'-o'` | RED | names `'--out-file'`, GREEN |
 
 **J took three attempts and both failures were caught by the convention, not by
@@ -3722,3 +3733,65 @@ Neither raised anything the test result would have shown - both printed
 Two identical observables is not a measurement, and that is the only reason
 this was not recorded as a clean red-then-green. Third attempt matched the
 four-line block literally with a verified count.
+
+## Round 36 - `17295ff..bb849f5`, verdict FIX-FIRST, both MEDIUMs and the LOW taken
+
+The review found that round 35's headline claim was not true of the code that
+shipped, and that the test written to pin it could not have noticed.
+
+### MEDIUM - "unrepresentable" was a claim the class did not honour
+
+`@dataclass(frozen=True)` generates a two-argument `__init__`. Reproduced
+exactly as reported:
+
+    ParsedSection('section S;\n\nshared Alpha = 111;\n',
+                  parse('section S;\n\nshared Zed = 1;\n')).members()
+    -> {'Zed': 'shared Alpha = '}
+
+Byte-identical to the round-34 failure. Round 35 did not remove the footgun; it
+moved it from a private function to a **public constructor**, which is worse -
+round 34's own finding was that an un-underscored helper reads as supported
+API. Fixed with `@dataclass(frozen=True, init=False)` and a one-argument
+`__init__` that parses the source itself. `of()` is deleted rather than kept as
+an alias, so there is exactly one construction path and no second one to drift.
+
+### MEDIUM - the guard ran where the defect could not appear. Again.
+
+The round-35 test asserted `members()`'s arity and `not hasattr(containers,
+"_split_shared_parsed")`. Both stayed green for the whole time the defect was
+live, and the test's own name - "cannot be handed a parse of another document"
+- described something it never attempted. Measured: with the defect present it
+PASSED.
+
+**This is the twelfth instance, and it is in the guard written for a finding
+about this exact pattern.** The test now opens with
+`pytest.raises(TypeError): ParsedSection(doc, parse(other))`, which is the only
+assertion in it that can distinguish the two states; the shape assertions are
+kept, labelled as proving nothing on their own.
+
+### LOW - the closeout certified a property that did not hold
+
+Round 35's entry said "the mismatch is made **unrepresentable**" and its
+control table said "unrepresentable, GREEN". A certified claim suppresses the
+next check. Left standing with a CORRECTION block above it rather than edited
+away, and the control row now says what it actually established.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| K | `@dataclass(frozen=True)` + `of()` back | `{'Zed': 'shared Alpha = '}` | RED | `TypeError`, GREEN |
+
+**K's first run came out INVERTED** - red with the fix, green with the defect -
+and that is the only reason a corrupted test file was caught. The rewrite that
+replaced the round-35 test used `end = index("def test_a_refusal_names_the_flag
+...")`, an anchor that sits BEFORE `start` in the file, so `s[:start] + new +
+s[end:]` duplicated 75 lines and left the OLD test as the last definition of
+that name - which is the one Python and pytest keep. `ruff format` and a
+90-test green run both accepted it. Repaired by cutting the duplicate block
+with both boundary lines asserted, then confirming exactly one definition of
+each name survives and that each survivor is the intended version.
+
+The rule that keeps holding: **an anchor pair must be verified as ordered, not
+just as present.** `str.index` finding both ends says nothing about which comes
+first.

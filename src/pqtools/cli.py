@@ -426,7 +426,7 @@ def _run_add(args: argparse.Namespace) -> int:
     # for cost. The body parse only ever chose a better MESSAGE, so it belongs
     # in the failure branch, paid for by the run that already failed.
     try:
-        section = containers.ParsedSection.of(new_source)
+        section = containers.ParsedSection(new_source)
     except ParseError as error:
         raise _add_parse_refusal(text, body, error) from error
     _refuse_uncontained_add(args.file, args.name, body, section, existing)
