@@ -3795,3 +3795,57 @@ each name survives and that each survivor is the intended version.
 The rule that keeps holding: **an anchor pair must be verified as ordered, not
 just as present.** `str.index` finding both ends says nothing about which comes
 first.
+
+## Round 37 - `bb849f5..9fad5c0`, verdict **SHIP**, all three taken
+
+Third SHIP. The shipped behaviour is confirmed correct - the reviewer executed
+`ParsedSection(doc, parse(other))` and got the `TypeError`, and matched
+`--collect-only -q` at 4167 against the gate log. All three findings are in the
+guard and the docstring.
+
+### MEDIUM - the assertion I called "the one that measures it" could pass for another reason
+
+The round-36 test opened with:
+
+    with pytest.raises(TypeError):
+        containers.ParsedSection(doc, parse(other))
+
+`parse(other)` is evaluated INSIDE the block, and `core.parse` is the only call
+in that test which leaves the process for the Node bridge. A `TypeError` from
+the bridge satisfies the block without the constructor ever being reached.
+Measured with a `parse` substituted to raise `TypeError`: the block passed.
+
+So the assertion written one round earlier to replace guards that "pass for a
+reason other than the one they name" was itself one. `parse(other)` is hoisted
+above the `with` now, and the message is pinned with
+`match=r"takes 2 positional arguments"` so the exception's provenance is part
+of the assertion rather than its type alone.
+
+### LOW - `init=False` also removes `dataclasses.replace()`
+
+Verified: `replace(ParsedSection(doc), source=other)` raises
+`TypeError: ... unexpected keyword argument 'source'`. No caller in the repo,
+so nothing breaks - but it is an unstated consequence on an un-underscored
+class in a module with no `__all__`, which is round 34's "reads as supported
+API" point. One sentence in the docstring now says a different source is a
+different object.
+
+### LOW - the docstring had become a changelog
+
+Twenty-four lines of rounds 34/35/36 history, near-verbatim from this file,
+shown by `help()` and IDE hover before the two-line contract. Round 36's own
+LOW says the correction record belongs in `.planning/`. The docstring is now
+the contract plus one sentence pointing here.
+
+### Controls
+
+| # | What was measured | Observable | Result |
+|---|---|---|---|
+| L1 | bridge `TypeError` against both test shapes | old shape: SATISFIED by it; new shape: it escapes the test | the hoist works |
+| L2 | `match=` against a wrong-message `TypeError` | REJECTED (`AssertionError`) | the pin works |
+| L3 | the real two-argument call | `takes 2 positional arguments but 3 were given` | the pin matches reality |
+| L4 | `init=False` reverted | `{'Zed': 'shared Alpha = '}` | RED, then GREEN restored |
+
+L1 is the one worth keeping: it shows the OLD assertion passing for the wrong
+reason and the NEW one refusing to. A control that only re-runs the fix cannot
+tell those apart.

@@ -368,27 +368,14 @@ def _read_pbip(path: Path) -> list[QuerySection]:
 class ParsedSection:
     """A section document and the parse OF THAT document, bound together.
 
-    Round 35: `pq add` needs to split a document it has just parsed, without
-    paying for a second Node subprocess, so the split had to accept a parse
-    from outside. Passed a parse of a DIFFERENT document it sliced with that
-    document's token offsets and returned plausible wrong text - a member the
-    document does not contain. Round 34 guarded it with
-    `last_token_end > len(source)`, which catches a parse of a longer document
-    and misses a shorter one: asked about `shared Alpha = 111;` with a parse of
-    `shared Zed = 1;` it answered `{'Zed': 'shared Alpha = '}`.
+    Built one way only: from a source, which is parsed here. There is no
+    second argument, so a parse of some OTHER document cannot be paired with
+    this source - handed one, the token-offset slices in `members()` returned
+    text the document does not contain. `dataclasses.replace()` is
+    unavailable by the same design; a different source is a different object.
 
-    Tightening that inequality is the trap this package has walked into
-    before - a heuristic narrowed round after round, wrong in a new direction
-    each time. So the mismatch is made unrepresentable instead.
-
-    Round 36: "unrepresentable" was a claim this class did not honour.
-    `@dataclass(frozen=True)` generates a two-argument `__init__`, so
-    `ParsedSection(alpha_source, parse(zed_source)).members()` still returned
-    `{'Zed': 'shared Alpha = '}` - the identical defect, moved from a private
-    function to a PUBLIC constructor, which is worse than where it started.
-    `init=False` plus the constructor below leaves exactly one way to build
-    one: from a source, which is then parsed here. There is no second argument
-    to pass, so there is no pair to mismatch.
+    Rounds 34-36 arrived at this in three steps, two of them wrong; the record
+    is in `.planning/AUDIT-2026-09-05-CLOSEOUT.md` rather than here.
     """
 
     source: str

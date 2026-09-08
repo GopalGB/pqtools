@@ -2705,9 +2705,17 @@ def test_a_section_split_cannot_be_handed_a_parse_of_another_document() -> None:
     doc = "section S;\n\nshared Alpha = 111;\n\nshared Beta = 2;\n"
     other = "section S;\n\nshared Zed = 1;\n"
 
+    # Round 37: `parse(other)` is hoisted OUT of the `with`, and the message is
+    # pinned. Evaluated inside it, a `TypeError` from the Node bridge - the one
+    # call in this test that leaves the process - satisfies the block without
+    # the constructor ever being reached, which is the same "green for a reason
+    # other than the one it names" shape this test exists to close. Measured: a
+    # `parse` raising `TypeError` passed the bare version.
+    foreign = parse(other)
+
     # The assertion that actually measures it: there is no second argument.
-    with pytest.raises(TypeError):
-        containers.ParsedSection(doc, parse(other))  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match=r"takes 2 positional arguments"):
+        containers.ParsedSection(doc, foreign)  # type: ignore[call-arg]
 
     # Shape, kept because it names WHY the above holds rather than only that
     # it does - but on its own it proves nothing, which is the lesson here.

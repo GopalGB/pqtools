@@ -1,0 +1,23 @@
+# Exact claude-opus-5 wrapper review - range bb849f5..9fad5c0
+# Verdict SHIP. All three findings were taken in round 37; see
+# .planning/AUDIT-2026-09-05-CLOSEOUT.md "Round 37".
+#
+# Exact claude-opus-5 wrapper review - range bb849f5..9fad5c0 (bundle + lockfile shown as stub blobs)
+# staged:  6 files changed, 180 insertions(+), 22 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in bb849f5..9fad5c0, not stubbed, not in the diff
+# package-lock.json: unchanged in bb849f5..9fad5c0, not stubbed, not in the diff
+# invoked 2026-09-08T14:42:52Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+
+🔵 Opus 5
+
+Verified by execution in this worktree (main-checkout venv, `PYTHONPATH=/private/tmp/mq-gate-wt-2172/src`): the round-36 test passes, `--collect-only -q` reports **4167**, matching the gate log's collect line, and `ParsedSection(doc, parse(other))` now raises `TypeError: ParsedSection.__init__() takes 2 positional arguments but 3 were given`. The fix does what it claims; the findings below are in the guard and the docstring, not the shipped behaviour.
+
+- **MEDIUM — tests/test_end_to_end.py:2709-2711** — the assertion the docstring calls "the one that was red before `init=False` and green after" can be satisfied without ever reaching the constructor: `parse(other)` is evaluated *inside* the `with pytest.raises(TypeError)` block, and `core.parse` is the only call in this test that shells out to the Node bridge. Executed the substitution — a `TypeError` raised while building the argument prints `also TypeError: bridge blew up before the constructor was reached` and the block is satisfied. That is the same "guard passes for a reason other than the one it names" shape this round exists to close. Fix: hoist `foreign = parse(other)` above the `with`, and pin provenance with `pytest.raises(TypeError, match=r"takes 2 positional arguments")`.
+- **LOW — src/pqtools/containers.py:367,397** — `frozen=True, init=False` also removes `dataclasses.replace()` / `copy.replace()`: verified `replace(ParsedSection(doc), source=other)` → `TypeError: ParsedSection.__init__() got an unexpected keyword argument 'source'`. No caller in the repo (grepped `src`, `tests`), so nothing breaks, but it is an unstated consequence on an un-underscored class in a module with no `__all__` — the exact "reads as supported API" point round 34 made. Fix: one line in the docstring — a new source means a new object, `replace()` is not supported.
+- **LOW — src/pqtools/containers.py:369-392** — the class docstring is now a three-round changelog (rounds 34, 35, 36) reproduced almost verbatim from `.planning/AUDIT-2026-09-05-CLOSEOUT.md:3690-3700`; `help(ParsedSection)` and IDE hover show 24 lines of audit history before the two-line contract. The correction record is already durable in the audit file, which is where round 36's own LOW says it belongs. Fix: keep the current contract plus one sentence naming the round-36 correction, and leave the narrative in `.planning/`.
+
+Checked and not findings: `ParsedSection.of` has no surviving reference anywhere in `src`, `tests`, `docs`, `README.md` or `SUPPORT-MATRIX.md`; `split_shared` (containers.py:433-437) and `_run_add` (cli.py:428-431) still catch the same classes, since the parse simply moved from `of()` into `__init__` inside the same `try`; the `# type: ignore[call-arg]` is not unused under `mypy --strict` (a two-arg call to a one-arg `__init__` is `call-arg`); `frozen` enforcement and pickling/`deepcopy` are unaffected by `init=False` (they bypass `__init__`); the gate log's 4167 matches the tree as staged, so the evidence certifies the code it ships with.
+
+SHIP
+
+# wrapper exit: 0 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
