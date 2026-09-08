@@ -161,16 +161,25 @@ not failures of pqtools. `pq check` exits 2 if any has severity `error`.
 `pq explain M003` prints what the code means and what to do, as JSON with
 `--json` (`{"code", "kind", "severity", "title", "means", "fix"}`, where `kind`
 is `lint diagnostic` or `failure`, and `severity` is the lint severity from the
-table above or `""` for a failure code, which does not have one). `pq explain`
+table above or `""` for a failure code, which does not have one). The one
+exception is `M_PARSE_ERROR`, which appears in BOTH tables because `check()`
+reports it and `evaluate()` raises it: it answers `"kind": "lint diagnostic"`,
+`"severity": "error"`. Branch on the returned `kind`, not on which table you
+found the code in. `pq explain`
 takes **any** of the three things a user can be holding: a lint code from the
 table above, a FAILURE code from the table before it (`pq explain M_IO_ERROR`),
 or an M function name (`pq explain Table.FuzzyNestedJoin`). It never answers a
-real code as though it were an unrecognised function name, and a name that is
-CODE_SHAPED but is not a code this version reports (`pq explain
-M_FUTURE_ERROR`) is told exactly that, with the list of codes that do exist -
+real code as though it were an unrecognised function name. A name that is
+code-SHAPED - literally ALL-CAPS with an underscore (`M_FUTURE_ERROR`,
+`NODE_ERROR2`) or `M` plus three digits (`M007`) - but is not a code this
+version reports is told exactly that, with the list of codes that do exist,
 never that it "may be a typo ... a query name, a variable, a record field",
-which is true of no code. A different JSON shape, `{"name", "supported",
-"message"}`, answers anything that is not a code.
+which is true of no code. The shape reads the input as typed: `m_future_error`
+is answered as a NAME, because a lower-case identifier with an underscore is a
+perfectly ordinary M step name (`my_step`, `source_data`) and pqtools will not
+tell you your variable is a broken error code. A real code still resolves in
+any case - `pq explain m_io_error` works. Anything that is not a code answers
+with a different JSON shape: `{"name", "supported", "message"}`.
 
 Human-readable `pq check` output prints the machine-parseable
 `file:line:column: severity code: message` line for every finding, plus one

@@ -835,22 +835,31 @@ def _run_diff(args: argparse.Namespace) -> int:
     return 0 if not diff else 1
 
 
-# A pqtools error code, by shape: an all-caps word with an underscore in it.
+# A pqtools error code, by shape: an ALL-CAPS word with an underscore
+# (`M_IO_ERROR`, `NODE_ERROR`), or a three-digit lint code (`M007`).
 # Deliberately not a list of the codes - the tables are that, and this has to
 # recognise a code that does NOT appear in them, which is the whole point.
 #
-# The first version of this was `M_[A-Z0-9_]+|NODE_ERROR|MQUERY_ERROR`, which
-# is a list of today's codes wearing a regex costume: it missed `NODE_ERROR2`
-# and every future code not starting `M_`, and it matched a bare `M_`, which
-# names nothing. Shape, not enumeration.
+# Matched against the RAW input, not `name.upper()`. Round 26 matched the
+# upper-cased form and so shipped round 25's defect with the sign flipped:
+# every ordinary snake_case step name a person could type - `my_step`,
+# `source_data`, `Result_2` - upper-cased into this shape and was answered
+# "is not a code this version of pqtools reports". M identifiers DO take
+# underscores; only the all-caps convention separates a code from a step
+# name, and upper-casing destroys exactly the evidence this test weighs. The
+# cost is that a lower-case `m_future_error` gets the function-name answer,
+# which is correct - it is indistinguishable from a variable. Real codes are
+# unaffected: the table lookup above upper-cases, so `pq explain m_io_error`
+# still resolves.
 #
-# Safe because no documented M name contains an underscore and none is
-# all-caps (checked against all 635 by
-# `test_a_code_shaped_name_is_never_answered_as_a_function_name`); M names are
-# dotted PascalCase, and `.` is not in the class. A bare `M_` is deliberately
-# NOT code-shaped - it carries no code name, and it is a legal M identifier,
-# so the function-name answer is the right one for it.
-_CODE_SHAPED = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+# Round 26's guard "no documented M name matches this shape" was measured on
+# the wrong set. This branch is reached only by names that are NOT documented
+# and NOT builtins, so `DOCUMENTED` could not have held a counter-example
+# even in principle. What had to be checked was ordinary user identifiers.
+#
+# A bare `M_` is deliberately NOT code-shaped: it carries no code name and is
+# a legal M identifier, so the function-name answer is right for it.
+_CODE_SHAPED = re.compile(r"^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|M[0-9]{3})$")
 
 
 def _run_explain(args: argparse.Namespace) -> int:
@@ -927,19 +936,21 @@ def _run_explain(args: argparse.Namespace) -> int:
                 )
         return 0
 
-    if _CODE_SHAPED.match(code):
+    if _CODE_SHAPED.match(name):
         # Round 26: llms.txt promised "It never answers a real code as though
         # it were an unrecognised function name", and only the test's
         # derivation enforced it - the code itself had no idea. So
         # `pq explain M_FUTURE_ERROR` answered "may be a typo ... a query
         # name, a variable, a record field", which is true of no code that
-        # will ever exist. No documented M name contains an underscore or is
-        # all-caps, so this shape is decidable without guessing: if it looks
-        # like a code and is not one, say exactly that, and say which codes
-        # this version does report rather than sending the reader to a doc.
+        # will ever exist. If it looks like a code and is not one, say
+        # exactly that, and say which codes this version does report rather
+        # than sending the reader to a doc. Round 27 fixed WHAT this branch
+        # reads (see `_CODE_SHAPED`) and added the `M007` family, which has
+        # no underscore and so was still getting the wrong answer - and those
+        # are the codes `pq check` prints, the likeliest thing a user holds.
         known = sorted(set(DIAGNOSTIC_HELP) | set(FAILURE_HELP))
         message = (
-            f"{code} is not a code this version of pqtools reports. The "
+            f"{name} is not a code this version of pqtools reports. The "
             f"codes it does report are: {', '.join(known)}."
         )
         supported = False

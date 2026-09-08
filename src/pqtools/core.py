@@ -138,20 +138,27 @@ class Diagnostic:
 class DiagnosticHelp:
     """Everything `pq explain CODE` knows about one code.
 
-    `severity` is empty for a FAILURE code, which does not have one - a
-    failure is not a finding graded against a query, it is pqtools stopping.
+    `severity` is `""` for a FAILURE code, which does not have one - a failure
+    is not a finding graded against a query, it is pqtools stopping.
+
     Round 26: this was a second dict keyed by the same codes, read through
     `DIAGNOSTIC_SEVERITY.get(code, "")`, so a lint code present in one table
     and absent from the other printed "lint diagnostic" instead of its
     severity and reported `"severity": ""` over JSON - a quiet wrong answer
-    where the missing key should have been loud. One table cannot drift from
-    itself.
+    where the missing key should have been loud.
+
+    Round 27: folding it in was not enough while it had a DEFAULT. A new lint
+    entry that simply omitted `severity` still constructed, and still printed
+    `M007 (lint diagnostic)` - the same wrong answer, caught only by a test
+    assertion, which is the arrangement the fold was meant to replace. There
+    is no default now: every entry states its severity, and the eleven
+    failures state `""` on purpose. Omitting it is a `TypeError` at import.
     """
 
     title: str
     means: str
     fix: str
-    severity: str = ""
+    severity: str
 
 
 DIAGNOSTIC_HELP: dict[str, DiagnosticHelp] = {
@@ -276,6 +283,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "of the wrong type, a division by zero."
         ),
         fix="The message names the step. Fix it the way you would in Power Query.",
+        severity="",
     ),
     "M_EVAL_UNSUPPORTED": DiagnosticHelp(
         title="the query needs something pqtools cannot do",
@@ -288,6 +296,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "Run `pq explain <FunctionName>` on the name in the message to "
             "see why. There is no flag that turns this into an answer."
         ),
+        severity="",
     ),
     "M_IO_BLOCKED": DiagnosticHelp(
         title="the query tried to reach the network or a database",
@@ -299,6 +308,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "If you trust this query, re-run with --allow-net or --allow-db. "
             "The message names the flag it needs."
         ),
+        severity="",
     ),
     "M_IO_ERROR": DiagnosticHelp(
         title="a file could not be read or written",
@@ -307,6 +317,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "UTF-8, or the operating system refused the read or write."
         ),
         fix="Check the path and its permissions. Nothing was changed.",
+        severity="",
     ),
     "M_CONTAINER_ERROR": DiagnosticHelp(
         title="the .pbix or .xlsx could not be opened",
@@ -319,6 +330,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "Open it in Excel or Power BI and confirm it really contains "
             "queries. pqtools will not create the container for you."
         ),
+        severity="",
     ),
     "M_SAFE_WRITE_REFUSED": DiagnosticHelp(
         title="pqtools will not write to that file",
@@ -332,6 +344,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "Point it at a real file. Never work around it by writing the "
             "file yourself. Nothing was changed."
         ),
+        severity="",
     ),
     "M_RENAME_REFUSED": DiagnosticHelp(
         title="the rename could not be proven safe",
@@ -344,6 +357,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "Choose another name, or make the edit by hand. It refuses rather "
             "than half-renaming."
         ),
+        severity="",
     ),
     "M_ADAPTER_ERROR": DiagnosticHelp(
         title="an optional external adapter failed",
@@ -356,6 +370,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "The message names which adapter. A Fabric message is remote and "
             "nothing local is wrong; a PQTest configuration message is local."
         ),
+        severity="",
     ),
     "NODE_ERROR": DiagnosticHelp(
         title="Node.js is missing, or the parser bridge failed",
@@ -368,6 +383,7 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "Install Node 22+, or point MQUERY_NODE at it. A timeout or pipe "
             "message means nothing is wrong with your query - retry once."
         ),
+        severity="",
     ),
     "M_EXPORT_REFUSED": DiagnosticHelp(
         title="the result cannot become a table without losing something",
@@ -380,11 +396,13 @@ FAILURE_HELP: dict[str, DiagnosticHelp] = {
             "The message names the column and what to do, usually expand or "
             "select it in M first. Never fill the gap yourself."
         ),
+        severity="",
     ),
     "MQUERY_ERROR": DiagnosticHelp(
         title="a typed failure with no more specific code",
         means="Something pqtools refused, that does not fit the codes above.",
         fix="Read the message - it says what it declined and why.",
+        severity="",
     ),
 }
 

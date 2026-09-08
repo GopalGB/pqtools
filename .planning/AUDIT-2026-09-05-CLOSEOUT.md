@@ -2971,3 +2971,87 @@ is the defect. **F** is described above.
 The two remaining fixes have no executable control and are not claimed to:
 the `llms.txt` severity wording is documentation, and `label` -> `heading` is a
 rename with no behaviour attached.
+
+---
+
+## Round 27 - `29579d2..dccca7b`, six findings, all six taken
+
+Round 26 fixed a wrong answer and shipped a new one. This round is mostly my
+own regression.
+
+### HIGH - round 25's defect with the sign flipped
+
+`_CODE_SHAPED.match(code)`, where `code = name.upper()`. So `my_step`
+upper-cased to `MY_STEP`, matched the shape, and `pq explain my_step` answered
+**"MY_STEP is not a code this version of pqtools reports"**. Same for
+`source_data`, `raw_data_2`, `Result_2` - an ordinary step name told it was a
+broken error code. Reproduced on the shipped tree before touching anything.
+
+M identifiers take underscores. **Only the all-caps convention separates a
+code from a step name, and upper-casing destroys exactly the evidence the test
+then weighs.** The shape reads the raw input now. The cost, paid deliberately:
+a lower-case `m_future_error` gets the function-name answer, because it is
+indistinguishable from a variable. Real codes are unaffected - the table lookup
+upper-cases, so `pq explain m_io_error` still resolves, and that is asserted.
+
+**Round 26's own guard could not have caught this, and that is the finding
+underneath the finding.** It asserted the shape swallows no `DOCUMENTED` name.
+This branch is reached only by names that are NOT documented and NOT builtins,
+so `DOCUMENTED` is disjoint from the set that can produce a counter-example.
+The guard ran in a regime where the defect could not appear - the **seventh**
+instance in this audit (rounds 18, 19, 24, 25, 26's shape guard, 26's reverse
+test, here). The pattern is stable enough to state as a question: *what set can
+actually reach this line, and did I measure that one?*
+
+### MEDIUM - the codes users hold most often were still wrong
+
+`M001`..`M006` have no underscore, so the shape missed the entire lint family.
+`pq explain M007` printed "is not a name pqtools recognizes ... It may be a
+typo" - the exact answer round 26 set out to eliminate, for the codes
+`pq check` actually prints. `M[0-9]{3}` added to the shape.
+
+### MEDIUM - a default made two comments false
+
+`severity: str = ""`. `core.py` claimed "one table cannot drift from itself"
+and the test claimed "structurally impossible to omit"; both were false, since
+a new lint entry could simply omit the field and print `M007 (lint diagnostic)`
+with `"severity": ""` - the same wrong answer, still caught only by a test
+assertion, which is the arrangement folding the table in was meant to replace.
+The default is gone; the eleven failure entries state `severity=""` on purpose,
+and omitting it is now a `TypeError` at import.
+
+### LOW x3
+
+`llms.txt` stated "`severity` is ... `""` for a failure code" while
+`M_PARSE_ERROR` - listed in the failure table - answers `"kind": "lint
+diagnostic", "severity": "error"`, because the lint table is consulted first.
+An agent branching on which table it found the code in got the opposite. The
+document names the exception now and says to branch on the returned `kind`, and
+a test holds the document to it. The shape guard checked `DOCUMENTED` but not
+`BUILTINS`, leaving 93 builtins unchecked in a branch that sits *before* the
+builtin lookup. And the JSON echoed the raw `name` beside a message about the
+upper-cased one; that fell out of the HIGH.
+
+### Controls
+
+Four behavioural, red-then-green, against file copies:
+
+| # | defect reintroduced | result |
+|---|---|---|
+| A | match `name.upper()` again | RED, and `pq explain my_step` reproduced the wrong answer |
+| B | `M[0-9]{3}` dropped from the shape | RED |
+| C | the `severity` default restored, `M001`'s severity omitted | RED, printing `M001 (lint diagnostic)` |
+| D | the shape guard narrowed back to `DOCUMENTED` | GREEN with a code-shaped builtin present (the defect) / RED with `DOCUMENTED \| BUILTINS` |
+| E | the `M_PARSE_ERROR` exception deleted from `llms.txt` | RED |
+
+**D was mis-specified on the first attempt** and is recorded as such: the
+anchor I edited was wrapped differently in the file, so the narrowing never
+applied and both arms ran the same assertion. Two identical reds are not a
+control. Redone against the real text, with a code-shaped builtin registered to
+give the narrowed set something to miss, it separates cleanly.
+
+That is now three mis-specified controls in two rounds (round 26's C and F,
+round 27's D). All three failed the same way: **the mutation did not land where
+I believed it landed.** The check that catches it is cheap and is now habit -
+after mutating, print the thing that should have changed before running the
+test.

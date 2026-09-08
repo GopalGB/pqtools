@@ -1574,9 +1574,11 @@ def test_every_diagnostic_code_that_can_be_emitted_has_an_explanation() -> None:
     # Round 26: this severity used to live in a SECOND dict keyed by the same
     # codes and was read with `.get(code, "")`, so the only thing standing
     # between a missing key and a silently blank severity was the set
-    # equality this assertion used to make. It is now a field on the entry -
-    # structurally impossible to omit - so what is left to check is the one
-    # thing a shared table cannot enforce: that the value is TRUE.
+    # equality this assertion used to make. It is a field on the entry now,
+    # and - round 27 - a field with NO DEFAULT, so omitting it is a TypeError
+    # at import rather than a blank severity a test has to notice. What is
+    # left to check is the one thing the type cannot enforce: that the stated
+    # value is TRUE.
     everything = list(check(_ALL_SIX, "query.pq")) + list(
         check("let A = = 1 in A", "bad.pq")
     )
@@ -1917,11 +1919,37 @@ def test_a_code_in_both_tables_has_one_entry() -> None:
     drifted, carrying a different title and a different fix. Nothing noticed,
     because the union assertion above only asks whether a code has AN entry.
     """
+    import contextlib
+    import io
+    import json
+
+    from pqtools.cli import main
     from pqtools.core import DIAGNOSTIC_HELP, FAILURE_HELP
 
     for code in set(DIAGNOSTIC_HELP) & set(FAILURE_HELP):
         assert DIAGNOSTIC_HELP[code] is FAILURE_HELP[code], (
             f"{code} has two entries; only the lint one can ever be shown"
+        )
+
+    # Round 27 LOW: llms.txt states "severity is the lint severity ... or ""
+    # for a failure code", and the one code in both tables contradicts it -
+    # it sits in the FAILURE table but answers as a lint diagnostic, because
+    # the lint table is consulted first. An agent branching on which table it
+    # found the code in gets the opposite of what it is told. The document
+    # now names the exception; this holds the document to it.
+    for code in sorted(set(DIAGNOSTIC_HELP) & set(FAILURE_HELP)):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            assert main(["explain", code, "--json"]) == 0, code
+        payload = json.loads(buffer.getvalue())
+        assert payload["kind"] == "lint diagnostic", (code, payload)
+        assert payload["severity"] == DIAGNOSTIC_HELP[code].severity, (code, payload)
+        text = (Path(__file__).resolve().parent.parent / "llms.txt").read_text(
+            encoding="utf-8"
+        )
+        assert f"`{code}`, which appears in BOTH tables" in text, (
+            f"{code} answers as a lint diagnostic despite being documented as "
+            "a failure code, and llms.txt does not name the exception"
         )
 
 
@@ -1957,45 +1985,69 @@ def test_every_explained_code_is_the_answer_a_user_actually_gets(
 def test_a_code_shaped_name_is_never_answered_as_a_function_name(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The round-26 MEDIUM: llms.txt's promise was enforced only by a test.
+    """The round-26 MEDIUM and the round-27 HIGH it caused.
 
-    "It never answers a real code as though it were an unrecognised function
-    name" held for the codes this version happens to report, because the
-    guard above derives exactly those. A code from a NEWER pqtools, or a
-    typo'd one, still got "may be a typo, an internal or undocumented name,
-    or something outside the M standard library (a query name, a variable, a
-    record field)" - four suggestions, none of which is ever true of a code.
-    The shape is decidable, so the code decides it rather than the test.
+    llms.txt's "It never answers a real code as though it were an unrecognised
+    function name" held only for the codes this version happens to report,
+    because the guard derived exactly those. A code from a newer pqtools still
+    got "may be a typo, an internal or undocumented name, or something outside
+    the M standard library (a query name, a variable, a record field)" - four
+    suggestions, none ever true of a code.
+
+    The round-26 fix then matched that shape against `name.upper()`, which
+    inverted it: `my_step` upper-cased to `MY_STEP` and a perfectly ordinary
+    step name was answered "is not a code this version of pqtools reports".
+    Round 26's own guard could not have caught it - it asked whether the shape
+    swallows a DOCUMENTED name, and this branch is reached only by names that
+    are NOT documented. The guard ran where the defect could not appear, for
+    the seventh time in this audit. So the boundary is pinned here on both
+    sides, with the identifiers a person actually types.
     """
-    from pqtools.cli import main
+    from pqtools.cli import _CODE_SHAPED, main
 
-    for name in ("M_FUTURE_ERROR", "m_future_error", "NODE_ERROR2", "MQUERY_ERROR2"):
+    # Code-shaped: answered as a code that does not exist, never as a name.
+    # `M007` matters most - `pq check` prints M001..M006, so the next lint
+    # code is the likeliest thing a user holds, and it has no underscore.
+    for name in ("M_FUTURE_ERROR", "NODE_ERROR2", "MQUERY_ERROR2", "M007", "M999"):
         capsys.readouterr()
         assert main(["explain", name]) == 0, name
         out = capsys.readouterr().out
         assert "not a name pqtools recognizes" not in out, (name, out)
-        assert "is not a code this version of pqtools reports" in out, (name, out)
+        assert f"{name} is not a code this version of pqtools reports" in out, (
+            name,
+            out,
+        )
         # It says what it DOES report, so the reader is not sent to a doc.
         assert "M_IO_ERROR" in out and "M001" in out, (name, out)
 
-    # And the shape does not swallow a genuine M name. No documented name
-    # contains an underscore or is all-caps, which is what makes the test
-    # above safe; this is the half that proves it.
+    # NOT code-shaped: every one of these is a legal M identifier, and a step
+    # called `source_data` is far commoner than an error code spelled that
+    # way. `m_future_error` is here on purpose: lower case is exactly what
+    # separates the two, so a lower-cased code is ambiguous and loses - the
+    # cost of reading the raw input instead of the upper-cased one, paid
+    # deliberately. Real codes still resolve either way; that is asserted
+    # below, because it is the half that makes this cost acceptable.
+    for name in ("my_step", "source_data", "raw_data_2", "Result_2", "M_", "m007"):
+        assert not _CODE_SHAPED.match(name), name
+        capsys.readouterr()
+        assert main(["explain", name]) == 0, name
+        out = capsys.readouterr().out
+        assert "not a name pqtools recognizes" in out, (name, out)
+
+    for spelling in ("M_IO_ERROR", "m_io_error", "M001", "m001"):
+        capsys.readouterr()
+        assert main(["explain", spelling]) == 0, spelling
+        assert "is not a code" not in capsys.readouterr().out, spelling
+
+    # And the shape swallows no name pqtools already knows. BUILTINS as well
+    # as DOCUMENTED: 93 builtins are not in the documented list, and this
+    # branch sits BEFORE the `elif name in BUILTINS` that would have answered
+    # them, so checking only the documented set left those 93 unchecked.
     from pqtools.catalog import DOCUMENTED
-    from pqtools.cli import _CODE_SHAPED
+    from pqtools.evaluate import BUILTINS
 
-    caught = [n for n in DOCUMENTED if _CODE_SHAPED.match(n.upper())]
+    caught = sorted(n for n in set(DOCUMENTED) | set(BUILTINS) if _CODE_SHAPED.match(n))
     assert not caught, f"code shape swallows real M names: {caught}"
-
-    # The other boundary, pinned so it is a decision and not an accident: a
-    # bare `M_` names no code and IS a legal M identifier (`let M_ = 1 in M_`
-    # parses), so it keeps the function-name answer. The first version of the
-    # shape matched it, which would have told a user their variable was "not
-    # a code this version reports".
-    assert not _CODE_SHAPED.match("M_")
-    capsys.readouterr()
-    assert main(["explain", "M_"]) == 0
-    assert "not a name pqtools recognizes" in capsys.readouterr().out
 
 
 def test_the_lint_code_table_matches_the_documented_one() -> None:
