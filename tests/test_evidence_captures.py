@@ -112,20 +112,28 @@ def _leading_comments(text: str) -> str:
 
 
 def _first_body_line(text: str) -> str:
-    """The capture's first line of actual review body.
+    """The capture's first line of review body, after the header block.
 
-    The note wordings say a capture "opens with" a self-label, and round 54
-    found the predicate behind that phrase was `_MARKER.search(text)` - true
-    for a label ANYWHERE, including one quoted inside a review body
-    (`opus5-wrapper-round46-*.txt:10` is exactly that). Latent, because every
-    such capture today is explained by a header rather than a note, so it
-    never reaches the consistency check. Measured before the fix: 0 captures
-    where "contains a label" and "opens with one" disagree.
+    Body = everything past `_leading_comments`, which is where the wrapper's
+    own `#` block ends. Sliced that way rather than by skipping every `#`
+    line: 47 of the 48 captures contain `#` lines further down (review bodies
+    quote code and paths), so "skip all comments" and "skip the header" are
+    different rules, and a body opening `# Findings` above a label line would
+    read as opening with the label. The two agree on all 48 captures today;
+    this is the rule that keeps agreeing.
+
+    Used because the note wordings say a capture "opens with" a self-label
+    while the predicate behind that phrase was `_MARKER.search(text)`, true
+    for a label on ANY line. Honest measurement: **0** captures where the two
+    disagree, so this is wording-alignment, not a live bug. Round 54
+    justified it by citing `opus5-wrapper-round46-*.txt:10` as a label quoted
+    inside a body; that was wrong - line 10 is that capture's own opening
+    label, its header block ending at line 8.
     """
-    for line in text.splitlines():
-        if line.startswith("#") or not line.strip():
-            continue
-        return line
+    lines = text.splitlines()
+    for line in lines[len(_leading_comments(text).splitlines()) :]:
+        if line.strip():
+            return line
     return ""
 
 
@@ -182,12 +190,17 @@ def test_there_are_captures_to_check() -> None:
     # banner and, further down, a label. Its own control caught that.
     for label in _KNOWN_LABELS:
         assert _MARKER.match(label), label
-        # And that it is still a label this corpus actually contains. Without
-        # this the comment above ("seen in `evidence/` today") could rot to
-        # zero live instances without anything reddening - a documented fact
-        # with nothing behind it, which is the defect this whole file exists
-        # to stop.
-        assert any(label in p.read_text(encoding="utf-8") for p in _CAPTURES), label
+        # And that it is still a label this corpus actually OPENS a capture
+        # with. Round 54 wrote this as `label in p.read_text(...)`, which is
+        # satisfied by a review body discussing the label: measured, the
+        # ox-alpha label appears in 13 captures and opens only 9, so deleting
+        # all 9 real instances left the assert green. That is r47's defect -
+        # prose about the thing counted as the thing - reintroduced inside
+        # the guard added to end it, one round later.
+        assert any(
+            _first_body_line(p.read_text(encoding="utf-8")).startswith(label)
+            for p in _CAPTURES
+        ), label
 
 
 def test_every_capture_records_its_provenance() -> None:

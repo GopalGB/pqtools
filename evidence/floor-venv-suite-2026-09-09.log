@@ -6,25 +6,46 @@
 # for `import` and wrong for `importlib.util.find_spec`: real absence returns
 # None, the blocker raised.
 #
-# PRECONDITIONS, restored in round 54 after being dropped from the round-53
-# header while its `warnings: 0` reading was kept. That reading is exactly
-# what a stale cache fabricates - a compile-time DeprecationWarning does not
-# re-emit from a cached .pyc - so it means nothing without these:
+# PRECONDITIONS. `warnings: 0` is exactly the reading a stale cache
+# fabricates - a compile-time DeprecationWarning does not re-emit from a
+# cached .pyc - so it means nothing without these. Round 53 dropped them
+# while keeping the reading; round 54 restored them; round 55 replaced the
+# unverifiable one:
 #
 #   __pycache__ dirs under src/ and tests/ at run time : 0
 #   PYTHONDONTWRITEBYTECODE                            : 1
-#   --rootdir passed explicitly                        : yes (recorded below)
+#   pytest argv, verbatim                              : -p no:cacheprovider --rootdir=/Users/gopalmacbook/Desktop/Max HQ/pqtools -rs
 #
-# WHICH TREE THIS RAN ON. Round 54 found the previous header could not show
-# it: round 53 renamed two tests without changing the count, so `collected:
-# 4176` and the body's dot-line were byte-identical on both trees. A count
-# cannot distinguish a rename. This digest distinguishes any change at all:
+# The argv is recorded because round 54 wrote "--rootdir passed explicitly:
+# yes (recorded below)" pointing at pytest's `rootdir:` line - which pytest
+# prints whether or not the flag was passed, so it could not distinguish the
+# two states.
 #
-#   find src tests -name '*.py' | sort | xargs shasum -a 256 | shasum -a 256
-#   -> 34b9b92742dd0a5af5deb686183e533ec60751364bee3ffbd9da702e32aded4e
+# WHICH TREE THIS RAN ON. A count cannot distinguish a rename (round 53
+# renamed two tests without moving the total), so the tree is pinned by
+# digest. Round 55 widened it: the previous one hashed `find src tests -name
+# '*.py'`, which missed pyproject.toml - pytest's own configfile, see the
+# body - and the 26 non-.py files under tests/, among them m-signatures.json
+# and doc-examples.json, the fixtures the CLAUDE.md gates read. Demonstrated:
+# mutating one key in m-signatures.json left the old digest unmoved.
 #
-# Measured again after the run, unchanged, so the tree did not move under it.
-# The renamed tests are also named directly, which a dot-line cannot do:
+#   git ls-files src tests pyproject.toml | sort | xargs shasum -a 256 | shasum -a 256
+#   -> 04dd7b33ade6d0dfa5ab5846065205ec858e710d89a01453c794da960170c94c
+#   (123 tracked files; measured again after the run, unchanged)
+#
+# THAT A RUN HAPPENED AT ALL. Round 55 also found the round-53 and round-54
+# artifacts to be byte-identical apart from their elapsed-time line - the one
+# line a hand edit would touch - so nothing in the file distinguished a new
+# execution from an old one with its total changed. These timestamps are
+# taken outside pytest and bracket it; the body cannot produce them:
+#
+#   started  2026-09-09T17:18:16Z
+#   finished 2026-09-09T17:29:55Z
+#
+# 11m39s of wall clock against the 695.72s pytest reports below, which is the
+# collection and teardown either side.
+#
+# The renamed tests are named directly, which a dot-line cannot do:
 #
 #   tests/test_evidence_captures.py::test_there_are_captures_to_check
 #   tests/test_evidence_captures.py::test_every_capture_records_its_provenance
@@ -37,38 +58,30 @@
 #   tests/test_no_silent_handlers.py::test_the_docstring_accounts_for_every_pinned_cli_handler
 #
 # repo toplevel : /Users/gopalmacbook/Desktop/Max HQ/pqtools
-# rootdir       : /Users/gopalmacbook/Desktop/Max HQ/pqtools
-# HEAD          : cdfd8be (round 53)
-# working tree  : the round-54 fixes, committed next -
+# HEAD          : f747fba (round 54)
+# working tree  : the round-55 fixes, committed next -
 #                 .planning/AUDIT-2026-09-05-CLOSEOUT.md
 #                 tests/test_evidence_captures.py
-# collected here: 4176 tests collected in 1.18s
-# collected dev : 4176 tests collected in 1.19s
+# collected here: 4176 tests collected in 1.04s
+# collected dev : 4176 tests collected in 2.07s
 # result below  : 4135 passed + 41 skipped = 4176, matching both collections
 # python        : Python 3.11.15
 # extras absent : pandas=None, pyarrow=None, openpyxl=None, python_calamine=None
 # stale paths   : 0
 # warnings      : 0
-# FLOOR EXIT    : 0 (sentinel restored; it was dropped in round 53)
+# FLOOR EXIT    : 0
 #
 # Round 50 asked how two runs could agree to 0.009% (682.38s -> 682.44s).
-# SEVEN floor runs of this suite have been measured on this machine on
-# 2026-09-09:
+# EIGHT floor runs measured on this machine on 2026-09-09:
 #
-#     683.47s   (1 failed, 4130 passed)
-#     682.38s   (4131 passed)
-#     682.44s   (4134 passed)
-#     683.61s   (4135 passed, 1 warning)
-#     680.93s   (4135 passed)
-#     699.56s   (4135 passed)   <- machine ~3.5 GB into swap
-#     686.76s   (4135 passed)   <- this run
+#     683.47  682.38  682.44  683.61  680.93   <- idle
+#     699.56  686.76  695.72                   <- machine in swap
 #
-# Idle-machine runs sit in 680.93-683.61s; the two under memory pressure are
-# the outliers. So the claim is narrow: the suite is stable to a few seconds
-# when the machine is idle and loses up to ~2% when it is not, and two runs
-# landing 0.06s apart sits inside that. The two logs round 50 questioned are
-# provably different executions regardless - different collected counts,
-# different skip line numbers, different progress-dot layout.
+# Idle runs span 2.68s; the loaded ones are the outliers. The claim is narrow:
+# stable to a few seconds on an idle machine, up to ~2.5% slower under memory
+# pressure, and two runs landing 0.06s apart sits inside the idle spread. The
+# two logs round 50 questioned are provably different executions regardless -
+# different collected counts, skip line numbers and progress-dot layout.
 
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
@@ -195,43 +208,5 @@ tests/test_values_0_10.py .............................................. [ 99%]
 ............................                                             [ 99%]
 tests/test_write_validation.py ssssss                                    [100%]
 
-=========================== short test summary info ============================
-SKIPPED [1] tests/test_adapters.py:383: could not import 'pyarrow': No module named 'pyarrow'
-SKIPPED [1] tests/test_cli.py:162: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [1] tests/test_end_to_end.py:95: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:115: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:141: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:153: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:486: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:536: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:107: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:122: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:141: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:159: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:172: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:185: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:198: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:211: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:228: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:246: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:264: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:276: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:298: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:309: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:320: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:332: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:343: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:354: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:368: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:382: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:401: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:413: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:441: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_export.py:471: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_item_access.py:85: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4135 passed, 41 skipped in 686.76s (0:11:26) =================
-FLOOR EXIT: 0
+================= 4135 passed, 41 skipped in 695.72s (0:11:35) =================
+FLOOR EXIT: 0   started 2026-09-09T17:18:16Z   finished 2026-09-09T17:29:55Z

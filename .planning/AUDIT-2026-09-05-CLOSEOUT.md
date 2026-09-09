@@ -5175,9 +5175,101 @@ one that renames a test, and it is checkable by a reader in one command.
 | OO3 | a note claiming "no self-label" on a capture that quotes one mid-BODY | with `_MARKER.search(text)`: **spurious RED**; with `_MARKER.match(_first_body_line(text))`: correctly `5 passed` | the note says "opens with", so the predicate must too | GREEN |
 
 OO3's direction is worth stating precisely, because it is the opposite of the
-usual one here: the defect produced a **false failure**, not a silent pass. It
-was also latent - measured across all 48 captures, "contains a label" and
-"opens with a label" disagree on **0** of them today, and the one capture with
-a mid-body label (`round46:10`) carries a header, so it never reaches the note
-check at all. Taken anyway: a predicate that does not mean what its own error
-message says is a defect waiting for the corpus to change.
+usual one here: the defect produced a **false failure**, not a silent pass, and
+it is latent - measured across all 48 captures, `_MARKER.search` and "opens
+with" disagree on **0** of them. Taken anyway: a predicate that does not mean
+what its own error message says is a defect waiting for the corpus to change.
+
+> **CORRECTION (round 55).** The justification written here, and in the
+> helper's docstring, was false. I cited `opus5-wrapper-round46-*.txt:10` as
+> "a label quoted inside a review body". It is not: that capture's header
+> block ends at line 8, line 9 is blank, and **line 10 is its own opening
+> self-label**. I also wrote "the one capture with a mid-body label", which is
+> wrong by measurement - **four** captures (rounds 45-48) contain the ox-alpha
+> label on a line they do not open with, and one of them, round 45, *does*
+> carry a note and *does* reach the note check.
+>
+> Neither error changes the fix, and that is the uncomfortable part: the code
+> was right for a reason I had not verified. The honest statement is the one
+> above - 0 captures disagree, so the change aligns the predicate with the
+> words of its own error message and nothing more. Those four mis-measured
+> captures then turned out to matter for something else entirely: they are
+> exactly what made round 54's anti-rot assert hollow (round 55, finding 2).
+
+## Round 55 - `cdfd8be..f747fba`, verdict FIX-FIRST, all six taken
+
+Six findings, no runtime bug among them: every one is an evidence-integrity
+defect, and three are false claims in prose I wrote one round earlier. `src/`
+untouched for the nineteenth consecutive round.
+
+### 1 MEDIUM - the justification for a correct fix was fabricated
+
+Round 54's `_first_body_line` cited `opus5-wrapper-round46-*.txt:10` as a
+label quoted inside a review body. Measured: that capture's header block ends
+at line 8, line 9 is blank, and line 10 is **its own opening self-label**. The
+closeout's "the one capture with a mid-body label" was wrong too - there are
+**four** (rounds 45-48), and round 45 carries a note, so it does reach the
+note check.
+
+The fix itself stands; the reason given for it did not exist. That is worse
+than a wrong fix in one specific way - a wrong fix gets caught by a test,
+whereas a wrong reason gets read by the next person and believed. Corrected in
+both places, with the honest measurement in its place: **0** captures where
+`_MARKER.search` and "opens with" disagree, so the change aligns a predicate
+with the words of its own error message and nothing more.
+
+### 2 MEDIUM - r47's defect, reintroduced inside the guard added to end it
+
+Round 54's anti-rot assert was `label in p.read_text(...)` - unanchored, so a
+review body *discussing* a label satisfies it. Measured: `⚪ ox-alpha` appears
+in **13** captures and opens only **9**; the other four are the very bodies
+mis-measured in finding 1.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| PP1 | all **9** real ox-alpha openings deleted, the 4 prose mentions left | anchored: `AssertionError: ⚪ ox-alpha`; round 54's unanchored: **`1 passed`** | RED with the fix, GREEN without it - on a corpus with zero live instances | GREEN |
+
+Prose about the thing counted as the thing is exactly r47. It is now the
+second time this class has been rebuilt inside the file whose stated purpose
+is to end it, which is why the anchor is `_first_body_line(...).startswith`
+rather than a tighter substring test.
+
+### 3 MEDIUM - the digest did not cover what it claimed
+
+"Distinguishes any change at all" was an overclaim: `find src tests -name
+'*.py'` misses `pyproject.toml` - which this log's own body records as
+`configfile:` - and the **26** non-`.py` files under `tests/`, including
+`m-signatures.json`, `doc-examples.json` and `m-enum-values.json`, the
+fixtures all three CLAUDE.md gates read.
+
+Demonstrated: mutating one key in `m-signatures.json` left the old digest
+**unmoved** (`34b9b927…` → `34b9b927…`) while `git ls-files src tests
+pyproject.toml` moved. Now computed that way, over **123** tracked files, and the
+sentence narrowed to what it actually covers.
+
+### 4 MEDIUM - and it still could not prove a run happened
+
+Comparing the round-53 and round-54 artifacts line by line, ignoring the
+elapsed-time line: **0 lines differ**. So nothing in the file distinguished a
+seventh execution from the sixth with its total edited - and the total is the
+one line a hand edit would touch. The header's own "a count cannot distinguish
+a rename" problem, one level up, in the thing built to fix it.
+
+Now bracketed by `date -u` taken before and after the run and printed beside
+`FLOOR EXIT`, so the artifact carries a value its own body cannot produce.
+
+### 5-6 LOW
+
+- `--rootdir passed explicitly : yes (recorded below)` pointed at pytest's
+  `rootdir:` line, which is printed unconditionally whether or not the flag
+  was passed (verified: 1 such line with the flag absent). The reading could
+  not distinguish the two states - the same shape as the `warnings: 0`
+  precondition round 54 restored. The header now records the actual argv.
+- `_first_body_line` skipped **every** `#` line while `_leading_comments`
+  defines the header as ending at the first non-`#` line. 47 of 48 captures
+  carry `#` lines after that block, so the two rules differ in principle
+  though they agree on all 48 today.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| QQ1/QQ2 | a capture whose note claims it "opens with a model self-label", whose body opens `# Findings, most severe first.` above the label | header-block rule: RED, naming the file; skip-every-`#` rule: **`5 passed`** | this direction is the dangerous one - a note claiming something false is accepted | probe removed, GREEN |
