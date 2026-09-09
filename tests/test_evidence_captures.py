@@ -41,20 +41,34 @@ _CAPTURES = sorted((_ROOT / "evidence").glob("opus5-wrapper-*.txt"))
 # because it names the model `review.sh` actually requests. A guard narrower
 # than the thing it counts is r46's defect, and it had been rewritten into
 # the file whose whole purpose was to end that class.
-# Matched by FORM, not by enumerating labels. Round 50 caught this regex
-# listing `⚪ ox-alpha` alone and so missing 27 captures opening `🔵 Opus 5`;
-# round 51 caught the repair still being a list of two, in the file whose
-# stated purpose is to end "a guard narrower than the thing it counts". The
-# model-indicator rule can emit other colours, and a capture opening with one
-# would be unexplained and invisible here - the identical shape, one label on.
+# A BEST-EFFORT classifier, and deliberately no longer on the acceptance path.
+#
+# This regex was narrowed four times: `⚪ ox-alpha` alone (r50 caught it missing
+# 27 captures), then two literals (r51 caught that as the same defect one label
+# on), then a six-emoji class - which cannot be exact either, because
+# `CLAUDE.md`'s model-indicator rule ends "any other model: pick the nearest
+# color and NAME IT TRUTHFULLY". The label set is open. A fourth narrowing on a
+# fresh guess about the input domain is the signal to stop narrowing and remove
+# the dependency instead.
+#
+# So the acceptance test below no longer asks whether a capture carries a
+# label. It asks the thing that actually matters - does this capture record
+# its provenance - of EVERY capture, which needs no classifier and cannot go
+# blind. The 11 captures that carried neither a header nor a note were
+# annotated in round 53 to make that unconditional invariant true.
+#
+# The marker survives for ONE use, and the distinction is the point: an
+# inexact classifier is dangerous when it gates ACCEPTANCE, because a miss is
+# a silent pass. Used below to find a note attached to a capture that has no
+# label, a miss costs one cross-check and can never green anything.
 #
 # `\ufe0f` is the optional variation selector some emoji carry.
 _MARKER = re.compile(r"^[⚪🔵🟢🟣🔴🟠]\ufe0f?\s+\S", re.MULTILINE)
 
-# The labels actually seen in `evidence/` today. An allowlist for the reader,
-# never the predicate - and asserted below, so a `_MARKER` that silently stops
-# matching them (a changed variation selector, say) reddens instead of
-# quietly counting nothing.
+# The labels actually seen in `evidence/` today. A documented allowlist for the
+# reader, never the predicate - and asserted against `_MARKER` below, so a
+# regex that silently stopped matching the real labels would redden rather
+# than quietly classify nothing.
 _KNOWN_LABELS = ("⚪ ox-alpha", "🔵 Opus 5")
 
 # The wrapper header that records what was REQUESTED, which is the provenance.
@@ -143,61 +157,81 @@ def test_there_are_captures_to_check() -> None:
     thing it counted.
     """
     assert len(_CAPTURES) >= 45, [p.name for p in _CAPTURES]
-    marked = [p for p in _CAPTURES if _MARKER.search(p.read_text(encoding="utf-8"))]
-    assert marked
-
-    # Every known label is still reached by the form regex. Without this, a
-    # `_MARKER` that matched some third thing and none of the real labels
-    # would satisfy the line above and leave every capture unchecked.
-    #
-    # Matched against the LABEL ITSELF, not against a file that contains it:
-    # the first version asked whether a marked capture also contained the
-    # label somewhere, and a `_MARKER` rewritten to match the wrapper's
+    # Matched against the LABEL ITSELF, not against a file containing one: an
+    # earlier version asked whether a marked capture also contained a label
+    # somewhere, and a `_MARKER` rewritten to match the wrapper's
     # `# Exact claude ...` banner passed it - every capture carries both the
     # banner and, further down, a label. Its own control caught that.
     for label in _KNOWN_LABELS:
         assert _MARKER.match(label), label
 
 
-def test_every_capture_carrying_the_marker_explains_it() -> None:
-    """A bare model label in a permanent record reads as a provenance claim.
+def test_every_capture_records_its_provenance() -> None:
+    """EVERY capture, not only the ones a regex recognises as labelled.
 
-    It is not one: `review.sh` invokes `claude -p --model claude-opus-5` and
+    A bare model label in a permanent record reads as a provenance claim. It
+    is not one: `review.sh` invokes `claude -p --model claude-opus-5` and
     refuses to run on any substitution, so the invocation is the provenance
-    and the marker is the model's own self-label under this machine's
-    model-indicator rule. Every capture that carries it says so.
+    and any label in the body is the model's own self-label under this
+    machine's model-indicator rule.
+
+    Rounds 50, 51 and 52 each caught the classifier deciding WHICH captures
+    had to say so being narrower than the set that does. The fourth version
+    would have been another guess at an open-ended label set, so this test
+    stopped asking the question: a capture that records no provenance is
+    unacceptable whether or not it carries a label, and 48 of 48 now do.
+
+    Either explanation counts, and they are the same statement made twice:
+    the header records what was REQUESTED, and the retro-note says it in
+    words for captures written before the header existed.
     """
     unexplained = []
     for path in _CAPTURES:
-        text = path.read_text(encoding="utf-8")
-        if not _MARKER.search(text):
-            continue
-        # Either explanation will do, and they are the same statement made two
-        # ways: the header records what was REQUESTED (so the label beside it
-        # is visibly a self-label), and the retro-note says so in words for
-        # captures written before the header existed.
-        head = _leading_comments(text)
+        head = _leading_comments(path.read_text(encoding="utf-8"))
         if _HEADER.search(head) or _note_block(head) is not None:
             continue
         unexplained.append(path.name)
     assert not unexplained, unexplained
 
 
-def test_no_capture_carries_the_note_without_the_marker() -> None:
-    """The other direction: a note explaining a marker that is not there.
+def test_every_note_describes_the_capture_it_is_attached_to() -> None:
+    """A note's claim about the label must match what the capture carries.
 
-    Checked because r46's remediation was applied by hand to a list of files
-    I had produced with a broken glob, and a hand-applied edit can land on the
-    wrong file as easily as it can miss one.
+    This replaces `..._no_capture_carries_the_note_without_the_marker`, whose
+    premise expired in round 53: a note on an unlabelled capture used to mean
+    a hand-applied edit had landed on the wrong file, and now means the
+    capture predates the header and says so. The purpose survives - a
+    misplaced note is still the failure to catch - so the check moved to the
+    thing that distinguishes them, which is what the note actually SAYS.
+
+    Unlike the set of model labels, the set of note wordings is closed: there
+    are three, all written here. An unrecognised wording fails rather than
+    passing quietly, so a new note cannot opt itself out of the check.
+
+    `_MARKER` is used here and nowhere else. A label it fails to recognise
+    costs one cross-check on that file; it can never turn an unexplained
+    capture green, because the acceptance test above does not consult it.
     """
-    misplaced = []
+    claims = {
+        "no model self-label": False,
+        "opens with a model self-label": True,
+        "carries the model marker": True,
+    }
+    wrong = []
+    unrecognised = []
     for path in _CAPTURES:
         text = path.read_text(encoding="utf-8")
-        if _note_block(_leading_comments(text)) is not None and not _MARKER.search(
-            text
-        ):
-            misplaced.append(path.name)
-    assert not misplaced, misplaced
+        block = _note_block(_leading_comments(text))
+        if block is None:
+            continue
+        matched = [expected for phrase, expected in claims.items() if phrase in block]
+        if len(matched) != 1:
+            unrecognised.append(path.name)
+            continue
+        if matched[0] is not bool(_MARKER.search(text)):
+            wrong.append(path.name)
+    assert not unrecognised, unrecognised
+    assert not wrong, wrong
 
 
 def test_every_note_makes_the_claim_that_is_true() -> None:

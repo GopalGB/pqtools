@@ -3,6 +3,12 @@
 # src/pqtools/_bridge.cjs: unchanged in a49ed2a..b44f459, not stubbed, not in the diff
 # package-lock.json: unchanged in a49ed2a..b44f459, not stubbed, not in the diff
 # invoked 2026-09-07T03:11:07Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# NOTE (round 53): this capture predates the wrapper header, so it records no
+# requested model of its own, and its body carries no model self-label either.
+# Its provenance is the invocation, not anything in the file: review.sh invokes
+# `claude -p --model claude-opus-5` and refuses to run on any substitution.
+# Captures from round 46 onward record the requested model inline in their own
+# header.
 
 Findings, ranked:
 

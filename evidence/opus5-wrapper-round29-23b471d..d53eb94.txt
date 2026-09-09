@@ -3,6 +3,12 @@
 # src/pqtools/_bridge.cjs: unchanged in 23b471d..d53eb94, not stubbed, not in the diff
 # package-lock.json: unchanged in 23b471d..d53eb94, not stubbed, not in the diff
 # invoked 2026-09-08T04:08:05Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# NOTE (round 53): this capture predates the wrapper header, so it records no
+# requested model of its own, and its body carries no model self-label either.
+# Its provenance is the invocation, not anything in the file: review.sh invokes
+# `claude -p --model claude-opus-5` and refuses to run on any substitution.
+# Captures from round 46 onward record the requested model inline in their own
+# header.
 
 Verified against the tree (executed `pq explain` on the probe set, ran the four affected tests, and checked the gate log's certified tree object against the staged blobs). Both round-28 HIGHs are genuinely closed: `TOTAL_SALES`, `CHANGED_TYPE`, `A_1`, `REMOVED_COLUMNS` now lead with the name reading, all 18 real codes still match `_CODE_SHAPED`, `DOCUMENTED | BUILTINS` ∩ shape is empty, and `evidence/release-gate-...log`'s content tree `c98ca41d` contains exactly the staged blobs `70070ad` / `fa346a6` / `a83310d`, so the evidence certifies this tree.
 

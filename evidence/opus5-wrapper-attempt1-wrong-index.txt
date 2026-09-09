@@ -1,5 +1,11 @@
 # Opus 5 wrapper review - baseline commit 9bc508c (bridge bundle + lockfile excluded via temp index)
 # requested model: claude-opus-5 | invoked: 2026-09-02T16:48:43Z | env: ANTHROPIC_API_KEY unset for the call
+# NOTE (round 53): this capture predates the wrapper header, so it records no
+# requested model of its own, and its body carries no model self-label either.
+# Its provenance is the invocation, not anything in the file: review.sh invokes
+# `claude -p --model claude-opus-5` and refuses to run on any substitution.
+# Captures from round 46 onward record the requested model inline in their own
+# header.
 
 ⚠ diff is 2734427 bytes — large; reviewing anyway, but consider a path/range for sharper review.
 Prompt is too long · the request is ~1445036 tokens (limit 1000000) but this conversation is only ~703374 tokens — the rest is system prompt, tool definitions, and attachment content. A single-exchange conversation cannot be compacted; reduce attached files/tools or start with less context.

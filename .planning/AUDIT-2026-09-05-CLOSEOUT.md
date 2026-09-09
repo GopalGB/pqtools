@@ -5052,3 +5052,71 @@ the same 36 of 48 captures, both known labels, and a variation-selector label
 - but "provably equivalent" is the class of claim this audit exists to
 distrust, and the ordering rule set out in finding 1 says the floor run is
 last.
+
+## Round 53 - self-raised: the fourth narrowing, and the classifier deleted
+
+No review produced this one. The independent wrapper was OOM-killed twice on a
+machine already 3.5 GB into swap from processes that are not this session's, so
+while it was blocked I read round 52's own diff. One thing in it fails a rule
+this audit had already written down.
+
+### `_MARKER` had been narrowed four times
+
+| round | predicate | caught by |
+|---|---|---|
+| ≤50 | `⚪ ox-alpha` | r50 - blind to 27 captures opening `🔵 Opus 5` |
+| 51 | `(⚪ ox-alpha\|🔵 Opus 5)` | r52 - "still an enumeration" |
+| 52 | `[⚪🔵🟢🟣🔴🟠]\ufe0f?\s+\S` | **this round** - still an enumeration, one level up |
+| 53 | *deleted from the acceptance path* | - |
+
+The six-emoji class cannot be exact either, and the reason is in `CLAUDE.md`:
+the model-indicator rule ends *"Any other model: pick the nearest color and
+NAME IT TRUTHFULLY."* The label set is open by design, so no character class
+closes it. Four narrowings on four fresh guesses about the input domain is the
+tell recorded in `stop-depending-on-a-heuristic-you-cannot-make-exact`, and the
+prescription there is not a fifth guess.
+
+**So the acceptance test stopped asking the question.** It never needed to know
+which captures carry a label; it needed to know that each one records its
+provenance. That is asked of all 48, needs no classifier, and cannot go blind.
+The 11 captures that carried neither a header nor a note - all pre-round-46,
+and all genuinely unlabelled - were annotated to make the unconditional
+invariant true. Coverage went from 36 of 48 conditionally to 48 of 48
+absolutely.
+
+`_MARKER` survives for exactly one use, and the distinction is the whole point:
+**an inexact classifier is dangerous when it gates ACCEPTANCE, because a miss
+is a silent pass. Used to cross-check what a note claims, a miss costs one
+check and can never green anything.**
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| NN1a | a capture opening `🟡 Some-Other-Model 1.0` (outside the six-emoji class), explained by nothing | `['opus5-wrapper-probe-gggg..hhhh.txt']` | RED at `..._records_its_provenance` | probe removed, GREEN |
+| NN1b | the same probe, acceptance gated on `_MARKER` again (round 52's design) | **`5 passed`** - the unexplained capture is silently accepted | - | - |
+
+### The replaced test was strengthened, not dropped
+
+`..._no_capture_carries_the_note_without_the_marker` existed to catch a
+hand-applied note landing on the wrong file. Its premise expired here: a note
+on an unlabelled capture used to mean misplacement and now means "this one
+predates the header". The purpose is still live, so the check moved to what
+distinguishes the two - what the note SAYS. A note claiming the body opens with
+a self-label must be on a capture that has one; a note claiming it carries none
+must be on a capture that does not.
+
+That set is closed, because these notes are written here: three wordings, 44
+notes, measured consistent (11 / 9 / 24). An unrecognised wording fails rather
+than passing quietly, so a new note cannot opt itself out.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| NN2 | `🔵 Opus 5` injected into the body of a capture whose note says it carries no self-label | `['opus5-wrapper-round9-de6e217..d3bf107.txt']` | RED | GREEN |
+| NN3 | that note's recognised phrase reworded to something outside the three | same file, via the `unrecognised` arm | RED | GREEN |
+
+### Why this belongs in the record even though no reviewer asked
+
+Three consecutive reviews found this regex too narrow, and each time I widened
+it by one step - which is the behaviour the "stop narrowing" note was written
+to prevent, applied to counts, and not transferred to classifiers. The lesson
+generalises past both: **when a fix widens the same predicate for the third
+time, the predicate is the wrong mechanism, not the wrong width.**

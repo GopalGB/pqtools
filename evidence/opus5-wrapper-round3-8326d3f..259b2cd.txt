@@ -1,6 +1,12 @@
 # Exact claude-opus-5 wrapper review - range 8326d3f..259b2cd (bundle + lockfile shown as stub blobs)
 # staged:  36 files changed, 2446 insertions(+)
 # invoked 2026-09-03T01:59:32Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# NOTE (round 53): this capture predates the wrapper header, so it records no
+# requested model of its own, and its body carries no model self-label either.
+# Its provenance is the invocation, not anything in the file: review.sh invokes
+# `claude -p --model claude-opus-5` and refuses to run on any substitution.
+# Captures from round 46 onward record the requested model inline in their own
+# header.
 
 Both behavioral findings now reproduce against the real code. Final review, with two more retractions.
 
