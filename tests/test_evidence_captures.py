@@ -111,6 +111,24 @@ def _leading_comments(text: str) -> str:
     return "\n".join(kept)
 
 
+def _first_body_line(text: str) -> str:
+    """The capture's first line of actual review body.
+
+    The note wordings say a capture "opens with" a self-label, and round 54
+    found the predicate behind that phrase was `_MARKER.search(text)` - true
+    for a label ANYWHERE, including one quoted inside a review body
+    (`opus5-wrapper-round46-*.txt:10` is exactly that). Latent, because every
+    such capture today is explained by a header rather than a note, so it
+    never reaches the consistency check. Measured before the fix: 0 captures
+    where "contains a label" and "opens with one" disagree.
+    """
+    for line in text.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        return line
+    return ""
+
+
 def _note_block(text: str) -> str | None:
     """The retro-note as one unwrapped string, or None if there is no note.
 
@@ -164,6 +182,12 @@ def test_there_are_captures_to_check() -> None:
     # banner and, further down, a label. Its own control caught that.
     for label in _KNOWN_LABELS:
         assert _MARKER.match(label), label
+        # And that it is still a label this corpus actually contains. Without
+        # this the comment above ("seen in `evidence/` today") could rot to
+        # zero live instances without anything reddening - a documented fact
+        # with nothing behind it, which is the defect this whole file exists
+        # to stop.
+        assert any(label in p.read_text(encoding="utf-8") for p in _CAPTURES), label
 
 
 def test_every_capture_records_its_provenance() -> None:
@@ -219,17 +243,28 @@ def test_every_note_describes_the_capture_it_is_attached_to() -> None:
     }
     wrong = []
     unrecognised = []
+    examined = []
     for path in _CAPTURES:
         text = path.read_text(encoding="utf-8")
         block = _note_block(_leading_comments(text))
         if block is None:
             continue
+        examined.append(path.name)
         matched = [expected for phrase, expected in claims.items() if phrase in block]
         if len(matched) != 1:
             unrecognised.append(path.name)
             continue
-        if matched[0] is not bool(_MARKER.search(text)):
+        if matched[0] is not bool(_MARKER.match(_first_body_line(text))):
             wrong.append(path.name)
+    # Non-vacuity, which every sibling guard in this file has and this one
+    # did not: `if block is None: continue` means a drift in `_NOTE` or
+    # `_note_block` leaves both asserts below passing over zero files. Only
+    # the 11 header-less captures are backstopped by the provenance test; the
+    # other 33 notes' claims would go unchecked in silence.
+    assert len(examined) >= 44, (
+        f"expected at least the 44 known notes, examined {len(examined)} - "
+        "if the note pattern drifted, this test is looking at nothing"
+    )
     assert not unrecognised, unrecognised
     assert not wrong, wrong
 

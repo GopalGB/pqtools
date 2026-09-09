@@ -5120,3 +5120,64 @@ it by one step - which is the behaviour the "stop narrowing" note was written
 to prevent, applied to counts, and not transferred to classifiers. The lesson
 generalises past both: **when a fix widens the same predicate for the third
 time, the predicate is the wrong mechanism, not the wrong width.**
+
+## Round 54 - `d7d17a2..cdfd8be`, verdict FIX-FIRST, all five taken
+
+The review ran the tree rather than reading the diff, and re-measured every
+number this closeout published (48 captures, 44 notes, the 11/9/24 split, 36
+marker hits, 8 `Diagnostic` sites - all confirmed). Two MEDIUMs, both about the
+same artifact, and both about evidence rather than code.
+
+### 1 MEDIUM - I deleted the precondition and kept the reading
+
+Round 53's header asserts `warnings : 0` and `stale paths : 0`. Rewriting that
+header, I dropped the sentence round 50 had put there: *"This run clears
+`__pycache__`, sets `PYTHONDONTWRITEBYTECODE=1`"*. Measured:
+`grep -niE 'pycache|BYTECODE'` over the file returns **0**, and the `FLOOR
+EXIT: 0` sentinel was dropped too (it was present at 56c2c44).
+
+The sting is that the same commit documents why that sentence is load-bearing:
+a compile-time `DeprecationWarning` does not re-emit from a cached `.pyc`.
+`warnings : 0` is *precisely* the reading a stale cache fabricates, and I
+published it having removed the line that says the cache was cleared. The run
+did clear it; the artifact no longer said so, and an artifact is only what it
+says.
+
+### 2 MEDIUM - the log could not show it ran the tree it certified
+
+The header claims the run certifies the round-53 work in
+`tests/test_evidence_captures.py`. Nothing in the log could establish that.
+Round 53 renamed two tests and replaced a third, but the count did not move:
+
+| tree | tests in that file | the log's line |
+|---|---|---|
+| round 52 (`f578ee8`) | 5 | `tests/test_evidence_captures.py .....` |
+| round 53 (`cdfd8be`) | 5 | `tests/test_evidence_captures.py .....` |
+
+Byte-identical. So `collected: 4176` and the body agree on both trees, and the
+"the run and the collection agree" check round 52 added is **blind to exactly
+the change the log is offered as evidence for**. A count cannot distinguish a
+rename; this is the count-as-evidence class again, in its last remaining hiding
+place.
+
+Fixed with something stronger than the reviewer's suggested test names: the
+header now carries a **sha256 digest over every `.py` under `src/` and
+`tests/`**, with the command to recompute it, plus the collected test names of
+the two guard files. A digest distinguishes *any* change to the tree, not only
+one that renames a test, and it is checkable by a reader in one command.
+
+### 3-5 LOW - three guards that were not guarding
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| OO1 | `_NOTE` drifted to `# MEMO (round n)` so no note is found | `expected at least the 44 known notes, examined 0` | RED - the non-vacuity floor this test lacked while every sibling had one | GREEN |
+| OO2 | `_KNOWN_LABELS` given a third label no capture contains | `AssertionError: 🟢 GLM-5.2` | RED - the allowlist is now tied to the corpus it claims to describe | GREEN |
+| OO3 | a note claiming "no self-label" on a capture that quotes one mid-BODY | with `_MARKER.search(text)`: **spurious RED**; with `_MARKER.match(_first_body_line(text))`: correctly `5 passed` | the note says "opens with", so the predicate must too | GREEN |
+
+OO3's direction is worth stating precisely, because it is the opposite of the
+usual one here: the defect produced a **false failure**, not a silent pass. It
+was also latent - measured across all 48 captures, "contains a label" and
+"opens with a label" disagree on **0** of them today, and the one capture with
+a mid-body label (`round46:10`) carries a header, so it never reaches the note
+check at all. Taken anyway: a predicate that does not mean what its own error
+message says is a defect waiting for the corpus to change.

@@ -6,30 +6,53 @@
 # for `import` and wrong for `importlib.util.find_spec`: real absence returns
 # None, the blocker raised.
 #
-# Round 52 rejected an earlier version of this file for certifying
-# `collected: 4175` on a tree that collects 4176 - the run had finished
-# BEFORE the last test of that commit was written. The ordering is now fixed:
-# every change that can alter the suite lands first, this run is last, and
-# only prose (this header, the closeout) may follow it.
+# PRECONDITIONS, restored in round 54 after being dropped from the round-53
+# header while its `warnings: 0` reading was kept. That reading is exactly
+# what a stale cache fabricates - a compile-time DeprecationWarning does not
+# re-emit from a cached .pyc - so it means nothing without these:
+#
+#   __pycache__ dirs under src/ and tests/ at run time : 0
+#   PYTHONDONTWRITEBYTECODE                            : 1
+#   --rootdir passed explicitly                        : yes (recorded below)
+#
+# WHICH TREE THIS RAN ON. Round 54 found the previous header could not show
+# it: round 53 renamed two tests without changing the count, so `collected:
+# 4176` and the body's dot-line were byte-identical on both trees. A count
+# cannot distinguish a rename. This digest distinguishes any change at all:
+#
+#   find src tests -name '*.py' | sort | xargs shasum -a 256 | shasum -a 256
+#   -> 34b9b92742dd0a5af5deb686183e533ec60751364bee3ffbd9da702e32aded4e
+#
+# Measured again after the run, unchanged, so the tree did not move under it.
+# The renamed tests are also named directly, which a dot-line cannot do:
+#
+#   tests/test_evidence_captures.py::test_there_are_captures_to_check
+#   tests/test_evidence_captures.py::test_every_capture_records_its_provenance
+#   tests/test_evidence_captures.py::test_every_note_describes_the_capture_it_is_attached_to
+#   tests/test_evidence_captures.py::test_every_note_makes_the_claim_that_is_true
+#   tests/test_evidence_captures.py::test_the_header_appears_exactly_from_the_round_it_claims
+#   tests/test_no_silent_handlers.py::test_the_sweep_finds_something_to_sweep
+#   tests/test_no_silent_handlers.py::test_no_new_exception_handler_finishes_without_raising
+#   tests/test_no_silent_handlers.py::test_every_diagnostic_is_built_with_an_explicit_code
+#   tests/test_no_silent_handlers.py::test_the_docstring_accounts_for_every_pinned_cli_handler
 #
 # repo toplevel : /Users/gopalmacbook/Desktop/Max HQ/pqtools
 # rootdir       : /Users/gopalmacbook/Desktop/Max HQ/pqtools
-# HEAD          : f578ee8c0e212d0e8aab60f291f9e626f445639e
-# working tree  : the round-53 work, committed next -
+# HEAD          : cdfd8be (round 53)
+# working tree  : the round-54 fixes, committed next -
 #                 .planning/AUDIT-2026-09-05-CLOSEOUT.md
 #                 tests/test_evidence_captures.py
-#                 evidence/opus5-wrapper-*.txt (11 pre-round-46 captures annotated)
-# collected here: 4176 tests collected in 1.09s
-# collected dev : 4176 tests collected in 1.22s
-# result below  : 4135 passed + 41 skipped = 4176, so the run and the
-#                 collection agree - the check round 52 added
+# collected here: 4176 tests collected in 1.18s
+# collected dev : 4176 tests collected in 1.19s
+# result below  : 4135 passed + 41 skipped = 4176, matching both collections
 # python        : Python 3.11.15
 # extras absent : pandas=None, pyarrow=None, openpyxl=None, python_calamine=None
 # stale paths   : 0
 # warnings      : 0
+# FLOOR EXIT    : 0 (sentinel restored; it was dropped in round 53)
 #
 # Round 50 asked how two runs could agree to 0.009% (682.38s -> 682.44s).
-# SIX floor runs of this suite have now been measured on this machine on
+# SEVEN floor runs of this suite have been measured on this machine on
 # 2026-09-09:
 #
 #     683.47s   (1 failed, 4130 passed)
@@ -37,16 +60,15 @@
 #     682.44s   (4134 passed)
 #     683.61s   (4135 passed, 1 warning)
 #     680.93s   (4135 passed)
-#     699.56s   (4135 passed)  <- this run
+#     699.56s   (4135 passed)   <- machine ~3.5 GB into swap
+#     686.76s   (4135 passed)   <- this run
 #
-# The first five span 2.68s; this one is 16s slower, and the machine was
-# ~3.5 GB into swap when it ran (two unrelated review processes had just been
-# OOM-killed on it). So the honest statement is narrower than the earlier
-# one: under comparable conditions the suite is stable to a few seconds, and
-# under memory pressure it loses ~2%. Either way two runs landing 0.06s apart
-# sits inside the idle-machine spread, and the two logs in question are
-# provably different executions - different collected counts, different skip
-# line numbers, different progress-dot layout.
+# Idle-machine runs sit in 680.93-683.61s; the two under memory pressure are
+# the outliers. So the claim is narrow: the suite is stable to a few seconds
+# when the machine is idle and loses up to ~2% when it is not, and two runs
+# landing 0.06s apart sits inside that. The two logs round 50 questioned are
+# provably different executions regardless - different collected counts,
+# different skip line numbers, different progress-dot layout.
 
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
@@ -211,4 +233,5 @@ SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module na
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4135 passed, 41 skipped in 699.56s (0:11:39) =================
+================= 4135 passed, 41 skipped in 686.76s (0:11:26) =================
+FLOOR EXIT: 0
