@@ -34,13 +34,24 @@ _CAPTURES = sorted((_ROOT / "evidence").glob("opus5-wrapper-*.txt"))
 # The model's own self-label, as a line of its own. Anchored: a review body
 # that QUOTES the marker (round 46's does, discussing this very rule) is not
 # itself marked, and that distinction is the whole content of r47's finding.
-_MARKER = re.compile(r"^⚪ ox-alpha", re.MULTILINE)
+#
+# BOTH labels, since round 50: the first version matched only `ox-alpha` and
+# so was blind to the 27 captures opening `🔵 Opus 5` - 24 of them explained
+# by nothing at all. That is the stronger false-provenance claim of the two,
+# because it names the model `review.sh` actually requests. A guard narrower
+# than the thing it counts is r46's defect, and it had been rewritten into
+# the file whose whole purpose was to end that class.
+_MARKER = re.compile(r"^(⚪ ox-alpha|🔵 Opus 5)", re.MULTILINE)
 
 # The wrapper header that records what was REQUESTED, which is the provenance.
 # Anchored to the comment column for the same reason as the marker.
 _HEADER = re.compile(r"^# model requested:", re.MULTILINE)
 
-_NOTE = "NOTE (round 4"
+# A round number, not the literal "4": `"NOTE (round 4"` matched rounds 4 and
+# 40-49 and would have gone blind at round 50 - while round 49 had just made
+# this the SOLE predicate for whether a note exists, so a correctly annotated
+# capture would have false-REDded and a misplaced note false-GREENed.
+_NOTE = re.compile(r"^# NOTE \(round \d+\)")
 _CORRECTED_REFERENCE = "captures from round 46 onward"
 
 # The wording is asserted INSIDE the note block, not anywhere in the file.
@@ -52,6 +63,24 @@ _CORRECTED_REFERENCE = "captures from round 46 onward"
 # an earlier round cannot carry one - the note said "later captures record
 # this inline" until r46 measured that false against its own commit.
 _FIRST_ROUND_WITH_HEADER = 46
+
+
+def _leading_comments(text: str) -> str:
+    """The run of `#` lines the wrapper writes at the top of a capture.
+
+    Both acceptance predicates read this rather than the whole file. A review
+    BODY that quotes `# model requested:` or `# NOTE (round n)` at column 0 -
+    the shape rounds 46, 47 and 48 bodies all took while instructing a fix -
+    would otherwise self-certify a capture that has neither. `_HEADER` only
+    fed the round-boundary test until round 50 promoted it to an acceptance
+    predicate, where a stray match greens instead of reddening.
+    """
+    kept: list[str] = []
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            break
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def _note_block(text: str) -> str | None:
@@ -70,7 +99,7 @@ def _note_block(text: str) -> str | None:
         # took - is prose ABOUT a note, not a note, and matching it here made
         # `_note_block` return "" rather than None: an empty note on a capture
         # that has none, reddening two tests for a file with nothing wrong.
-        if not line.startswith("#") or _NOTE not in line:
+        if not _NOTE.match(line):
             continue
         block = []
         for candidate in lines[index:]:
@@ -104,19 +133,26 @@ def test_there_are_captures_to_check() -> None:
 
 
 def test_every_capture_carrying_the_marker_explains_it() -> None:
-    """A bare `ox-alpha` in a permanent record reads as a provenance claim.
+    """A bare model label in a permanent record reads as a provenance claim.
 
     It is not one: `review.sh` invokes `claude -p --model claude-opus-5` and
     refuses to run on any substitution, so the invocation is the provenance
     and the marker is the model's own self-label under this machine's
     model-indicator rule. Every capture that carries it says so.
     """
-    unexplained = [
-        path.name
-        for path in _CAPTURES
-        if _MARKER.search(path.read_text(encoding="utf-8"))
-        and _note_block(path.read_text(encoding="utf-8")) is None
-    ]
+    unexplained = []
+    for path in _CAPTURES:
+        text = path.read_text(encoding="utf-8")
+        if not _MARKER.search(text):
+            continue
+        # Either explanation will do, and they are the same statement made two
+        # ways: the header records what was REQUESTED (so the label beside it
+        # is visibly a self-label), and the retro-note says so in words for
+        # captures written before the header existed.
+        head = _leading_comments(text)
+        if _HEADER.search(head) or _note_block(head) is not None:
+            continue
+        unexplained.append(path.name)
     assert not unexplained, unexplained
 
 
@@ -127,12 +163,13 @@ def test_no_capture_carries_the_note_without_the_marker() -> None:
     I had produced with a broken glob, and a hand-applied edit can land on the
     wrong file as easily as it can miss one.
     """
-    misplaced = [
-        path.name
-        for path in _CAPTURES
-        if _note_block(path.read_text(encoding="utf-8")) is not None
-        and not _MARKER.search(path.read_text(encoding="utf-8"))
-    ]
+    misplaced = []
+    for path in _CAPTURES:
+        text = path.read_text(encoding="utf-8")
+        if _note_block(_leading_comments(text)) is not None and not _MARKER.search(
+            text
+        ):
+            misplaced.append(path.name)
     assert not misplaced, misplaced
 
 
@@ -142,12 +179,11 @@ def test_every_note_makes_the_claim_that_is_true() -> None:
     so it could not act on a capture already written. The corrected wording
     names the round it becomes true from, and the next test measures that.
     """
-    wrong = [
-        path.name
-        for path in _CAPTURES
-        if (block := _note_block(path.read_text(encoding="utf-8"))) is not None
-        and _CORRECTED_REFERENCE not in block.lower()
-    ]
+    wrong = []
+    for path in _CAPTURES:
+        block = _note_block(_leading_comments(path.read_text(encoding="utf-8")))
+        if block is not None and _CORRECTED_REFERENCE not in block.lower():
+            wrong.append(path.name)
     assert not wrong, wrong
 
 
@@ -164,7 +200,12 @@ def test_the_header_appears_exactly_from_the_round_it_claims() -> None:
         round_number = _round_of(path)
         if round_number is None:
             continue
-        has_header = bool(_HEADER.search(path.read_text(encoding="utf-8")))
+        # Anchored to the leading comment block for the same reason as the
+        # acceptance test above: a round >= 46 capture that LOST its header
+        # but whose body quotes one would read as present here, which is the
+        # false direction for a boundary this note's claim rests on.
+        head = _leading_comments(path.read_text(encoding="utf-8"))
+        has_header = bool(_HEADER.search(head))
         if round_number >= _FIRST_ROUND_WITH_HEADER and not has_header:
             missing.append(path.name)
         if round_number < _FIRST_ROUND_WITH_HEADER and has_header:

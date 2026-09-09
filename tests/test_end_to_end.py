@@ -369,21 +369,40 @@ def test_the_library_refuses_a_non_table_the_way_the_cli_does() -> None:
 
     The property that must hold everywhere is the TYPE: an `ExportRefusal`,
     never a `TypeError` escaping the column builder. The MESSAGE depends on
-    the environment, and this test asserted only the with-extras one - so it
-    passed here and failed on an install without pandas, where the dependency
-    refusal comes first. That ordering is deliberate and is the more useful
-    answer: with no pandas, fixing the input would not help. Both arms are
-    asserted rather than one being skipped, because the regression this test
-    exists for - an untyped `TypeError` - is just as reachable without the
-    extras as with them.
+    the environment, and this test first asserted only the with-extras one -
+    so it passed here and failed on an install without pandas, where the
+    dependency refusal comes first. That ordering is deliberate and is the
+    more useful answer: with no pandas, fixing the input would not help.
+
+    The first repair then claimed the regression was "just as reachable
+    without the extras", which is false: `to_pandas` calls `_require_pandas()`
+    BEFORE `_column_order()`, so with pandas absent every input below stops at
+    the dependency refusal and the column builder is never entered. The floor
+    arm was asserting a guard that cannot run where the defect lives. So the
+    shape refusal is exercised through `_column_order` directly - it needs no
+    extra and is the thing that used to raise `TypeError` - and the public
+    entry points are checked separately for whichever refusal applies first.
     """
-    import importlib.util
+    import importlib
 
-    from pqtools.export import ExportRefusal, to_arrow, to_pandas
+    from pqtools.export import ExportRefusal, _column_order, to_arrow, to_pandas
 
+    # The regression itself, on a path that runs in every environment.
+    for value in (5, "text", {"a": 1}, [1, 2]):
+        with pytest.raises(ExportRefusal, match="table"):
+            _column_order(value)
+
+    # The public entry points answer whichever refusal applies first.
+    # "installed" is decided by `import`, because `_require_pandas` decides it
+    # that way: `find_spec` reports a package that is present but unimportable
+    # (a broken binary ABI is the everyday case) as available, and the product
+    # would still refuse it.
     for export, module in ((to_pandas, "pandas"), (to_arrow, "pyarrow")):
-        installed = importlib.util.find_spec(module) is not None
-        expected = "table" if installed else module
+        try:
+            importlib.import_module(module)
+            expected = "table"
+        except ImportError:
+            expected = rf"{module} is not installed"
         for value in (5, "text", {"a": 1}, [1, 2]):
             with pytest.raises(ExportRefusal, match=expected):
                 export(value)

@@ -7,6 +7,12 @@
 # src/pqtools/_bridge.cjs: unchanged in 8f51417..2f2168f0a41b252f0818ef5ee16395d54c27c01b, not stubbed, not in the diff
 # package-lock.json: unchanged in 8f51417..2f2168f0a41b252f0818ef5ee16395d54c27c01b, not stubbed, not in the diff
 # invoked 2026-09-08T16:08:22Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# NOTE (round 50): this capture's body opens with a model self-label
+# (`🔵 Opus 5`). That is the model's own label under this machine's
+# model-indicator rule, NOT evidence of provenance: review.sh invokes
+# `claude -p --model claude-opus-5` and refuses to run on any
+# substitution. Captures from round 46 onward record the requested
+# model inline in their own header.
 
 🔵 Opus 5
 

@@ -4681,3 +4681,231 @@ covers `.venv/` and not a second one, and the autocommit bot sweeps this repo).
 That control is the point: the pre-fix test passes on the machine it was
 written on and fails on an install a user would make. A suite is green *in an
 environment*, and this repo now has evidence for two.
+
+## PRD acceptance 6.6 - the sweep that had no standing check
+
+Also not from a review. §6.6 reads *"No new silent path - the round-9 AST sweep
+over exception handlers that return without raising must still find nothing
+new."* That sweep was a one-off analysis. Nothing re-ran it, so a criterion
+phrased as an ongoing guarantee was resting on someone remembering to look.
+
+Re-run: **44 handlers, 39 distinct (module, function, exception) shapes.**
+Round 9 recorded nine in `cli.py`; there are now **eleven**. Both additions are
+in `_add_parse_refusal`, which *builds* a `ParseError` for its caller to throw -
+its only call site is `raise _add_parse_refusal(text, body, error) from error`
+at `cli.py:431`. An AST walk cannot see a raise one frame up, so **a handler
+that returns is not the same thing as an error that is swallowed**. Nothing new
+is silent; the criterion holds.
+
+It now holds by machinery. `tests/test_no_silent_handlers.py` pins the shapes,
+so a handler added anywhere in `src/` reddens until a person has read it and
+moved the pin deliberately. The docstring says plainly what it does not do: it
+certifies nothing about whether a given handler is correct, only that no new
+one arrives unread. Counts rather than a set, because a second handler of an
+already-pinned shape in the same function is exactly what a set would hide.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| BB1 | a new `except AttributeError: return None` added to `core.py` | `[('core.py', '_swallows_quietly', 'AttributeError')]` | RED - names the new handler | GREEN |
+| BB2 | a **second** `except OSError: return False` inside `_final_component_is_a_symlink`, whose shape is already pinned at 1 | `[('core.py', '_final_component_is_a_symlink', 'OSError')]` | RED - the case a set-based pin would pass | GREEN |
+| BB3 | the pin raised to 2 where the tree has 1, i.e. a handler deleted without moving the pin | `handlers disappeared - good, but move the pin in the same commit: [('io.py', '_reject_internal', 'socket.gaierror')]` | RED on the other arm | GREEN |
+
+**BB3's first run reported NONE and passed**, and the reason is worth keeping:
+the mutation never landed, and the control helper I had written swallowed the
+heredoc's exit status. The blank observable beside a green result is what said
+so - the rule that has now caught more of my own controls than the controls
+have caught in the code. Re-run with the mutation's exit status printed, all
+three arms redden with a naming observable.
+
+## Round 50 - `f1450d9..56c2c44`, verdict FIX-FIRST, all seven taken
+
+The sharpest review of the audit. `src/` untouched for the fourteenth
+consecutive round, and the first finding says the guard written in round 48 to
+end one defect class had that class rewritten into it.
+
+### MEDIUM - the guard was narrower than the thing it counts
+
+`_MARKER` matched `⚪ ox-alpha` only. Measured across 48 captures: **36 open
+a line at column 0 with a model self-label - 9 `⚪ ox-alpha` and 27 `🔵 Opus
+5`** - and 24 of the second kind carried **neither** a header nor a note. A
+bare label in a permanent record with nothing saying it is a self-label is
+verbatim the defect `test_every_capture_carrying_the_marker_explains_it`
+exists to catch, and the `Opus 5` label is the stronger false-provenance
+claim of the two because it names the model `review.sh` actually requests.
+The guard was green because it could not see them. **That is r46's class - a
+count only as wide as its pattern - inside the file whose whole purpose was
+to end it.**
+
+The fix is not only a wider regex. The invariant is now the property rather
+than one of its two forms: *a capture carrying a self-label must EXPLAIN it*,
+and either the `# model requested:` header (rounds 46+) or the retro-note
+(earlier) is an explanation. The 24 pre-46 captures were annotated. All 36
+labelled captures now explain themselves - 9 and 27, measured.
+
+### MEDIUM - the note literal would have gone blind this round
+
+`_NOTE = "NOTE (round 4"` matches rounds 4 and 40-49 and **nothing from round
+50 on**, while round 49 had just made `_note_block` the *sole* predicate for
+whether a note exists. A correctly written `# NOTE (round 50)` would have
+false-REDded one test and false-GREENed another. Now `^# NOTE \(round \d+\)`.
+
+### MEDIUM - the floor arm asserted a guard that cannot run there
+
+Round 49's docstring justified asserting both environments with "the
+regression this test exists for - an untyped `TypeError` - is just as
+reachable without the extras as with them". False: `to_pandas` calls
+`_require_pandas()` **before** `_column_order()`, so with pandas absent all
+eight assertions stop at the dependency refusal and the column builder is
+never entered. **The regime error, fourteenth in this audit**, in the fix
+written for PRD 6.2 one round earlier. The shape refusal is now exercised
+through `_column_order` directly, which needs no extra and is the thing that
+used to raise `TypeError`.
+
+### MEDIUM - the test decided "installed" by a different mechanism than the product
+
+`find_spec` versus `import`. `_require_pandas` catches `ImportError` from
+`import pandas`; a package that is present but unimportable (a broken binary
+ABI is the everyday case) has a spec and still refuses. This is the exact
+divergence the "the instrument was wrong before the test was" section above
+describes, re-entered from the other side one section later. Now
+`importlib.import_module` in a `try`.
+
+*Measured, and narrower than the finding claimed:* the review also offered
+`sys.modules["pandas"] = None` making `find_spec` raise `ValueError`. On this
+interpreter (CPython 3.11.4) `find_spec` returns `None` for that case rather
+than raising, so that half does not reproduce here. The finding stands on the
+present-but-unimportable case and on the principle; the `ValueError` example
+is recorded as not reproduced rather than repeated.
+
+### LOW x2 - a loose regex, and a double read
+
+`match="pandas"` was satisfied by any message containing the module name,
+including a refusal about column types; now `rf"{module} is not installed"`.
+And each capture was read twice per comprehension; bound once per loop.
+
+### LOW - the floor evidence printed paths from a checkout that does not exist
+
+10 of the 41 skip lines named `../app-development/projects/mquery-toolkit/`.
+Cause confirmed rather than guessed:
+`tests/__pycache__/test_adapters.cpython-311-pytest-9.0.2.pyc` still carried
+the pre-rename `co_filename`, so the run executed **cached bytecode**. The run
+was real - 4131+41 is the 4172 the header claims - but a log offered as "the
+suite on this tree" must not print a tree that is gone. Re-run with
+`__pycache__` cleared, `PYTHONDONTWRITEBYTECODE=1` and an explicit
+`--rootdir`.
+
+### And the same stale bytecode invalidated two of my own controls
+
+Following that finding paid immediately. Controls EE1/EE2 restored the test
+file with `cp` and the suite **stayed red on 24 captures that a fresh
+`import` of the same file showed as fine**. Clearing `tests/__pycache__` made
+it green with no source change. So a control that restores a file and re-runs
+`pytest` can be reading bytecode compiled from the version it just restored
+away. Both controls were re-run with the cache cleared each time; the readings
+below are those.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| EE1 | `_MARKER` narrowed back to `⚪ ox-alpha` | `['opus5-wrapper-round11-...', ...]` - the 24 just annotated | RED - `..._note_without_the_marker`: a narrow marker is now inconsistent with the annotations it cannot see | GREEN |
+| EE2 | a note dated `# NOTE (round 50)`, under the old `"NOTE (round 4"` literal | `['opus5-wrapper-round31-...']` | RED - the correctly annotated capture reads as unannotated | GREEN with the `\d+` regex |
+| DD | the `not isinstance(rows, list)` refusal deleted from `_column_order` | `TypeError: 'int' object is not iterable` | RED in **both** venvs - which is the point: before this fix the floor arm could not see it | GREEN in both |
+
+The direction matters for the earlier controls in this round: stale bytecode
+produces a **false green**, never a false red. BB1-3, CC and DD all reddened
+with a naming observable, which cached code cannot fabricate, so those
+readings stand.
+
+## Round 51 - `56c2c44..HEAD`, verdict FIX-FIRST, all five taken
+
+Five LOWs on the round-50 tree, three of them about the same thing: a claim
+written as prose beside machinery that could have checked it. `src/` untouched
+for the fifteenth consecutive round.
+
+### 1 - the soundness hole in `_exits_by_raising`
+
+The predicate that decides whether a handler "finishes without raising"
+treated a `with` or `try` whose body ends in `raise` as exiting by raising.
+Neither is sound: a context manager's `__exit__` may return truthy and
+suppress, and a `try` may have an `except` that swallows. A handler ending in
+either shape would have been classified as raising and never pinned - the
+sweep's whole job is to notice it.
+
+Zero pin delta: no current handler ends in such a tail, so this is prevention,
+not a repair. It is still worth taking, because the pin's failure mode is
+silence.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| FF1 | three handlers injected: `try`-tail swallowing `OSError`, `try`-tail swallowing `ParseError`, `with`-tail swallowing `OSError` | all three reported as unpinned shapes | RED, naming each | GREEN |
+| FF2 | same three, with the unsound `With`/`Try` branch restored | **both `OSError` swallowers MISSED** - only the `ParseError` one is seen | the hole is exactly as described | - |
+
+### 2 - the `Diagnostic` guard did not run where the defect lives
+
+Its docstring certified "all eight construction sites"; it read `core.py`
+alone. The eighth is `cli.py:781`. This is the regime error for the
+**fourteenth** time in this audit, and the second time it has been in a guard
+I wrote in the round immediately prior.
+
+Fixed by walking every module under `src/pqtools`, matching attribute-style
+calls (`core.Diagnostic(...)`) as well as bare names, and refusing to count a
+`*args` splat toward the four positionals that would supply a code.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| GG1 | `code=` dropped from `cli.py:781` | `Diagnostic built without a code at ['cli.py:781']` | RED | GREEN |
+| GG2 | same, with the scope narrowed back to `core.py` | **`3 passed`** - green on a tree that ships an undocumented `M000` | - | - |
+
+### 3 - the docstring pointed the reader at the wrong four
+
+`test_no_silent_handlers.py` said *"the other nine are the batch loops round 9
+checked by execution: `parse`, `dependencies`, `check` and `format`"*. Only
+**four** of the nine are those loops. The other five - `_container_backup`
+(`FileExistsError`), `_run_list` twice, `_run_show`, `main` - are not batch
+loops at all. As the review put it: the pin's whole value is a reader trusting
+each entry was read before it was pinned.
+
+The correction names all nine. But a sentence cannot be trusted to stay true
+as the pin moves - that is the same reasoning that produced
+`test_evidence_captures.py` in round 48 - so the docstring is now **checked**:
+every `cli.py` function in `_PINNED` must appear in it, and the batch-loop
+count it states must equal the number of `_run_*_batch` entries.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| HH1 | round 50's actual sentence restored verbatim | `pinned in cli.py but not named in the module docstring: ['`_container_backup`', '`_run_check_batch`', ... ]` - all eight distinct functions | RED at the new test | GREEN |
+
+### 4 - `_HEADER` was promoted to an acceptance predicate but still matched anywhere
+
+Round 50 made "has a `# model requested:` header" one of the two ways a
+capture may explain its model label. The regex is anchored to column 0 but was
+searched over the **whole file**, so a review BODY quoting the header - the
+shape rounds 46, 47 and 48 bodies all take, while instructing this very fix -
+would satisfy it. That is r47's class re-opened in the direction that greens.
+
+Both predicates now read `_leading_comments(text)`: the run of `#` lines the
+wrapper writes at the top. Latent, not live - no current capture takes that
+shape - and the boundary test was fixed in the same move rather than left as
+the one remaining instance.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| II1 | a capture with 0 leading comment lines whose body quotes the header at column 0 | `['opus5-wrapper-round99-probe-...']` | RED - the acceptance test catches it | probe removed, GREEN |
+| II2 | same probe, whole-file matching restored | **`5 passed`** - the body's quote certifies the capture | - | - |
+| JJ1 | a round-98 capture with a note but whose header is only in its body | `['opus5-wrapper-round98-probe-...']` | RED at the **boundary** test - the arm under test | probe removed, GREEN |
+
+### 5 - two floor runs agreeing to 0.009%
+
+The review flagged `682.38s -> 682.44s` across two runs as not plausible. It is
+a fair challenge and the answer is in the artifacts, not in an assurance.
+
+The two logs are demonstrably different executions: 4172 vs 4175 collected,
+different skip line numbers, and a different progress-dot layout, which is not
+something a hand edit produces. Decisively, a **third** floor run from the same
+morning is still on disk - it ended `1 failed, 4130 passed` and took
+**683.47s**. Three runs: 682.38 / 682.44 / 683.47, a 1.09s spread on 682s. The
+suite is CPU-bound and deterministic, so that is its real variance and the
+agreement is a property of the workload.
+
+The scratchpad holding those raw artifacts is session-scoped, so the spread is
+now recorded in the evidence file's own header where the next reader will
+find it.
