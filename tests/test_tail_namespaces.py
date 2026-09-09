@@ -218,16 +218,18 @@ def test_function_invoke_after_invokes_immediately_rather_than_sleeping():
 
     # Round 42, superseding round 41's claim above: assert over the CHILDREN
     # only. `import time` at module level emits IMPORT_NAME, so `"time"` sits
-    # in the ROOT tuple - measured,
-    # `control.co_names == ("time", "_outer")` - and a check over the whole
-    # walk is satisfied for `"time"` by the import statement rather than by
-    # `_inner`'s LOAD_GLOBAL. It would still pass if LOAD_GLOBAL stopped
-    # contributing, which is precisely the property it exists to prove. The
-    # children-only union is `{"time", "sleep"}` where `"time"` can ONLY come
-    # from the nested global load (`_outer.co_names == ()`,
-    # `_inner.co_names == ("time", "sleep")`), so all three properties - the
-    # global binding, the attribute, and the `co_consts` walk - are each
-    # load-bearing here.
+    # in the ROOT tuple - measured, `control.co_names == ("time", "_outer")` -
+    # and a check over the whole walk is satisfied for `"time"` by the import
+    # statement rather than by `_inner`'s LOAD_GLOBAL. It would still pass if
+    # LOAD_GLOBAL stopped contributing, which is precisely the property it
+    # exists to prove. The children-only union is `{"time", "sleep"}` where
+    # `"time"` can ONLY come from the nested global load (`_outer.co_names ==
+    # ()`, `_inner.co_names == ("time", "sleep")`), so all three properties -
+    # the global binding, the attribute, and the `co_consts` walk - are each
+    # load-bearing here. Round 46: this control is also the ONLY place the
+    # walk is exercised on the current tree - `_function_invoke_after`
+    # compiles to no nested code objects at all, so the pin above cannot go
+    # red from deleting the descent, only from a tree that has the hole.
     children = set().union(*(called_names(const) for const in nested(control)))
     assert {"time", "sleep"} <= children, sorted(children)
 

@@ -1,0 +1,26 @@
+# Exact claude-opus-5 wrapper review - range bc36fc0..8a39243 (bundle + lockfile shown as stub blobs)
+# staged:  9 files changed, 151 insertions(+), 10 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in bc36fc0..8a39243, not stubbed, not in the diff
+# package-lock.json: unchanged in bc36fc0..8a39243, not stubbed, not in the diff
+# invoked 2026-09-09T02:53:39Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# model requested: claude-opus-5 (review.sh refuses any substitution)
+# NOTE: any model marker inside the review body below is the model's own
+#       self-label, not evidence of provenance. The line above is.
+
+🔵 Opus 5
+
+Re-issued after verification. Two of my first-pass findings were wrong and are retracted with evidence; one new HIGH replaced them.
+
+**Retracted.** `evidence/run-opus-gate.sh:125` — `review.sh:24` is `MODEL="${CLAUDE_REVIEW_MODEL:-claude-opus-5}"`, the identical expression, and `:26-27` prints `BLOCKED: Claude review must use claude-opus-5` and exits 3 on any other value. The header cannot label a capture with a model the run did not use. Also retracted: T1's `tree 2f2168f` anchor — `git show` puts the predicate at `:181` in **both** 2f2168f and fb59590 (second hit 226 vs 228), so both anchors resolve and neither is wrong.
+
+- **HIGH — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4315** — "four of seventeen carry the marker `ox-alpha` in their body" is wrong in both numbers, and the remediation it certifies is incomplete. Measured: `ls evidence/opus5-wrapper-*.txt` = **44** captures; **9** carry the marker as their body's own self-label line; **4** got the retro-note. Five permanent captures still carry an unexplained `⚪ ox-alpha` — rounds **6, 21, 24, 26, 27** — which is precisely the misreading this LOW was raised to prevent, now recorded as closed. (Round 45 is correctly excluded: its only `ox-alpha` hit is the review body quoting the marker, self-label count 0.) Fix: annotate the five, and correct :4315 to "nine of forty-four" and :4323's "the four existing captures".
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4307** — the V1/V2 table has columns `Mutation | Test` only, dropping `Observable with defect` and `Restored`, which the control tables at :3928, :4002 and :4278 all carry. The round-45 finding it closes explicitly asked for "each with its own observable"; bare `RED` cannot show which arm reddened, and that is the whole question a per-call-site control exists to answer. The tree itself is fine — I confirmed both call sites are intact (`tests/test_tail_namespaces.py:190` `stack += nested(current)`, `:231` `nested(control)`) — so this is a record gap, not a live defect. Fix: add both columns.
+- **MEDIUM — evidence/opus5-wrapper-round{31,32,41,44}.txt:13** — the retro-note ends "Later captures record this inline", but `grep -c 'model requested'` on the round-45 capture returns **0**: the `run-opus-gate.sh` change lands in the same commit and cannot retro-affect a capture taken at 16:28:18Z. Four permanent records carry a forward reference that is false in the tree that introduces it. Fix: "captures from round 46 onward".
+- **LOW — tests/test_tail_namespaces.py:221** — `# in the ROOT tuple - measured,` measures 35 columns inside a block otherwise running 72-78 (:219=76, :220=77, :222=75). The blank-line detachment at :217 was fixed; the half-width line the same LOW names was not. Fix: reflow :219-222.
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4223, :4253** — the replacement sentences measure **106** and **96** columns in a file wrapping at ~75, so both corrected paragraphs are ragged against the text they correct. Fix: rewrap.
+
+Not a diff finding, but it affects this review's target: the estate autocommit bot has already swept all of it into `f6bad16 chore(auto): session commit 2026-09-09 — 9 file(s)`, so nothing is staged any more and the round-45 work now sits under a generic message rather than its own. The content I verified is byte-identical to the diff, so the findings stand.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

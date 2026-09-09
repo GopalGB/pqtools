@@ -135,3 +135,13 @@ fi
 # here and in the DRY_RUN branch just ran it twice.
 cd "$REPO" || exit 1
 tail -3 "$OUT"
+# Round 46: line 5 has always said "exit 0=SHIP, 2=FIX-FIRST, 3=BLOCKED", and
+# the script has never done it. `tail` was the last command, so the wrapper
+# exited 0 whatever the review said - a caller checking `$?` reads SHIP for a
+# BLOCKED run. Found when a session-limit block wrote `# wrapper exit: 3` into
+# the file while the calling shell printed 0. Nothing was mis-recorded, because
+# every round read the file; but the promise in the usage line was false, and
+# an exit code that always says success is the same class of artifact as the
+# 473-byte review stub. `RC` survives the brace group above - `{ ... } > file`
+# is not a subshell (verified).
+exit "$RC"

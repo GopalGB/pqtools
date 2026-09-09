@@ -6,7 +6,8 @@
 # NOTE (round 45): this capture's body carries the model marker `ox-alpha`.
 # That is the model's own self-label under this machine's model-indicator rule,
 # NOT evidence of provenance: review.sh invokes `claude -p --model claude-opus-5`
-# and refuses to run on any substitution. Later captures record this inline.
+# and refuses to run on any substitution. Captures from round 46 onward
+# record the requested model inline in their own header.
 
 ⚪ ox-alpha
 

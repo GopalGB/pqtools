@@ -3,6 +3,11 @@
 # src/pqtools/_bridge.cjs: unchanged in ad235e9..3000e35, not stubbed, not in the diff
 # package-lock.json: unchanged in ad235e9..3000e35, not stubbed, not in the diff
 # invoked 2026-09-07T15:52:43Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# NOTE (round 46): this capture's body carries the model marker `ox-alpha`.
+# That is the model's own self-label under this machine's model-indicator rule,
+# NOT evidence of provenance: review.sh invokes `claude -p --model claude-opus-5`
+# and refuses to run on any substitution. Captures from round 46 onward record
+# the requested model inline in their own header.
 
 ⚪ ox-alpha
 

@@ -4220,8 +4220,9 @@ Two LOWs, both cosmetic, both taken:
 > **CORRECTION, round 44.** This bullet first said the predicate was
 > "collapsed". It was not - only the aggregation was restyled, and
 > `isinstance(const, CodeType)` was still at BOTH the `called_names` walk and
-> the `children` union (grep, two hits, at tree `fb59590`). **A recorded-but-unmade fix is the one failure
-> this file exists to prevent**, because a later round reads it to decide what
+> the `children` union (grep, two hits, at tree `fb59590`). **A
+> recorded-but-unmade fix is the one failure this file exists to prevent**,
+> because a later round reads it to decide what
 > is already handled. Round 44 extracted a `nested()` helper so the predicate
 > has one home and the sentence is true; the wording above is left as written
 > so the correction is visible rather than edited away.
@@ -4250,10 +4251,10 @@ error a closeout must not make.
 
 Round 43's entry said the duplicated traversal predicate was "collapsed". It
 was not. Only the aggregation had been restyled from a set comprehension to
-`set().union(*gen)`; `isinstance(const, CodeType)` was still at BOTH the `called_names` walk and
-the `children` union - two grep hits, at tree `fb59590`. The reviewer's
-second suggested option was the one that would have removed it, and I took the
-first while writing down the second.
+`set().union(*gen)`; `isinstance(const, CodeType)` was still at BOTH the
+`called_names` walk and the `children` union - two grep hits, at tree
+`fb59590`. The reviewer's second suggested option was the one that would have
+removed it, and I took the first while writing down the second.
 
 **A recorded-but-unmade fix is the failure this file exists to prevent**, since
 a later round reads it to decide what is already handled. It is the same shape
@@ -4301,27 +4302,65 @@ round-44 MEDIUM genuinely taken. Every finding is in the record.
 U1 mutates the now-SHARED `nested()`, so it goes red if EITHER caller depends
 on it. The row claimed BOTH. T1 could discriminate because it broke one copy
 at a time - the dedupe removed exactly that ability, and coverage-per-arm is
-the question a dedupe raises. Replaced by two controls, each confined to one
-call site and each verified by grep count before running:
+the question a dedupe raises. Replaced by controls that name the arm they
+redden, with the failing assert printed beside the result:
 
-| # | Mutation (one site only) | Test |
-|---|---|---|
-| V1 | `stack += nested(current)` deleted from `called_names`; the `children` line untouched | RED |
-| V2 | `children` fed `[]`; `called_names`'s descent untouched | RED |
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| V2 | `children` fed `[]`; `called_names`'s descent untouched | `sorted(children) == []` | RED at `assert {"time", "sleep"} <= children` | GREEN |
+| W1 | round 41's shape injected into `_misc` - module-level `import time`, nested `def` with a 1 ms-clamped `time.sleep` - descent INTACT | `called_names(...)` gains `min`, `sleep`, `time`, `total_seconds` | RED at `assert called_names(...) == {...}` | GREEN |
+| W2 | the same shape, descent DELETED | `called_names(...)` equals the pinned set EXACTLY | the pinned assert would PASS - the hole reopens | GREEN |
+
+> **CORRECTION, round 46.** The two rows this table replaced recorded V1 as
+> the control for `called_names`'s descent and V2 for the `children` union,
+> "each confined to one call site". Re-run with the failing assert printed
+> beside the result, BOTH reddened the same one -
+> `assert {"time", "sleep"} <= children`, both with observable `[]`. The
+> reason is a fact I had never measured: `_function_invoke_after` has **no
+> nested code objects at all**
+> (`[k for k in code.co_consts if isinstance(k, CodeType)] == []`), so at the
+> pinned assert the descent contributes nothing and deleting it cannot go red
+> there. V1 was reddening through V2's arm. **That is the regime error again,
+> the thirteenth in this audit** - and this time inside a control written to
+> answer a review finding about controls.
+>
+> The descent is still load-bearing at that site, but only against a tree
+> where the hole exists, so a control has to create it first: W1/W2 inject
+> round 41's shape and toggle only the descent. W1 goes red AT THE PINNED
+> ASSERT; W2 shows the same tree passing once the descent is gone. W2's arm
+> is isolated by direct evaluation rather than by pytest, because deleting the
+> descent also empties `children` and that assert fails first - naming the arm
+> a control cannot reach is part of reporting it.
 
 ### LOW - the evidence header asserted a model it did not verify
 
-Every capture is named `opus5-wrapper-*` and titled "Exact claude-opus-5", and
-four of seventeen carry the marker `ox-alpha` in their body. Nothing in the
-file said which of those is provenance.
+Every capture is named `opus5-wrapper-*` and titled "Exact claude-opus-5".
+Nine carry the marker `ox-alpha` in their body - rounds 6, 21, 24, 26, 27, 31,
+32, 41 and 44 - and nothing in the file said which of those is provenance.
 
 Resolved by looking rather than by choosing: `review.sh` invokes
 `claude -p --model "$MODEL"` and **refuses to run** on any substitution
 (`BLOCKED: Claude review must use claude-opus-5`). So the invocation is the
 provenance and the in-body marker is the model's own self-label under this
 machine's model-indicator rule. The wrapper now records the requested model and
-says explicitly that the body marker is not evidence of it; the four existing
-captures got a retro-note rather than being left to be misread.
+says explicitly that the body marker is not evidence of it; all nine captures
+that carry the marker got a retro-note rather than being left to be misread.
+
+> **CORRECTION, round 46.** Both numbers above first read "four of seventeen",
+> and the remediation they certified was incomplete - only four captures had
+> been annotated. Measured: `ls evidence/opus5-wrapper-*.txt` = **45** (44 when
+> round 46 ran, plus that round's own capture), `grep -l '^⚪ ox-alpha'` = **9**.
+> The undercount came from the glob I counted with,
+> `evidence/opus5-wrapper-round3*.txt evidence/opus5-wrapper-round4*.txt`,
+> which cannot match rounds 1-29: **a count is only as wide as its pattern**,
+> and I read its output as the total. The five that were left (rounds 6, 21,
+> 24, 26, 27) now carry the same note.
+>
+> The note's closing line also said "Later captures record this inline", which
+> was false when written - the wrapper change landed in the same commit, so the
+> round-45 capture taken at 16:28:18Z returns **0** for
+> `grep -c 'model requested'`. All nine now read "captures from round 46
+> onward"; round 46's own capture returns **2**.
 
 ### LOW x3
 
@@ -4333,3 +4372,77 @@ the two disagreed about what was stubbed - the preamble now points at the
 header rather than restating it. And a comment had been detached from the
 statement it describes by a stray blank line, with a half-width line left
 mid-paragraph by the earlier reflow.
+
+## Round 46 - `bc36fc0..8a39243`, verdict FIX-FIRST, all five taken
+
+`src/` untouched for the tenth consecutive round. Every finding is in the
+evidence or in this record's own precision, and two of them are about numbers
+I wrote here.
+
+The review retracted two first-pass findings of its own before raising these,
+with the evidence for each: the `CLAUDE_REVIEW_MODEL` header claim
+(`review.sh:24` is the identical `${CLAUDE_REVIEW_MODEL:-claude-opus-5}`
+expression, and `:26-27` prints `BLOCKED` and exits 3 on any other value, so
+the header cannot label a capture with a model the run did not use), and T1's
+tree anchor (`git show` puts the predicate at `:181` in both `2f2168f` and
+`fb59590`, so both anchors resolve).
+
+### HIGH - my own count was wrong, and the remediation it certified was partial
+
+Written here as "four of seventeen carry the marker `ox-alpha`". Measured:
+**45** captures (44 when the review ran), **9** carrying it, **4** annotated.
+Five permanent captures - rounds 6, 21, 24, 26, 27 - still carried an
+unexplained marker. The root cause is mechanical and worth naming: I counted
+with `evidence/opus5-wrapper-round3*.txt evidence/opus5-wrapper-round4*.txt`,
+a glob that **cannot match rounds 1-29**, and read its output as the total.
+A count is only as wide as its pattern. All nine now carry the note; the
+correction sits beside the sentence it corrects.
+
+### MEDIUM - the control table dropped the columns that answer its question
+
+Round 45's replacement table had `Mutation | Test` only, where every other
+control table here carries `Observable with defect` and `Restored`. Bare `RED`
+cannot show which arm reddened, "and that is the whole question a per-call-site
+control exists to answer" - which turned out to be exactly right, and worse
+than the reviewer could see from the diff. Re-running both rows with the
+failing assert printed beside the result showed **both reddening the same
+assert**. The full disposition, the measured cause (`_function_invoke_after`
+compiles to no nested code objects, so one arm cannot go red from that
+mutation at all) and the W1/W2 controls that do isolate it are recorded in
+round 45's section, beside the claim they correct.
+
+### MEDIUM - a retro-note asserted something the same commit made false
+
+The note ended "Later captures record this inline". The wrapper change that
+records it landed in the same commit, so it could not act on a capture already
+written: `grep -c 'model requested'` on the round-45 capture, taken at
+16:28:18Z, returns **0**. All nine notes now read "captures from round 46
+onward", which is checkable in both directions - round 46's own capture
+returns **2**.
+
+### LOW x3 - three ragged lines
+
+`tests/test_tail_namespaces.py:221` measured 35 columns in a block otherwise
+running 72-78, and two closeout replacements measured 106 and 96 in a file
+wrapping at ~75. Reflowed as paragraphs rather than per-line, after the first
+attempt merely moved the short line down by one.
+
+### The harness bug this round found, and its control
+
+Round 46's first attempt was BLOCKED by a session limit. The capture recorded
+`wrapper exit: 3`; my outer shell printed `0`. Both were right, which is the
+bug: `evidence/run-opus-gate.sh` ended with `tail -3 "$OUT"`, so the script's
+own exit status was `tail`'s, and line 5's promise - `0=SHIP, 2=FIX-FIRST,
+3=BLOCKED` - had never been true. Every round of this audit read the file, so
+nothing downstream was wrong; but an exit code that always says success is the
+same artifact class as the 473-byte review stub, and the next reader of that
+usage line would have trusted it. Fixed with `exit "$RC"`.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| W | the pre-fix script (`tail -3` last), reviewer stubbed at each verdict in turn | file says `wrapper exit: 0 / 2 / 3` correctly in **both** scripts; the pre-fix script's PROCESS exit is **0, 0, 0** | fixed script exits 0/2/3 matching; pre-fix script loses 2 and 3 | GREEN |
+
+The control had to read `$?` of the wrapper itself, because the capture file -
+the thing every round had been reading - records the verdict correctly under
+both versions. **A file that is right cannot show you a caller that is wrong.**
+Confirmed live the same round: the re-run returned a real wrapper exit of 2.
