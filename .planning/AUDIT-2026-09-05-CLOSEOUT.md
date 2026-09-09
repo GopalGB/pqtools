@@ -4389,8 +4389,9 @@ tree anchor (`git show` puts the predicate at `:181` in both `2f2168f` and
 
 ### HIGH - my own count was wrong, and the remediation it certified was partial
 
-Written here as "four of seventeen carry the marker `ox-alpha`". Measured:
-**45** captures (44 when the review ran), **9** carrying it, **4** annotated.
+Written here as "four of seventeen carry the marker `ox-alpha`". Measured at
+the reviewed tree `8a39243`: **45** captures (44 when the review ran), **9**
+carrying it, **4** annotated.
 Five permanent captures - rounds 6, 21, 24, 26, 27 - still carried an
 unexplained marker. The root cause is mechanical and worth naming: I counted
 with `evidence/opus5-wrapper-round3*.txt evidence/opus5-wrapper-round4*.txt`,
@@ -4435,11 +4436,11 @@ returns **1**.
 
 ### LOW x3 - three ragged lines
 
-`tests/test_tail_namespaces.py:221` at tree `8a39243` measured 35 columns -
-the comment beginning "in the ROOT tuple" - in a block otherwise
-running 72-78, and two closeout replacements measured 106 and 96 in a file
-wrapping at ~75. Reflowed as paragraphs rather than per-line, after the first
-attempt merely moved the short line down by one.
+`tests/test_tail_namespaces.py:221` at tree `8a39243` - the comment beginning
+"in the ROOT tuple" - measured 35 columns in a block otherwise running 72-78,
+and two closeout replacements measured 106 and 96 in a file wrapping at ~75.
+Reflowed as paragraphs rather than per-line, after the first attempt merely
+moved the short line down by one.
 
 ### The harness bug this round found, and its control
 
@@ -4467,8 +4468,9 @@ Confirmed live the same round: the re-run returned a real wrapper exit of 2.
 record, and both are the same failure in two costumes: **a citation that does
 not survive the commit making it.**
 
-The review verified before raising: 45 captures / 9 markers / 9 annotated all
-match, `_function_invoke_after` does compile to zero nested code objects with
+The review verified before raising: at the reviewed tree `30bf786`, 45
+captures / 9 markers / 9 annotated all match (this commit's own capture makes
+it 46 - see round 48, which is where these counts stopped being prose), `_function_invoke_after` does compile to zero nested code objects with
 `co_names` equal to the pinned set, `exit "$RC"` is sound on every path that
 reaches it (the EXIT trap does not override the status, and `{ ... } > file` is
 not a subshell), 4167 collected matches the gate log.
@@ -4503,3 +4505,63 @@ survives anywhere near it. Two sections above, this file records precisely this
 defect as closed ("line numbers the same commit renumbered... anchored on the
 construct plus the tree instead"), and the convention elsewhere is `at tree
 fb59590`. Now anchored on both the tree and the construct.
+
+## Round 48 - `30bf786..05faefd`, verdict FIX-FIRST, both taken
+
+`src/` untouched for the twelfth consecutive round. Both findings are in this
+file, and the MEDIUM is the third consecutive round on **one** defect class:
+
+| round | the count | how it was wrong |
+|---|---|---|
+| 46 | "four of seventeen carry the marker" | the glob (`round3*`, `round4*`) could not match rounds 1-29 - **too narrow** |
+| 47 | "the capture returns **2**" | unanchored `grep`, so a body quoting the header counted as the header - **too loose** |
+| 48 | "**45** captures" | true at the reviewed tree, false in the commit that wrote it, which added the 46th - **too early** |
+
+Three narrowings of one error class, each on a fresh unchecked premise, is the
+tell this record already names for the classifier regex: **stop narrowing and
+close it instead.** The number was never what mattered. Four properties were:
+
+1. a capture whose body carries `⚪ ox-alpha` also carries the note explaining
+   that the marker is the model's own self-label and not provenance,
+2. no capture carries that note without the marker,
+3. every note makes the claim that is actually true - "captures from round 46
+   onward", not the "later captures" the same commit falsified,
+4. the header `# model requested:` appears from round 46 and **not before**.
+
+Those are now `tests/test_evidence_captures.py`, which is the move this repo
+already recorded for `SUPPORT-MATRIX.md`: prose cannot be trusted to stay true
+on its own, so the authoritative statement is the one with a test behind it.
+**No assertion in that file mentions a total**, so none of them rots when the
+next round adds a capture - which is precisely what falsified the sentence
+this round is fixing.
+
+### Controls
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| Y1 | the note block deleted from round 6's capture | `['opus5-wrapper-round6-8326d3f..7b71d33.txt']` | RED - `..._carrying_the_marker_explains_it` | GREEN |
+| Y2 | a note added to round 45's capture, which carries no marker | `['opus5-wrapper-round45-fb59590..bc36fc0.txt']` | RED - `..._note_without_the_marker` | GREEN |
+| Y3 | one note reverted to "Later captures record this inline" | `['opus5-wrapper-round31-2edbf00..ef70e16.txt']` | RED - `..._makes_the_claim_that_is_true` | GREEN |
+| Y4 | the header line deleted from round 46's capture | `['opus5-wrapper-round46-bc36fc0..8a39243.txt']` | RED - `..._appears_exactly_from_the_round_it_claims` (missing arm) | GREEN |
+| Y5 | a header line backdated onto round 45's capture | `['opus5-wrapper-round45-fb59590..bc36fc0.txt']` | RED - the same test, **unexpected** arm | GREEN |
+| Y6 | round 46's actual broken glob restored in the test itself | `['opus5-wrapper-round3-...', 'opus5-wrapper-round30-...']` | RED - `test_there_are_captures_to_check` | GREEN |
+
+Y4 and Y5 redden the same test on opposite arms, and the observable is what
+tells them apart - the r46 lesson applied while writing the controls rather
+than after a review found it.
+
+**The first run of these controls was invalid and is recorded rather than
+redone silently.** The baseline was not green: `_CORRECTED_REFERENCE` was
+lowercase where all nine notes capitalise "Captures", so three controls
+reported a test that was already failing. The observable printed beside each
+result is what showed it - three different mutations naming the identical file
+list. The check now matches inside the extracted note block rather than
+anywhere in the file, because three review BODIES quote the phrase while
+instructing the fix, and a whole-file search would be satisfied by prose about
+the note rather than by the note. That is round 47's finding, met a second
+time in the guard written to close it.
+
+### LOW - an anchor patched in without reflowing around it
+
+The tree anchor added in round 47 left `:4439` at 64 columns in the paragraph
+that says reflowing is done per paragraph. Reflowed.

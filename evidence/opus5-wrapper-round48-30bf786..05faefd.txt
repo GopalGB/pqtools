@@ -1,0 +1,22 @@
+# Exact claude-opus-5 wrapper review - range 30bf786..05faefd (bundle + lockfile shown as stub blobs)
+# staged:  3 files changed, 123 insertions(+), 5 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 30bf786..05faefd, not stubbed, not in the diff
+# package-lock.json: unchanged in 30bf786..05faefd, not stubbed, not in the diff
+# invoked 2026-09-09T03:46:50Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# model requested: claude-opus-5 (review.sh refuses any substitution)
+# NOTE: any model marker inside the review body below is the model's own
+#       self-label, not evidence of provenance. The line above is.
+
+🔵 Opus 5
+
+Verified before raising (measured in this worktree, tree = staged): `git diff --stat 8a39243..30bf786` = `14 files changed, 252 insertions(+), 31 deletions(-)`, matching the capture's header; `git show 8a39243:tests/test_tail_namespaces.py` line 221 is 35 columns and is the comment `# in the ROOT tuple - measured,`, so the new tree+construct anchor resolves; round-45 capture = 0/0 and round-46 capture = 2 unanchored / **1** anchored, so the 2→1 correction and control X's 1→0 arithmetic are both right; all 9 `^⚪ ox-alpha` captures carry the "Captures from round 46 onward" note (wrap- and case-tolerant match, 9/9); the quoted precedent at :4368-4369 and the `at tree fb59590` convention at :4223 both exist as quoted; `evidence/run-opus-gate.sh` does end `exit "$RC"` after a non-exiting EXIT trap; the round-47 gate log is identical to round 46's apart from timings (4167/12/953, GATE EXIT 0), consistent with `src/` untouched; and the gate's `content: c1ac673` tree records the closeout blob `f6ddcfa` and capture blob `0d4ef62` byte-identical to what is staged, so the evidence certifies the tree being committed.
+
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4470 (and :4393)** — "The review verified before raising: 45 captures / 9 markers / 9 annotated all match" is already false in the tree that contains it. The predicate round 46 fixed on is `ls evidence/opus5-wrapper-*.txt`; with this commit's own `evidence/opus5-wrapper-round47-8a39243..30bf786.txt` staged that is **46**, not 45 (45 holds only at the reviewed tree `30bf786`). The same commit also falsifies the number it just corrected at :4393, "**45** captures (44 when the review ran)" — that "45" was the *now* figure and this capture moves it to 46. Markers and annotated genuinely stay 9/9 (the round-47 capture carries the header note, not a body marker), so only the capture count moves. This is the identical defect to the MEDIUM this section raises — "a citation that does not survive the commit making it" — reintroduced twice, once inside the correction block itself. Fix: at :4470 write "46 captures (45 at tree `30bf786`, the tree reviewed) / 9 markers / 9 annotated"; at :4393 anchor the same way, "**45** captures at tree `8a39243`+its own capture (44 when the review ran)".
+
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4439** — the tree/construct anchor was inserted mid-paragraph without reflowing it, leaving line 4439 at **64** columns among neighbours of 75/64/74/77/48. The paragraph this lands in is the one that says "Reflowed as paragraphs rather than per-line, after the first attempt merely moved the short line down by one" — a greedy wrap at 75 would pull `running` up and give 72. Fix: reflow lines 4438-4442 as a paragraph rather than patching in place.
+
+Not findings, checked and cleared: the round-47 gate log is absent from its own `content:` tree (`git ls-tree -r c1ac673 | grep -c round47` = 0), but round 46's log is likewise absent from `d3bad0d` — the certificate cannot hash itself, and it is written by the redirect that is still open when `git write-tree` runs; pre-existing and not introduced here. The control table carries all four columns the round-46 MEDIUM demanded. "Two sections above" resolves correctly (round 45's section, :4368). "eleventh consecutive round" with `src/` untouched is consistent with round 46's "tenth".
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)
