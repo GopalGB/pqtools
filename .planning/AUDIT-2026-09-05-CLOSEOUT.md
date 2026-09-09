@@ -5250,7 +5250,11 @@ sentence narrowed to what it actually covers.
 ### 4 MEDIUM - and it still could not prove a run happened
 
 Comparing the round-53 and round-54 artifacts line by line, ignoring the
-elapsed-time line: **0 lines differ**. So nothing in the file distinguished a
+elapsed-time line: **0 lines differ**. *(CORRECTION, round 56: two changes,
+not zero - the elapsed-time line and the added `FLOOR EXIT: 0` sentinel, which
+this very log records as "restored; it was dropped in round 53". The argument
+survives, because a hand that can type one can type the other, but the number
+was wrong in a round whose subject was wrong numbers.)* So nothing in the file distinguished a
 seventh execution from the sixth with its total edited - and the total is the
 one line a hand edit would touch. The header's own "a count cannot distinguish
 a rename" problem, one level up, in the thing built to fix it.
@@ -5273,3 +5277,114 @@ Now bracketed by `date -u` taken before and after the run and printed beside
 | # | Defect reintroduced | Observable with defect | Test | Restored |
 |---|---|---|---|---|
 | QQ1/QQ2 | a capture whose note claims it "opens with a model self-label", whose body opens `# Findings, most severe first.` above the label | header-block rule: RED, naming the file; skip-every-`#` rule: **`5 passed`** | this direction is the dangerous one - a note claiming something false is accepted | probe removed, GREEN |
+
+## Round 56 - `f747fba..6cb64f6`, verdict FIX-FIRST, all six taken
+
+A HIGH, and the root cause is not the one the review inferred - which makes it
+the more useful finding.
+
+### 1 HIGH - the recorded argv was false, and the reason was a shell I got wrong
+
+The header recorded `pytest argv, verbatim : … -rs`, but the artifact contains
+**0** `SKIPPED` lines where the previous round's had 37. `-rs` with 41 skips
+prints the `short test summary info` block, and pytest emits it before the
+totals, so this is not truncation. The review concluded the file had been
+edited after pytest wrote it.
+
+It had not. The raw run artifact in the scratchpad also has 0 SKIPPED lines,
+so nothing was edited. The cause is in the runner I typed:
+
+```
+ARGV="-p no:cacheprovider --rootdir=$ROOT -rs"
+"$FLOOR_PYTHON" -m pytest $ARGV        # unquoted, expecting word-splitting
+```
+
+**zsh does not word-split unquoted parameter expansions.** Measured: pytest
+received `['-p no:cacheprovider --rootdir=/Users/…/pqtools -rs']` - one
+argument - and silently ignored it. So `-rs`, `-p no:cacheprovider` and
+`--rootdir` all failed to apply, and the header asserted all three.
+
+The reviewer's inference was wrong and the finding was right, which is the
+distinction worth keeping: *the evidence for a defect can be sound while the
+story attached to it is not.* Had I fixed the story instead of measuring, I
+would have "restored" a block that was never deleted.
+
+### The fix is a committed runner, not a better paragraph
+
+The header had been hand-assembled for six rounds, and six rounds of review
+found it claiming things it could not show. That is not a sequence of
+independent mistakes; it is one structural defect - **the artifact and the
+claims about the artifact had different authors.**
+
+`scripts/floor_venv_run.sh` is now the only thing that writes that file, and
+every line of the header is emitted by the same invocation as the run. It
+refuses to write at all when a claim would be unfalsifiable:
+
+| # | Condition | Observable | Exit |
+|---|---|---|---|
+| RR1 | `-rs` absent from argv, so the skip block cannot appear | `refusing to write: '-rs' produced no skip block, so the recorded argv would not describe the run that happened` | 4, no log written |
+| RR2 | `-rs` present | `wrote … (exit 0, skip block present, digest stable)`; argv line matches | 0 |
+| RR3 | pointed at the dev venv, where the extras are installed | `refusing: not a floor venv -- these extras are importable in .venv/bin/python: pandas pyarrow openpyxl python_calamine` | 3, no log written |
+
+argv is an array, so the zsh defect cannot recur; `shellcheck` is clean, and
+its SC2155 warnings were taken rather than silenced - `readonly X="$(cmd)"`
+masks the command's exit status, so under `set -e` a failed measurement would
+have become an empty string in the header.
+
+### 2 MEDIUM - "a value its own body cannot produce" was unbacked
+
+Round 55 claimed the `date -u` bracket gave the artifact something the body
+could not fake. No committed script emitted it, so a hand that could delete 38
+lines could type two timestamps. The claim is now true for the reason it
+should have been: the bracket comes from a committed script that also refuses
+to write when its own checks fail.
+
+### 3 MEDIUM - the digest widened on one axis and narrowed on another
+
+`git ls-files` cannot see untracked files, which `find src tests -name '*.py'`
+could. Demonstrated: an untracked `tests/test_zz_untracked_probe.py` is
+**collected** (4177) while leaving the tracked-only digest unmoved. Now
+`git ls-files -co --exclude-standard`, which sees it and still honours
+`.gitignore`, so `.samples/` stays out - measured, 0 hits.
+
+### 4-6 LOW
+
+- The closeout's "0 lines differ" was off by one change; corrected in place.
+- `_KNOWN_LABELS`' comment said "seen in `evidence/` today" while the assert
+  now demands each label *open* a capture - measurably different properties
+  (13 vs 9). Reworded.
+- `_first_body_line` recovered a line count via
+  `len(_leading_comments(text).splitlines())` - join, then re-split. Exact
+  today, silently wrong if the joiner ever normalised a line, and the failure
+  would be a wrong-line read rather than a redden. `_header_lines` is now the
+  primitive and `_leading_comments` joins it.
+
+### Two consequences of generating the header
+
+**The `HEAD` line had to become the pushed tip.** The first generated run
+recorded `HEAD: 3fe3a67` - an estate autocommit-bot commit, soft-reset away
+minutes later, leaving an unresolvable sha in an evidence file. The script now
+records `pushed tip` (always resolvable, on origin) alongside the local HEAD,
+and the digest is what actually pins the tree.
+
+**The runtime table left the header, deliberately.** Rounds 50-55 carried a
+growing list of floor-run timings there to answer round 50's question about two
+runs agreeing to 0.009%. A generated header cannot carry a hand-typed table
+without reintroducing exactly the defect this round closed - a claim in the
+artifact with a different author from the artifact. The analysis lives here
+instead, where it is prose and reads as prose:
+
+| run | seconds | machine |
+|---|---|---|
+| 1-5 | 683.47, 682.38, 682.44, 683.61, 680.93 | idle |
+| 6-9 | 699.56, 686.76, 695.72, 699.47 | in swap |
+
+Idle runs span 2.68s on ~682s. Under memory pressure the suite loses up to
+~2.5%. Two runs landing 0.06s apart sits inside the idle spread, and the two
+logs round 50 questioned are provably different executions regardless -
+different collected counts, skip line numbers and progress-dot layout.
+
+The nine runs also make one thing plain that no single run could: this machine
+OOM-killed the review wrapper twice, the release gate once, and a floor run
+once during rounds 53-56, always while other sessions held ~3.5 GB of swap.
+Every kill is recorded as a kill; none was counted as a pass.

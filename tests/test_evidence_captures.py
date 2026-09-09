@@ -65,10 +65,15 @@ _CAPTURES = sorted((_ROOT / "evidence").glob("opus5-wrapper-*.txt"))
 # `\ufe0f` is the optional variation selector some emoji carry.
 _MARKER = re.compile(r"^[⚪🔵🟢🟣🔴🟠]\ufe0f?\s+\S", re.MULTILINE)
 
-# The labels actually seen in `evidence/` today. A documented allowlist for the
-# reader, never the predicate - and asserted against `_MARKER` below, so a
-# regex that silently stopped matching the real labels would redden rather
-# than quietly classify nothing.
+# The labels a capture in `evidence/` actually OPENS with today. A documented
+# allowlist for the reader, never the predicate - and asserted against
+# `_MARKER` below, so a regex that silently stopped matching the real labels
+# would redden rather than quietly classify nothing.
+#
+# "opens with", not "seen in": round 55 anchored the assert to the opening
+# line and left this comment saying "seen in `evidence/` today", which is a
+# different and measurably larger property - the ox-alpha label is seen in 13
+# captures and opens 9.
 _KNOWN_LABELS = ("⚪ ox-alpha", "🔵 Opus 5")
 
 # The wrapper header that records what was REQUESTED, which is the provenance.
@@ -93,6 +98,23 @@ _CORRECTED_REFERENCE = "captures from round 46 onward"
 _FIRST_ROUND_WITH_HEADER = 46
 
 
+def _header_lines(text: str) -> list[str]:
+    """The wrapper's leading `#` block, as lines.
+
+    The list is the primitive and `_leading_comments` joins it, rather than
+    the other way round: round 56 found `_first_body_line` recovering a line
+    count with `len(_leading_comments(text).splitlines())`, exact today but
+    silently wrong if the joiner ever stripped or normalised a line - and an
+    off-by-one there reads the wrong line rather than reddening.
+    """
+    kept: list[str] = []
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            break
+        kept.append(line)
+    return kept
+
+
 def _leading_comments(text: str) -> str:
     """The run of `#` lines the wrapper writes at the top of a capture.
 
@@ -103,12 +125,7 @@ def _leading_comments(text: str) -> str:
     fed the round-boundary test until round 50 promoted it to an acceptance
     predicate, where a stray match greens instead of reddening.
     """
-    kept: list[str] = []
-    for line in text.splitlines():
-        if not line.startswith("#"):
-            break
-        kept.append(line)
-    return "\n".join(kept)
+    return "\n".join(_header_lines(text))
 
 
 def _first_body_line(text: str) -> str:
@@ -130,8 +147,7 @@ def _first_body_line(text: str) -> str:
     inside a body; that was wrong - line 10 is that capture's own opening
     label, its header block ending at line 8.
     """
-    lines = text.splitlines()
-    for line in lines[len(_leading_comments(text).splitlines()) :]:
+    for line in text.splitlines()[len(_header_lines(text)) :]:
         if line.strip():
             return line
     return ""
