@@ -41,7 +41,21 @@ _CAPTURES = sorted((_ROOT / "evidence").glob("opus5-wrapper-*.txt"))
 # because it names the model `review.sh` actually requests. A guard narrower
 # than the thing it counts is r46's defect, and it had been rewritten into
 # the file whose whole purpose was to end that class.
-_MARKER = re.compile(r"^(⚪ ox-alpha|🔵 Opus 5)", re.MULTILINE)
+# Matched by FORM, not by enumerating labels. Round 50 caught this regex
+# listing `⚪ ox-alpha` alone and so missing 27 captures opening `🔵 Opus 5`;
+# round 51 caught the repair still being a list of two, in the file whose
+# stated purpose is to end "a guard narrower than the thing it counts". The
+# model-indicator rule can emit other colours, and a capture opening with one
+# would be unexplained and invisible here - the identical shape, one label on.
+#
+# `\ufe0f` is the optional variation selector some emoji carry.
+_MARKER = re.compile(r"^[⚪🔵🟢🟣🔴🟠]\ufe0f?\s+\S", re.MULTILINE)
+
+# The labels actually seen in `evidence/` today. An allowlist for the reader,
+# never the predicate - and asserted below, so a `_MARKER` that silently stops
+# matching them (a changed variation selector, say) reddens instead of
+# quietly counting nothing.
+_KNOWN_LABELS = ("⚪ ox-alpha", "🔵 Opus 5")
 
 # The wrapper header that records what was REQUESTED, which is the provenance.
 # Anchored to the comment column for the same reason as the marker.
@@ -129,7 +143,20 @@ def test_there_are_captures_to_check() -> None:
     thing it counted.
     """
     assert len(_CAPTURES) >= 45, [p.name for p in _CAPTURES]
-    assert any(_MARKER.search(p.read_text(encoding="utf-8")) for p in _CAPTURES)
+    marked = [p for p in _CAPTURES if _MARKER.search(p.read_text(encoding="utf-8"))]
+    assert marked
+
+    # Every known label is still reached by the form regex. Without this, a
+    # `_MARKER` that matched some third thing and none of the real labels
+    # would satisfy the line above and leave every capture unchecked.
+    #
+    # Matched against the LABEL ITSELF, not against a file that contains it:
+    # the first version asked whether a marked capture also contained the
+    # label somewhere, and a `_MARKER` rewritten to match the wrapper's
+    # `# Exact claude ...` banner passed it - every capture carries both the
+    # banner and, further down, a label. Its own control caught that.
+    for label in _KNOWN_LABELS:
+        assert _MARKER.match(label), label
 
 
 def test_every_capture_carrying_the_marker_explains_it() -> None:

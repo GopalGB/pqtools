@@ -4815,7 +4815,7 @@ produces a **false green**, never a false red. BB1-3, CC and DD all reddened
 with a naming observable, which cached code cannot fabricate, so those
 readings stand.
 
-## Round 51 - `56c2c44..HEAD`, verdict FIX-FIRST, all five taken
+## Round 51 - `56c2c44..d7d17a2`, `/code-review` pass, verdict FIX-FIRST, all five taken
 
 Five LOWs on the round-50 tree, three of them about the same thing: a claim
 written as prose beside machinery that could have checked it. `src/` untouched
@@ -4909,3 +4909,146 @@ agreement is a property of the workload.
 The scratchpad holding those raw artifacts is session-scoped, so the spread is
 now recorded in the evidence file's own header where the next reader will
 find it.
+
+## Round 52 - `56c2c44..d7d17a2`, opus-5 wrapper, verdict FIX-FIRST, all three taken
+
+The same range, a second reviewer. Three findings, and the first is r48's
+class arriving by a route I had not considered: not a count I wrote wrong, but
+a count that was **correct when measured and falsified by the commit that
+carried it**.
+
+### 1 MEDIUM - the floor log was falsified by the fix that shipped beside it
+
+The log certifies `collected here: 4175`. The tree it ships in collects
+**4176**, because round 51's third fix added
+`test_the_docstring_accounts_for_every_pinned_cli_handler` *after* the floor
+run had finished. Reproduced directly: `pytest --collect-only -q` → 4176
+against a header saying 4175.
+
+This is the third distinct way the same class has bitten: a glob too narrow
+(r46), a grep too loose (r47), and now a number true at the moment of
+measurement and false at the moment of commit (r48, and again here). The
+header names the tree, so the header has to be **re-measured after the last
+change to the tree, not before**.
+
+Taken as a re-run rather than as a re-worded header. A log offered as "the
+suite on this tree" should be that, and the run also produces a fourth
+data point for finding 5's runtime question. Ordering is now forced: every
+test change lands first, the floor run is last, and only prose may follow it.
+
+### 2 LOW - the `Diagnostic` guard had no non-vacuity check
+
+Its sibling has one (`test_the_sweep_finds_something_to_sweep`); this one did
+not. It matches on the *name* `Diagnostic`, so renaming the class, moving it,
+or wrapping construction in a factory yields zero sites, and `assert not
+codeless` passes while asserting nothing - on a tree that could ship an
+undocumented `M000`. Round 51 fixed this guard's *scope* and left its
+*vacuity*, which is the same defect measured on a different axis.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| KK1 | all 37 `Diagnostic` occurrences in `core.py` and `cli.py` renamed to `DiagRecord`; `Diagnostic(` sites left in `src/`: 0 | before the fix, **`1 passed`**; after it, `assert 0 >= 8` | RED at the new non-vacuity assert | GREEN |
+| KK2 | `code=` dropped from `cli.py:781` | `Diagnostic built without a code at ['cli.py:781']` | RED at the codeless assert - the two arms bite independently | GREEN |
+
+### 3 LOW - the marker was still an enumeration, one label wider
+
+`_MARKER` listed two literals. The invariant this file now claims is *a
+capture carrying a self-label must explain it*, and the model-indicator rule
+can emit others (`🟢`, `🟠`, …); such a capture would be unexplained and
+invisible here. Round 50 caught the one-literal version, and the repair was a
+two-literal version - narrower than the thing it counts, in the file whose
+stated purpose is to end exactly that.
+
+Now matched by FORM, with the known literals kept as a documented allowlist
+that is itself asserted. Latent, not live: measured across all 48 captures,
+the form predicate matches the same 36 the two literals did, and none newly
+matched is unexplained.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| LL1b | a capture opening `🟢 GLM-5.2`, explained by nothing | `['opus5-wrapper-probe-eeee..ffff.txt']` | RED at `..._marker_explains_it` | probe removed, GREEN |
+| LL2b | same probe, two-literal `_MARKER` restored | **`5 passed`** - the third label is invisible, the unexplained capture accepted | - | - |
+| LL3c | `_MARKER` rewritten to match the wrapper banner instead of any label | `AssertionError: ⚪ ox-alpha` | RED at the allowlist assert | GREEN |
+
+**Two controls did not land, and saying so is the point.** LL2 and LL3 were
+first attempted with the mutation inlined through nested shell quoting; the
+anchor matched zero times and the edit silently did nothing. LL2 then reported
+RED - which I could have read as the control succeeding, when it was only
+LL1's probe still on disk. Both were re-run from a script file with the
+mutated line **printed back**, which is what produced the readings above.
+Third occurrence this session of the same lesson: *print the observable beside
+the result, because a mutation that does not land looks exactly like a
+control that worked.*
+
+**LL3 also failed its own first fix.** The allowlist assertion as first
+written asked whether a *marked capture also contained* a known label
+anywhere. Under the banner mutation every capture matched and every capture
+contains a label further down, so it passed - the guard I had just added to
+catch a hollow predicate was itself hollow. It now matches `_MARKER` against
+the label string itself. The control found it; the test did not.
+
+### Isolation note
+
+LL1's first run reddened two tests, only one of them the arm under test: the
+probe was named `-round97-`, so the header-boundary test failed it for having
+no header - a property of the filename, not of the marker. Re-run with a probe
+carrying no round segment, the reading is clean. This is round 46's lesson
+(*a control must fail for the reason under test, not merely fail*) and the
+reason the comparison is always made on a **named** test across both arms
+rather than on the pass/fail total.
+
+### Found by the re-run, not by the review: a warning I had dismissed
+
+The floor re-run finished `4135 passed, 41 skipped, 1 warning`. The warning was
+mine, introduced in this round's own fix #3:
+
+```
+tests/test_evidence_captures.py:52: DeprecationWarning: invalid escape
+sequence '\s'
+  _MARKER = re.compile("^[⚪🔵🟢🟣🔴🟠]\ufe0f?\s+\S", re.MULTILINE)
+```
+
+The variation selector is written `\ufe0f` here deliberately. The first draft
+of this section pasted it literally, and the watermark pre-commit hook - which
+strips invisible characters from prose - removed it, turning the quotation
+into `]?`: a different regex, in a paragraph explaining a regex. The test file
+survived the same hook only because its source already used the escape form.
+That is the standing rule for this repo arriving in a new place: **write
+invisible characters as escapes, in documentation as well as in tests.**
+
+A non-raw string, so `\s` and `\S` are deprecated escapes: they work today and
+become a `SyntaxError` in a future Python. Two things let it through, and both
+are worth writing down because neither is the obvious one.
+
+**`ruff` was silent by configuration, not by judgement.** `select = ["E", "F",
+"I", "UP", "B"]` - `W` was never selected, so W605 was off. Measured: with the
+non-raw string restored, the current config reports `All checks passed!`, and
+`--select E,F,I,UP,B,W` reports `W605 Invalid escape sequence: '\s'` and the
+same for `\S`. The whole repo is clean under `W`, so it is now selected, and
+the gate's existing lint step enforces it. No new test: the tool was already
+in the gate and merely switched off - ponytail rung 4.
+
+**And I had already checked, wrongly.** Earlier in this round I saw
+`1 warning` in a run, re-ran with `-W error`, got a clean `9 passed`, and
+wrote it off as a collection artifact. That check could not have worked: the
+warning is emitted at **compile** time, and the second run imported an
+already-cached `.pyc`, which does not recompile and so does not re-emit. This
+is the `__pycache__` lesson from earlier this session arriving from the
+opposite direction - stale bytecode had been faking a green **test**; here it
+faked a green **warning check**.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| MM1 | `re.compile(r"..."` → `re.compile("..."` | `W605 [*] Invalid escape sequence: '\s'` / `'\S'`, `Found 2 errors` | RED at `ruff check` with `W` selected | GREEN |
+
+Swept rather than spot-fixed: all 97 `.py` files under `src/`, `tests/` and
+`scripts/` were compiled with warnings captured. One hit, the one above. The
+`W` selection is what keeps that true without remembering to re-run the sweep.
+
+The floor log was then re-run a second time, because the fix touched a test
+file and the first re-run no longer certified the tree. The regex change is
+one character and provably equivalent - measured: the raw-string form matches
+the same 36 of 48 captures, both known labels, and a variation-selector label
+- but "provably equivalent" is the class of claim this audit exists to
+distrust, and the ordering rule set out in finding 1 says the floor run is
+last.

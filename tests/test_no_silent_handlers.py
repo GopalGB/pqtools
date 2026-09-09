@@ -205,6 +205,7 @@ def test_every_diagnostic_is_built_with_an_explicit_code() -> None:
     positionals.
     """
     codeless = []
+    sites = []
     for path in sorted(_SRC.rglob("*.py")):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call):
@@ -219,6 +220,7 @@ def test_every_diagnostic_is_built_with_an_explicit_code() -> None:
             )
             if name != "Diagnostic":
                 continue
+            sites.append(f"{path.relative_to(_SRC)}:{node.lineno}")
             by_keyword = any(keyword.arg == "code" for keyword in node.keywords)
             # `file, line, column, code` - the fourth positional IS the code.
             # A `*args` splat is one AST node of unknown length, so it cannot
@@ -227,6 +229,16 @@ def test_every_diagnostic_is_built_with_an_explicit_code() -> None:
             by_position = len(positional) >= 4 and len(positional) == len(node.args)
             if not (by_keyword or by_position):
                 codeless.append(f"{path.relative_to(_SRC)}:{node.lineno}")
+    # Non-vacuity, for the same reason the handler sweep has one: this test
+    # matches on the NAME `Diagnostic`, so renaming the class, moving it, or
+    # wrapping construction in a factory yields zero sites and `not codeless`
+    # passes while asserting nothing. Measured: renaming all 37 occurrences
+    # in `core.py` and `cli.py` left this test reporting `1 passed`.
+    assert len(sites) >= 8, (
+        f"expected at least the 8 known Diagnostic construction sites, found "
+        f"{len(sites)}: {sites} - if the class was renamed or wrapped, this "
+        "test is no longer looking at anything"
+    )
     assert not codeless, (
         f"Diagnostic built without a code at {codeless} - it would default to "
         "M000, which no documented table lists"

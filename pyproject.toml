@@ -130,7 +130,14 @@ line-length = 88
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# `W` was added in round 52. A regex written as a non-raw string
+# (`"\s+"`) is a Python DeprecationWarning today and a SyntaxError in a
+# future release, and it shipped in a commit here: ruff was silent because
+# W605 was not selected, and a `-W error` re-run missed it because the
+# module was already compiled, so the compile-time warning did not re-emit.
+# The whole repo is clean under `W`, so this costs nothing and closes the
+# one path by which a warning can reach a commit unseen.
+select = ["E", "F", "I", "UP", "B", "W"]
 
 [tool.mypy]
 python_version = "3.11"
