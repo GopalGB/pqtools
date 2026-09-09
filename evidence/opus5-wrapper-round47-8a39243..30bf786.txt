@@ -1,0 +1,20 @@
+# Exact claude-opus-5 wrapper review - range 8a39243..30bf786 (bundle + lockfile shown as stub blobs)
+# staged:  14 files changed, 252 insertions(+), 31 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 8a39243..30bf786, not stubbed, not in the diff
+# package-lock.json: unchanged in 8a39243..30bf786, not stubbed, not in the diff
+# invoked 2026-09-09T03:14:29Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# model requested: claude-opus-5 (review.sh refuses any substitution)
+# NOTE: any model marker inside the review body below is the model's own
+#       self-label, not evidence of provenance. The line above is.
+
+Verified against the tree: 45 captures / 9 markers / 9 annotated all match; `_function_invoke_after` does compile to zero nested code objects and its `co_names` equals the pinned set exactly; `exit "$RC"` is sound (measured — the EXIT trap does not override the status even when its body fails, and `{ ... } > file` keeps `RC` in scope); 4167 collected matches the gate log; `test_tail_namespaces.py` is 52 passed, ruff clean. `src/` untouched. Two findings, both in the record.
+
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4363, :4421** — the counter-evidence for "captures from round 46 onward record the requested model inline in their own header" is `grep -c 'model requested'` = **2**, presented as "checkable in both directions". Only **one** of those two hits is the header line (`:6`); the second is `evidence/opus5-wrapper-round46-bc36fc0..8a39243.txt:18`, the review body quoting the phrase inside its own MEDIUM. The pattern is unanchored, so it would return ≥1 for a capture that has **no** header line at all but whose body mentions the string — it cannot distinguish the thing being certified from prose about it. This is the same body-quote-vs-self-label distinction the same round drew correctly for the marker count (`grep -l '^⚪ ox-alpha'`, and the capture explicitly excluded round 45 on exactly that ground), applied in one place and dropped in the other. Fix: `grep -c '^# model requested:'` and record **1**.
+
+- **LOW — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4425** — `tests/test_tail_namespaces.py:221` is cited bare, with no tree anchor, and this same commit rewrote that line: `:221` is now 78 columns and no 35-column line remains in the block, so a later round following the citation lands on ordinary prose. Two sections above, :4366-4369 records this exact defect as closed — "line numbers the same commit renumbered, so a later round following them lands on a docstring and a comment. Anchored on the construct plus the tree instead" — and the file's convention elsewhere (`at tree fb59590`, `tree 2f2168f`) is the anchored form. Fix: `:221 at tree 8a39243`, or anchor on the construct.
+
+Not findings, checked and cleared: the `exit "$RC"` fix behaves as claimed on every path that reaches it (the only route to line 147 passes through the brace group, so `RC` is always set); all nine retro-notes do carry the corrected "captures from round 46 onward" wording despite differing line wraps; no capture carries the note without the marker or the marker without the note; the release-gate log's 4167 certifies the tree actually being committed.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

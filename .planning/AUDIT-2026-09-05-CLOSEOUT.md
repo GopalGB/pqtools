@@ -4359,8 +4359,8 @@ that carry the marker got a retro-note rather than being left to be misread.
 > The note's closing line also said "Later captures record this inline", which
 > was false when written - the wrapper change landed in the same commit, so the
 > round-45 capture taken at 16:28:18Z returns **0** for
-> `grep -c 'model requested'`. All nine now read "captures from round 46
-> onward"; round 46's own capture returns **2**.
+> `grep -c '^# model requested:'`. All nine now read "captures from round 46
+> onward"; round 46's own capture returns **1**.
 
 ### LOW x3
 
@@ -4415,14 +4415,28 @@ round 45's section, beside the claim they correct.
 
 The note ended "Later captures record this inline". The wrapper change that
 records it landed in the same commit, so it could not act on a capture already
-written: `grep -c 'model requested'` on the round-45 capture, taken at
+written: `grep -c '^# model requested:'` on the round-45 capture, taken at
 16:28:18Z, returns **0**. All nine notes now read "captures from round 46
 onward", which is checkable in both directions - round 46's own capture
-returns **2**.
+returns **1**.
+
+> **CORRECTION, round 47.** Both figures above were first written with the
+> UNANCHORED `grep -c 'model requested'`, and the round-46 number was recorded
+> as **2**. Only one of those hits is the header line; the second is that
+> capture's own review body quoting the phrase inside the MEDIUM that asked for
+> the wording change. The pattern cannot tell the thing being certified from
+> prose about it: deleting the header line from a copy of that capture still
+> leaves the unanchored count at **1**, while the anchored form goes to **0**
+> (control X). This is the same body-quote-versus-self-label distinction this
+> round drew correctly one paragraph earlier, for the marker count
+> (`grep -l '^⚪ ox-alpha'`) - **drawn in one place and dropped in the other,
+> for the same file, in the same commit.** Anchoring both figures on
+> `^# model requested:` makes the count mean what the sentence claims.
 
 ### LOW x3 - three ragged lines
 
-`tests/test_tail_namespaces.py:221` measured 35 columns in a block otherwise
+`tests/test_tail_namespaces.py:221` at tree `8a39243` measured 35 columns -
+the comment beginning "in the ROOT tuple" - in a block otherwise
 running 72-78, and two closeout replacements measured 106 and 96 in a file
 wrapping at ~75. Reflowed as paragraphs rather than per-line, after the first
 attempt merely moved the short line down by one.
@@ -4446,3 +4460,46 @@ The control had to read `$?` of the wrapper itself, because the capture file -
 the thing every round had been reading - records the verdict correctly under
 both versions. **A file that is right cannot show you a caller that is wrong.**
 Confirmed live the same round: the re-run returned a real wrapper exit of 2.
+
+## Round 47 - `8a39243..30bf786`, verdict FIX-FIRST, both taken
+
+`src/` untouched for the eleventh consecutive round. Both findings are in this
+record, and both are the same failure in two costumes: **a citation that does
+not survive the commit making it.**
+
+The review verified before raising: 45 captures / 9 markers / 9 annotated all
+match, `_function_invoke_after` does compile to zero nested code objects with
+`co_names` equal to the pinned set, `exit "$RC"` is sound on every path that
+reaches it (the EXIT trap does not override the status, and `{ ... } > file` is
+not a subshell), 4167 collected matches the gate log.
+
+### MEDIUM - the evidence for my own fix was measured with the wrong pattern
+
+I wrote that round 46's capture "returns **2**" for `grep -c 'model requested'`,
+offering it as the check in the other direction. Only **one** of those hits is
+the header line at `:6`. The second is `:18` - that capture's own review body
+quoting the phrase, inside the MEDIUM that asked for the wording change. The
+pattern is unanchored, so it counts prose about the thing as instances of the
+thing.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| X | the header line deleted from a copy of the round-46 capture | unanchored `grep -c 'model requested'` = **1** on a capture that has NO header; anchored `grep -c '^# model requested:'` = **0** | unanchored cannot go to zero, so it certifies nothing; anchored discriminates 1 -> 0 | GREEN |
+
+What makes this one worth writing down rather than just fixing: **the same
+distinction was drawn correctly one paragraph earlier in the same section.**
+The marker count deliberately used `grep -l '^⚪ ox-alpha'` and the round-46
+capture was excluded from the annotated set on exactly this ground - a body
+quoting a marker is not a marker. I applied the rule to the number I was
+correcting and not to the number I was correcting it WITH. A rule used once in
+a paragraph is not yet a habit; the second number in the same sentence is where
+to look for it.
+
+### LOW - a bare line number in the commit that renumbered it
+
+`tests/test_tail_namespaces.py:221` was cited with no tree, by the same commit
+that rewrapped that block - so `:221` is now 78 columns and no 35-column line
+survives anywhere near it. Two sections above, this file records precisely this
+defect as closed ("line numbers the same commit renumbered... anchored on the
+construct plus the tree instead"), and the convention elsewhere is `at tree
+fb59590`. Now anchored on both the tree and the construct.
