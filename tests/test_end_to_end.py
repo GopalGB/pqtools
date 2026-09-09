@@ -365,12 +365,27 @@ def test_the_library_refuses_a_non_table_the_way_the_cli_does() -> None:
     """README's own example is `to_pandas(report.eval("Sales"))`, and a query
     returning a scalar or a record is ordinary. That used to raise
     `TypeError: 'int' object is not subscriptable` from inside the column
-    builder, where the module documents a typed `ExportRefusal`."""
+    builder, where the module documents a typed `ExportRefusal`.
+
+    The property that must hold everywhere is the TYPE: an `ExportRefusal`,
+    never a `TypeError` escaping the column builder. The MESSAGE depends on
+    the environment, and this test asserted only the with-extras one - so it
+    passed here and failed on an install without pandas, where the dependency
+    refusal comes first. That ordering is deliberate and is the more useful
+    answer: with no pandas, fixing the input would not help. Both arms are
+    asserted rather than one being skipped, because the regression this test
+    exists for - an untyped `TypeError` - is just as reachable without the
+    extras as with them.
+    """
+    import importlib.util
+
     from pqtools.export import ExportRefusal, to_arrow, to_pandas
 
-    for export in (to_pandas, to_arrow):
+    for export, module in ((to_pandas, "pandas"), (to_arrow, "pyarrow")):
+        installed = importlib.util.find_spec(module) is not None
+        expected = "table" if installed else module
         for value in (5, "text", {"a": 1}, [1, 2]):
-            with pytest.raises(ExportRefusal, match="table"):
+            with pytest.raises(ExportRefusal, match=expected):
                 export(value)
 
 

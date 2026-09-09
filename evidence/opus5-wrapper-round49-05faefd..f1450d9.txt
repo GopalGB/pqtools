@@ -1,0 +1,26 @@
+# Exact claude-opus-5 wrapper review - range 05faefd..f1450d9 (bundle + lockfile shown as stub blobs)
+# staged:  4 files changed, 300 insertions(+), 9 deletions(-)
+# src/pqtools/_bridge.cjs: unchanged in 05faefd..f1450d9, not stubbed, not in the diff
+# package-lock.json: unchanged in 05faefd..f1450d9, not stubbed, not in the diff
+# invoked 2026-09-09T04:03:00Z via ~/.codex/skills/claude-review/bin/review.sh (ANTHROPIC_API_KEY unset inside the wrapper)
+# model requested: claude-opus-5 (review.sh refuses any substitution)
+# NOTE: any model marker inside the review body below is the model's own
+#       self-label, not evidence of provenance. The line above is.
+
+🔵 Opus 5
+
+Verified in this worktree before raising: `tests/test_evidence_captures.py` collects and passes 5/5 against the staged tree; 47 captures, 9 marker/9 note/3 header, matching the file's invariants; the gate log's `content: 79d4e5f` records the staged closeout blob `e959268` and test blob `0444436` byte-identical; the reflow claim at :4436-4442 is genuine (:4439 now 72). Findings below are what survived.
+
+- **MEDIUM — evidence/release-gate-2026-09-09-round48-fixes.log:3 — the certifying tree is missing one of the four staged files, and this is the first round where that matters.** `git ls-tree -r 79d4e5f -- evidence/ | grep round48` returns **0** hits while `git ls-files -s` has `evidence/opus5-wrapper-round48-30bf786..05faefd.txt` staged; the tree stops at round 47's capture and log. Round 47's own tree `c1ac673` *did* record its capture (`0d4ef62`), so this is a regression from the convention, not the "certificate cannot hash itself" carve-out that round 47 cleared. It is newly load-bearing: `tests/test_evidence_captures.py` reads `evidence/opus5-wrapper-*.txt` at import, so "4172 passed" was measured on a 46-capture directory and the 47th arrived afterwards — the first test in this repo whose result depends on a directory the gate certified in a stale state. Benign this round (I ran the 5 tests with the file present: green), but the mechanism is exactly "a capture added after the gate carries a violation and ships green". Fix: re-run `scripts/release_gate.sh` with the capture already in `evidence/`, and confirm `git ls-tree -r <content> -- evidence/ | grep -c round48` = 1.
+
+- **MEDIUM — tests/test_evidence_captures.py:42,111,126 — the note-*presence* predicate is the one unanchored whole-file search left in the file, and it is r47's defect.** `_NOTE = "NOTE (round 4"` is matched with `in path.read_text(...)` at :111 and :126. The file anchors `_MARKER` and `_HEADER` at `^` and extracts a block for `_CORRECTED_REFERENCE` precisely because "three review bodies quote the phrase while instructing the fix" — but the predicate deciding *whether a note exists* was left as prose-matching. Simulated the next such body (a MEDIUM quoting `` `# NOTE (round 46)` `` while instructing a fix, the same shape rounds 46/47/48 use for the marker and for `model requested`): `_NOTE in text` → True, and `_note_block` breaks on the first non-`#` line so it returns `''`, not `None` — so `test_every_note_makes_the_claim_that_is_true` reddens on `'' `and `test_no_capture_carries_the_note_without_the_marker` reddens too, both for a capture that has no note at all. Fix: make `_note_block` skip matches on lines not starting with `#`, and use `_note_block(text) is not None` as the presence predicate at :111 and :126 instead of `_NOTE in text`.
+
+- **MEDIUM — .planning/AUDIT-2026-09-05-CLOSEOUT.md:4473 — the round-47 anchor was patched in without reflowing, in the commit whose own LOW says that class is closed.** Line 4473 measures **142** columns in a file wrapping at ~75; at HEAD the same paragraph ran 77/77/76/79/53. The section at :4531 is titled "an anchor patched in without reflowing around it" and ends "Reflowed." — true for :4439, false for :4471-4476, which the same diff made worse than the instance it is fixing. Fix: reflow :4471-4476 as a paragraph at 75.
+
+- **LOW — tests/test_evidence_captures.py:95 vs .planning/AUDIT-2026-09-05-CLOSEOUT.md:4534 — "No assertion in that file mentions a total" is falsified by the file it describes.** `assert len(_CAPTURES) >= 45` is a total. The *reason* given holds (a floor does not rot upward), but the claim as written does not, and the module docstring at :22 repeats it. This is the round's own defect class — a sentence falsified by the artifact in the same commit. Fix: write "no assertion pins an exact total; the only count is a floor, which cannot rot as captures are added" in both places.
+
+Not findings, checked and cleared: no capture body currently contains `NOTE (round 4`, so the :42 hazard is latent rather than live. Control Y6's arithmetic holds — the r46 glob (`round3*`,`round4*`) matches 21 of 47 captures, under the floor. `4172` collected = round 47's `4167` + the 5 new tests. All 9 marked captures carry the note and no unmarked one does. `_round_of` returning `None` for `attempt1-`/`final-` correctly keeps them in the marker/note checks and out of the header check.
+
+FIX-FIRST
+
+# wrapper exit: 2 (0=SHIP, 2=FIX-FIRST, 3=BLOCKED/no standalone verdict line)

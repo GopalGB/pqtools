@@ -4470,10 +4470,11 @@ not survive the commit making it.**
 
 The review verified before raising: at the reviewed tree `30bf786`, 45
 captures / 9 markers / 9 annotated all match (this commit's own capture makes
-it 46 - see round 48, which is where these counts stopped being prose), `_function_invoke_after` does compile to zero nested code objects with
-`co_names` equal to the pinned set, `exit "$RC"` is sound on every path that
-reaches it (the EXIT trap does not override the status, and `{ ... } > file` is
-not a subshell), 4167 collected matches the gate log.
+it 46 - see round 48, which is where these counts stopped being prose);
+`_function_invoke_after` does compile to zero nested code objects with
+`co_names` equal to the pinned set; `exit "$RC"` is sound on every path that
+reaches it (the EXIT trap does not override the status, and `{ ... } > file`
+is not a subshell); and 4167 collected matches the gate log.
 
 ### MEDIUM - the evidence for my own fix was measured with the wrong pattern
 
@@ -4531,9 +4532,9 @@ close it instead.** The number was never what mattered. Four properties were:
 Those are now `tests/test_evidence_captures.py`, which is the move this repo
 already recorded for `SUPPORT-MATRIX.md`: prose cannot be trusted to stay true
 on its own, so the authoritative statement is the one with a test behind it.
-**No assertion in that file mentions a total**, so none of them rots when the
-next round adds a capture - which is precisely what falsified the sentence
-this round is fixing.
+**No assertion pins an exact total** - the only count is a floor, and a number
+that says "at least" survives the commit that writes it, which is precisely
+what "45 captures" did not.
 
 ### Controls
 
@@ -4565,3 +4566,118 @@ time in the guard written to close it.
 
 The tree anchor added in round 47 left `:4439` at 64 columns in the paragraph
 that says reflowing is done per paragraph. Reflowed.
+
+## Round 49 - `05faefd..f1450d9`, verdict FIX-FIRST, all four taken
+
+`src/` untouched for the thirteenth consecutive round. Every finding is in the
+round-48 work, and two of them are that round's own defect class recurring in
+the guard written to close it.
+
+### MEDIUM - the gate certified a tree missing the capture the new test reads
+
+`git ls-tree -r 79d4e5f -- evidence/ | grep -c round48` = **0**, while the same
+commit stages `evidence/opus5-wrapper-round48-30bf786..05faefd.txt`. Round 47's
+tree `c1ac673` **did** record its own capture, so this is a regression from the
+convention rather than the "a certificate cannot hash itself" carve-out round
+47 cleared.
+
+The root cause is my own ordering: I copy the capture into `evidence/` in the
+same command as the commit, which runs after the gate. That was harmless for
+forty-eight rounds. It stopped being harmless in round 48, because
+`tests/test_evidence_captures.py` reads `evidence/opus5-wrapper-*.txt` **at
+import**: "4172 passed" was measured against a 46-capture directory and the
+47th arrived afterwards. This is the first test in this repo whose result
+depends on a directory the gate certified in a stale state, and the mechanism
+is exactly "a capture added after the gate carries a violation and ships
+green". Benign this round - the five tests are green with the file present -
+but the fix is the ordering, not the reassurance: **the capture goes into
+`evidence/` before the gate runs**, and the check is
+`git ls-tree -r <content> -- evidence/ | grep -c round<N>` = 1.
+
+Done and measured for this round: the gate's `content: b14e31a` returns **1**
+for `round49`, where round 48's `79d4e5f` returned 0.
+
+### MEDIUM - the one unanchored predicate left in the new test
+
+The file anchors `_MARKER` and `_HEADER` at `^` and extracts a block for the
+wording check, precisely because review bodies quote these strings while
+instructing a fix. The predicate deciding *whether a note exists* was left as
+`_NOTE in text` - a whole-file search, which is round 47's defect surviving
+inside the guard written to close it.
+
+Worse than a false positive: `_note_block` broke on the first non-`#` line, so
+a body quoting the note's opening returned `""` rather than `None` - an empty
+note on a capture that has none, reddening **two** tests for a file with
+nothing wrong. Both the extractor and the presence predicate are now anchored,
+and presence is decided by the extractor rather than by a second, looser rule.
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| Z1 | the whole-file presence predicate, against a capture whose BODY quotes `# NOTE (round 46)` while instructing a fix | `['opus5-wrapper-round99-aaaaaaa..bbbbbbb.txt']` from both tests; `_note_block` returns `''` instead of `None` | RED - `..._note_without_the_marker` **and** `..._makes_the_claim_that_is_true`, on a capture with no note at all | GREEN, `_note_block` returns `None` |
+
+### MEDIUM - an anchor patched in without reflowing, in the commit that closed that class
+
+Line 4473 measured **142** columns, in the diff whose own LOW is titled "an
+anchor patched in without reflowing around it" and ends "Reflowed." True for
+:4439, false for :4471-4476 - the same commit made a worse instance of the
+defect it was fixing. Reflowed; the paragraph now runs 60-77.
+
+### LOW - "no assertion mentions a total", in a file whose first assertion is a total
+
+`assert len(_CAPTURES) >= 45` is a total. The reasoning held - a floor cannot
+rot upward as captures are added - but the sentence did not, in both the
+closeout and the module docstring. Now: no assertion pins an *exact* total, and
+a number that says "at least" survives the commit that writes it, which is
+precisely what "45 captures" did not.
+
+## PRD acceptance 6.2, finally measured - the suite without the extras
+
+Not from a review. From walking the PRD's own acceptance list and finding the
+one criterion that had never been executed on this tree: *"The suite passes
+with **both extras uninstalled**"*. `evidence/` held a dtype file but no
+whole-suite run, and there was no floor venv on disk.
+
+**It did not pass. One test failed**, and it is the shape the PRD names in §4
+as the reason the criterion exists:
+
+    test_the_library_refuses_a_non_table_the_way_the_cli_does
+    E   Expected regex: 'table'
+    E   Actual message: "pandas is not installed. Install it with:
+                         pip install 'pqtools[pandas]'"
+
+The product is right and the test was wrong. With pandas absent the dependency
+refusal comes first, and it is the more useful of the two true answers: fixing
+the input would not help. Both are typed `ExportRefusal`, so the contract the
+test exists to hold - that an untyped `TypeError: 'int' object is not
+subscriptable` never escapes the column builder - is intact in both
+environments. What the test asserted was the *message*, and only the one its
+author's machine could produce. The fix asserts the type in both regimes and
+the message exactly in each, rather than skipping the floor arm: the regression
+it guards is just as reachable without the extras as with them.
+
+### The instrument was wrong before the test was
+
+The first floor run used a `sys.meta_path` finder raising `ModuleNotFoundError`
+for the four extras - the exception type this record already insists on, since
+`importorskip` skips on nothing else. It was positive-controlled for `import`
+and passed. It was **not** controlled for `importlib.util.find_spec`, which the
+fix then used:
+
+| | real absent install | the meta-path blocker |
+|---|---|---|
+| `import pandas` | `ModuleNotFoundError` | `ModuleNotFoundError` |
+| `find_spec("pandas")` | returns `None` | **raises** |
+
+So the fix looked broken when only the simulation was. **Positive-control the
+instrument for every API the code under test uses, not just the obvious one** -
+a simulation is exact for the calls you checked and unspecified for the rest.
+Rebuilt as a genuine venv with no extras (in the scratchpad, since `.gitignore`
+covers `.venv/` and not a second one, and the autocommit bot sweeps this repo).
+
+| # | Defect reintroduced | Observable with defect | Test | Restored |
+|---|---|---|---|---|
+| AA | the pre-fix assertion (`expected = "table"` unconditionally) | `Actual message: "pandas is not installed..."` | PASSES in the dev venv, **RED in the floor venv** - the environment split that hid it | GREEN in both |
+
+That control is the point: the pre-fix test passes on the machine it was
+written on and fails on an install a user would make. A suite is green *in an
+environment*, and this repo now has evidence for two.

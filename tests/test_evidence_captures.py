@@ -18,8 +18,9 @@ something a test holds. This is the same move `test_support_matrix.py` records
 for SUPPORT-MATRIX.md: prose cannot be trusted to stay true on its own, so the
 authoritative statement is the one with a test behind it.
 
-None of these assertions mentions a total, so none of them rots when the next
-round adds a capture.
+No assertion pins an exact total. The only count is a floor, which cannot rot
+as captures are added - a number that says "at least" survives the commit that
+writes it, which is precisely what "45 captures" did not.
 """
 
 from __future__ import annotations
@@ -64,13 +65,19 @@ def _note_block(text: str) -> str | None:
     """
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        if _NOTE in line:
-            block = []
-            for candidate in lines[index:]:
-                if not candidate.startswith("#"):
-                    break
-                block.append(candidate.lstrip("#").strip())
-            return " ".join(block)
+        # Anchored to the comment column. A review body quoting the note's
+        # opening while instructing a fix - the shape rounds 46, 47 and 48 all
+        # took - is prose ABOUT a note, not a note, and matching it here made
+        # `_note_block` return "" rather than None: an empty note on a capture
+        # that has none, reddening two tests for a file with nothing wrong.
+        if not line.startswith("#") or _NOTE not in line:
+            continue
+        block = []
+        for candidate in lines[index:]:
+            if not candidate.startswith("#"):
+                break
+            block.append(candidate.lstrip("#").strip())
+        return " ".join(block)
     return None
 
 
@@ -108,7 +115,7 @@ def test_every_capture_carrying_the_marker_explains_it() -> None:
         path.name
         for path in _CAPTURES
         if _MARKER.search(path.read_text(encoding="utf-8"))
-        and _NOTE not in path.read_text(encoding="utf-8")
+        and _note_block(path.read_text(encoding="utf-8")) is None
     ]
     assert not unexplained, unexplained
 
@@ -123,7 +130,7 @@ def test_no_capture_carries_the_note_without_the_marker() -> None:
     misplaced = [
         path.name
         for path in _CAPTURES
-        if _NOTE in path.read_text(encoding="utf-8")
+        if _note_block(path.read_text(encoding="utf-8")) is not None
         and not _MARKER.search(path.read_text(encoding="utf-8"))
     ]
     assert not misplaced, misplaced
