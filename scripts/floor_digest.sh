@@ -21,7 +21,12 @@
 # that, because the untracked file is still there afterwards. An untracked
 # file in scope is therefore a refusal, not an input.
 #
-# Exit: 0 ok · 64 untracked file in scope, or bad usage.
+# Exit: 0 ok · 2 bad usage · 64 untracked file in scope · 65 empty scope.
+#
+# Usage gets its own code and is checked FIRST. Both used to be 64 with the
+# scan running first, so `floor_digest.sh --bogus` reported "untracked file(s)
+# in scope" whenever the scope happened to be dirty, and no caller could tell
+# a typo from a real refusal by exit code alone.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -34,11 +39,29 @@ readonly SCOPE=(
     scripts/floor_digest.sh
 )
 
+case "${1-}" in
+"" | --files) ;;
+*)
+    echo "usage: floor_digest.sh [--files]" >&2
+    exit 2
+    ;;
+esac
+
 untracked="$(git ls-files -o --exclude-standard -- "${SCOPE[@]}")"
 if [[ -n "${untracked}" ]]; then
     echo "floor_digest: untracked file(s) in scope - commit or remove them first:" >&2
     echo "${untracked}" >&2
     exit 64
+fi
+
+# A scope that matches nothing must not hash to a confident-looking value:
+# `shasum` of empty input is a perfectly good digest of nothing, and it would
+# compare equal to another empty run forever.
+tracked_count="$(git ls-files -z -- "${SCOPE[@]}" | tr -dc '\0' | wc -c | tr -d ' ')"
+if [[ "${tracked_count}" -eq 0 ]]; then
+    echo "floor_digest: the scope matches no tracked files - refusing to" >&2
+    echo "hash nothing. Is this a real checkout of the repo?" >&2
+    exit 65
 fi
 
 case "${1-}" in
@@ -49,7 +72,7 @@ case "${1-}" in
         | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1
     ;;
 --files)
-    # Count the NUL separators, one per entry. `wc -l` disagreed with the
+    # Already counted above, the NUL-separator way. `wc -l` disagreed with the
     # digest on exactly the newline-in-path case -z exists for.
     #
     # NOT `awk 'BEGIN { RS = "\0" }'`, which is the obvious replacement and is
@@ -58,10 +81,6 @@ case "${1-}" in
     # - `printf 'a\0b\0c\0'` through that awk counts 1, and it reported 1 file
     # for a 125-file scope while the digest beside it was computed over all
     # 125. A count is evidence, so it gets its own control.
-    git ls-files -z -- "${SCOPE[@]}" | tr -dc '\0' | wc -c | tr -d ' '
-    ;;
-*)
-    echo "usage: floor_digest.sh [--files]" >&2
-    exit 64
+    echo "${tracked_count}"
     ;;
 esac

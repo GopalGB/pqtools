@@ -2953,8 +2953,17 @@ def _freshness(repo: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _write_log(repo: Path, name: str, digest: str) -> Path:
+    """Write a floor log AND track it.
+
+    Tracking is not incidental to the fixture - it is the contract. The
+    freshness check resolves candidates with `git ls-files`, not a filesystem
+    glob, precisely so that an untracked stray cannot decide what the gate
+    certifies. A fixture that only wrote the file would be testing a
+    resolution strategy the script no longer uses.
+    """
     log = repo / "evidence" / name
     log.write_text(f"#   tree digest             : {digest}\n", encoding="utf-8")
+    _git(["add", "--", f"evidence/{name}"], repo)
     return log
 
 
@@ -2983,8 +2992,11 @@ def test_the_freshness_check_fails_when_there_is_no_floor_log(tmp_path: Path) ->
     """
     repo = _freshness_repo(tmp_path / "repo")
     result = _freshness(repo)
-    assert result.returncode != 0, result.stdout + result.stderr
-    assert "no floor log matching" in result.stderr, result.stderr
+    # 65 is the documented code for "no log". Asserting the code rather
+    # than the prose: the message is allowed to improve, the contract the
+    # gate reads is not.
+    assert result.returncode == 65, result.stdout + result.stderr
+    assert "floor log" in result.stderr, result.stderr
 
 
 def test_the_freshness_check_refuses_when_two_floor_logs_are_present(
@@ -2999,8 +3011,8 @@ def test_the_freshness_check_refuses_when_two_floor_logs_are_present(
     _write_log(repo, "floor-venv-suite-2026-01-01.log", digest)
     _write_log(repo, "floor-venv-suite-2026-02-02.log", digest)
     result = _freshness(repo)
-    assert result.returncode != 0, result.stdout + result.stderr
-    assert "more than one floor log" in result.stderr, result.stderr
+    assert result.returncode == 66, result.stdout + result.stderr
+    assert "more than one" in result.stderr, result.stderr
 
 
 def test_the_freshness_check_fails_on_a_stale_digest(tmp_path: Path) -> None:
@@ -3009,7 +3021,7 @@ def test_the_freshness_check_fails_on_a_stale_digest(tmp_path: Path) -> None:
     repo = _freshness_repo(tmp_path / "repo")
     _write_log(repo, "floor-venv-suite-2026-01-01.log", "0" * 64)
     result = _freshness(repo)
-    assert result.returncode != 0, result.stdout + result.stderr
+    assert result.returncode == 67, result.stdout + result.stderr
     assert "is stale" in result.stderr, result.stderr
 
 
@@ -3082,7 +3094,14 @@ def test_the_digest_file_count_agrees_with_what_the_digest_hashed(
         ],
         repo,
     )
-    assert int(reported) == len(tracked.strip().splitlines()), reported
+    expected = len(tracked.strip().splitlines())
+    # The fixture is small - the real scope is ~125 files, this one a handful -
+    # and paragraph mode collapses ANY number of records to 1. So the bug is
+    # only visible while the fixture holds more than one file. If a future edit
+    # shrinks it to a single file, this fails loudly rather than passing while
+    # proving nothing.
+    assert expected > 1, f"fixture scope collapsed to {expected} file(s)"
+    assert int(reported) == expected, reported
 
 
 def test_every_branch_of_the_gates_floor_step_reaches_the_failure_counter(

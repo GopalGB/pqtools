@@ -5580,3 +5580,111 @@ that had never run. Fixed in `cli.py`; the single-file path now matches the
 batch contract, and a test pins the two paths together rather than pinning the
 literal twice. `--json` still emits `[]` on both, pinned separately so the
 human line cannot leak into the machine-readable surface.
+
+## Round 59 - `c582a8c..820c921`, verdict FIX-FIRST, all ten taken
+
+Ten findings again, all reproduced, none rejected. The headline one was filed
+against the repo and belongs to the review harness - which makes it the most
+useful finding of the run, because it means every review since the harness
+gained that cleanup step has been reading a tree the harness half-built.
+
+### 1 CRITICAL - true observation, wrong defendant
+
+The review reported two floor logs on disk, `check_floor_freshness.sh`
+returning 66, and therefore `GATE FAILED` on the tree under review. Measured
+here, the pushed commit is clean:
+
+    git ls-tree -r --name-only 820c921 evidence/ | grep floor-venv
+      -> evidence/floor-venv-suite-2026-09-10.log      (one)
+    git status --porcelain -> (empty)
+    scripts/check_floor_freshness.sh -> exit 0
+
+So the finding is false about the repo and TRUE about the worktree the
+reviewer was given. `evidence/run-opus-gate.sh` builds that worktree at BASE,
+points the index at HEAD, materialises HEAD's files, then deletes paths that
+BASE had and HEAD does not:
+
+    git diff -z --name-only --diff-filter=D "$BASE" "$HEAD"
+
+Round 58 renamed `floor-venv-suite-2026-09-09.log` to `...-2026-09-10.log`.
+Git scores that **R092**, and `--diff-filter=D` does not list renamed-away
+paths. Measured:
+
+    git diff --name-only --diff-filter=D c582a8c 820c921             -> 0 files
+    git diff --name-status c582a8c 820c921 -- evidence/              -> R092 old new
+    git diff --name-status --no-renames c582a8c 820c921 -- evidence/ -> D old / A new
+
+The old log therefore survived beside the new one, and the reviewer correctly
+described a broken tree. Reproduced end to end in a scratch worktree: two logs
+present, the old cleanup deletes nothing, `--no-renames` deletes exactly the
+old path, one log remains. The harness now passes `--no-renames`.
+
+The block's own comment said it existed so that "a BASE-only path lingers in
+the tree the reviewer reads" could not happen. It was written against
+deletions and never asked what rename detection does to them. Same regime
+error as step 9 last round: the guard was correct for the inputs it imagined.
+
+**Second fix, on the gate side.** A glob over the working directory was the
+wrong resolution strategy regardless of who left the stray file - any leftover
+copy of an old log could decide what the gate certifies. It now resolves
+candidates with `git ls-files`. The floor log is committed evidence; untracked
+debris beside it is not evidence and does not get a vote. This also matches
+`floor_digest.sh`, which refuses untracked files in scope, so the two scripts
+now answer "what counts" the same way.
+
+### 2 HIGH - an undocumented exit escaped through a bare assignment
+
+`actual="$("${HERE}/floor_digest.sh")"` under `set -euo pipefail` exits with
+the helper's own status, so `floor_digest.sh`'s 64 (untracked file in scope)
+left `check_floor_freshness.sh` with a code its header does not list and its
+caller cannot interpret. Guarded with `if ! actual=...` and re-reported as the
+documented 67. Controlled: with an untracked file in scope the script now
+exits 67 and says it could not compute a digest to compare against.
+
+### 3 HIGH - two refusals wearing one code, in the wrong order
+
+`floor_digest.sh` scanned for untracked files BEFORE validating its argument,
+and both refusals exited 64. So `floor_digest.sh --bogus` reported "untracked
+file(s) in scope" whenever the scope happened to be dirty. Usage is now
+checked first and exits 2. Controlled with the scope deliberately dirty:
+
+    --bogus, clean scope           -> 2
+    no args, untracked in scope    -> 64
+    --bogus, untracked in scope    -> 2   (was 64)
+
+### 4 MEDIUM - the "anchored" grep was not anchored
+
+Round 58 replaced an unanchored skip-summary match with `^=+ .* =+$` and a
+comment saying it no longer relied on the summary being last. It matches
+**three** lines in a real log - `test session starts`, `short test summary
+info`, and the result - so `tail -1` was still doing the work. Anchored on the
+outcome words instead; verified on this repo's own log, 3 matches -> 1.
+
+### 5 MEDIUM - a provenance field measured ten minutes before it is printed
+
+`UNCOMMITTED` was hoisted to t=0 by round 57 (correctly, out of an `echo`) but
+printed beside `finished`. The stated reason for the field is an autocommit bot
+sweeping concurrently - the one thing a reading from before a ~10-minute run
+cannot see. Moved next to `FINISHED`.
+
+### The remaining five
+
+- `${HERE}` vs `${ROOT}` - two resolution strategies for the single dependency
+  created last round to end duplication. Both are `${HERE}` now.
+- The digest test's fixture holds a handful of files while its docstring
+  reasons about 125, and paragraph mode collapses any count to 1 - so a future
+  fixture shrink to one file would hide the bug the test exists for. It now
+  asserts the fixture scope is greater than one.
+- `floor_digest.sh --files` printed 0 for an empty scope and the digest hashed
+  empty input to a confident-looking value. Refused (65).
+- `cli.py` had the `: OK` literal twice. One `_clean_check_line` helper.
+- `release_gate.sh` merged stderr into the captured stdout, so a warning from a
+  SUCCESSFUL freshness run would have been printed inside the PASS line as if
+  it were the log name. Streams separated.
+
+### What the three branch tests learned to assert
+
+They pinned the refusal PROSE, so changing "no floor log" to "no TRACKED floor
+log" reddened three tests that were still correct. They now pin the documented
+exit codes 65/66/67, which is the contract the gate actually reads; the wording
+is free to improve.

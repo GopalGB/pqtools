@@ -161,12 +161,18 @@ step "9. The PRD 6.2 floor evidence describes THIS tree"
 # left FAILED untouched, so a renamed or dated-out log shipped as GATE PASSED
 # with the check never run. An absent artifact is now a failure, which is the
 # whole reason this step exists.
-if FRESHNESS=$(scripts/check_floor_freshness.sh 2>&1); then
+# Streams kept apart. With `2>&1`, any stderr a SUCCESSFUL run might emit
+# (a future warning, a git notice) would be captured into $FRESHNESS and
+# printed inside the PASS line as though it were the resolved log name.
+FRESHNESS_ERR=$(mktemp)
+if FRESHNESS=$(scripts/check_floor_freshness.sh 2>"$FRESHNESS_ERR"); then
   check 0 "floor log is current ($FRESHNESS)"
+  [ -s "$FRESHNESS_ERR" ] && sed 's/^/    warning: /' "$FRESHNESS_ERR"
 else
   check 1 "floor log is current"
-  printf '%s\n' "$FRESHNESS" | sed 's/^/    /'
+  sed 's/^/    /' "$FRESHNESS_ERR"
 fi
+rm -f "$FRESHNESS_ERR"
 
 printf '\n'
 if [ "$FAILED" -eq 0 ]; then printf 'GATE PASSED\n'; else printf 'GATE FAILED\n'; fi

@@ -18,22 +18,22 @@
 #   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
 #   skips: 37 SKIPPED lines accounting for 41, summary says 41
 #
-#   tree digest             : f7e9d5bffd34dd878e420a269c65ce9953878580ddea8058d98fc091f668030d
+#   tree digest             : 40876b6d18d4f86b590208c9ebe953be19585840620b21c991260daf0c01f2f4
 #     scripts/floor_digest.sh - the single definition, read by this
 #     script and by release_gate.sh step 9 so the gate cannot certify
 #     a different scope than this header names.
 #     over 125 TRACKED files. Untracked files are refused rather
 #     than hashed: including them produced a digest no clone, CI run or
 #     review worktree could reproduce. Re-measured after the run:
-#     f7e9d5bffd34dd878e420a269c65ce9953878580ddea8058d98fc091f668030d
+#     40876b6d18d4f86b590208c9ebe953be19585840620b21c991260daf0c01f2f4
 #
-#   git tree sha            : ae819360f795a24e08e5db03a28cd763e5a7a3c1
-#   pushed tip              : c582a8c
-#   uncommitted             : 8 file(s)
-#   started                 : 2026-09-10T01:50:58Z
-#   finished                : 2026-09-10T02:01:14Z
-#   collected (floor)       : 4185 tests collected in 1.06s
-#   collected (dev)         : 4185 tests collected in 1.63s
+#   git tree sha            : 0781af50ee0eac16c4aa575c28e1766f47e85d3b
+#   pushed tip              : 820c921
+#   uncommitted             : 0 file(s)
+#   started                 : 2026-09-10T02:54:03Z
+#   finished                : 2026-09-10T03:05:42Z
+#   collected (floor)       : 4185 tests collected in 1.15s
+#   collected (dev)         : 4185 tests collected in 1.73s
 #
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
@@ -198,5 +198,5 @@ SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module na
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4144 passed, 41 skipped in 616.09s (0:10:16) =================
+================= 4144 passed, 41 skipped in 698.48s (0:11:38) =================
 FLOOR EXIT: 0

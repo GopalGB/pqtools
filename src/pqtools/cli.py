@@ -715,6 +715,18 @@ def _run_list(files: list[Path], args: argparse.Namespace) -> int:
     return worst
 
 
+def _clean_check_line(path: object) -> str:
+    """What `pq check` prints for a file with no diagnostics.
+
+    One definition, because there are two callers - the single-file path and
+    the batch path - and they have to agree. They were the same literal typed
+    twice, which is how they drift: relativising paths in one, or adding a
+    count, would silently make `pq check a.pq` and `pq check a.pq b.pq`
+    describe the same clean file differently.
+    """
+    return f"{path}: OK"
+
+
 def _check_diagnostics(path: Path) -> list[Diagnostic]:
     if _is_container(path):
         sections = containers.read_sections(path)
@@ -791,7 +803,7 @@ def _run_check_batch(files: list[Path], args: argparse.Namespace) -> int:
             for line in render_diagnostics(diagnostics, explained):
                 print(line)
         else:
-            print(f"{path}: OK")
+            print(_clean_check_line(path))
     if args.json:
         _print(json_diagnostics, True)
     return worst
@@ -1619,7 +1631,7 @@ def main(argv: list[str] | None = None) -> int:
                 # a clean file has to SAY it is clean. Printing nothing made
                 # the commonest invocation there is - one file, no problems -
                 # byte-identical to a linter that never ran.
-                print(f"{args.file}: OK")
+                print(_clean_check_line(args.file))
             return 2 if any(item.severity == "error" for item in diagnostics) else 0
         if args.command == "dependencies":
             _print(dependencies(_source(args.file)), True)

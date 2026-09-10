@@ -32,6 +32,12 @@ readonly FLOOR_PYTHON="${1:?usage: floor_venv_run.sh <floor-venv-python> <output
 readonly OUT="${2:?usage: floor_venv_run.sh <floor-venv-python> <output-log> [dev-python]}"
 ROOT="$(git rev-parse --show-toplevel)"
 readonly ROOT
+# Script-relative, matching check_floor_freshness.sh. Two resolution
+# strategies for the one dependency created to END duplication is how the
+# duplication comes back: they diverge the moment `scripts/` is symlinked or
+# relocated, and then the producer and the gate hash different scopes again.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly HERE
 cd "${ROOT}"
 readonly DEV_PYTHON="${3:-${ROOT}/.venv/bin/python}"
 
@@ -70,21 +76,14 @@ readonly PYCACHE_LEFT
 # copies diverge. The gate must certify the same set of files this header
 # names, so there is one definition and both read it.
 digest() {
-    "${ROOT}/scripts/floor_digest.sh"
+    "${HERE}/floor_digest.sh"
 }
 DIGEST_BEFORE="$(digest)"; readonly DIGEST_BEFORE
-DIGEST_FILES="$("${ROOT}/scripts/floor_digest.sh" --files)"
+DIGEST_FILES="$("${HERE}/floor_digest.sh" --files)"
 readonly DIGEST_FILES
 TREE_SHA="$(git rev-parse 'HEAD^{tree}')"; readonly TREE_SHA
 UPSTREAM="$(git rev-parse --short '@{upstream}' 2>/dev/null || echo '(no upstream)')"
 readonly UPSTREAM
-# Hoisted for the same reason as the two above, which round 57 hoisted and
-# this one it missed: a substitution inlined into `echo` cannot fail the
-# script, so a failing `git status` would have written a blank provenance
-# field while the run reported success - in a repo an autocommit bot sweeps
-# concurrently, which is precisely when this field matters.
-UNCOMMITTED="$(git status --porcelain | wc -l | tr -d ' ')"
-readonly UNCOMMITTED
 
 readonly ARGS=(-p no:cacheprovider "--rootdir=${ROOT}" -rs)
 FLOOR_COLLECT="$("${FLOOR_PYTHON}" -m pytest --collect-only -q "--rootdir=${ROOT}" 2>/dev/null | tail -1)"
@@ -101,6 +100,14 @@ CODE=$?
 set -e
 readonly CODE
 FINISHED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; readonly FINISHED
+# Measured HERE, next to `finished`, because that is where it is PRINTED.
+# Round 57 hoisted this out of an `echo` (a substitution inlined there cannot
+# fail under `set -e`) but hoisted it to t=0, so the header reported the dirt
+# from before a ~10-minute run. The stated reason for the field is an
+# autocommit bot sweeping concurrently - which is exactly the thing a t=0
+# reading cannot see.
+UNCOMMITTED="$(git status --porcelain | wc -l | tr -d ' ')"
+readonly UNCOMMITTED
 DIGEST_AFTER="$(digest)"; readonly DIGEST_AFTER
 
 # Did `-rs` actually apply? The block alone proves nothing (it also prints for
@@ -113,10 +120,13 @@ skips_reported="$(grep -cE '^SKIPPED ' "${body}" || true)"
 # account for every skip" on a run where -rs worked perfectly.
 skips_accounted="$(sed -nE 's/^SKIPPED \[([0-9]+)\].*/\1/p' "${body}" \
     | awk '{ s += $1 } END { print s + 0 }')"
-# Anchored to pytest's own summary rule, not to any line that happens to
-# contain "<n> skipped": a captured stdout or a skip reason can carry that
-# text, and this only ever worked because the summary happened to be last.
-skips_total="$(grep -E '^=+ .* =+$' "${body}" \
+# Anchored on the OUTCOME words, not merely on pytest's `=...=` banner shape.
+# Round 59 measured the first attempt: `^=+ .* =+$` matches three lines in a
+# real log - `test session starts`, `short test summary info`, and the actual
+# result - so it still leaned on `tail -1` to pick the right one, which is the
+# reliance the comment claimed to have removed. Only the result line carries
+# passed/failed/error. Verified on this repo's own log: 3 matches -> 1.
+skips_total="$(grep -E '^=+ .*(passed|failed|error).* =+$' "${body}" \
     | sed -nE 's/.*[^0-9]([0-9]+) skipped.*/\1/p' | tail -1)"
 : "${skips_accounted:=0}" "${skips_total:=0}"
 # A floor run MUST skip: the extras-dependent tests are exactly what the absent

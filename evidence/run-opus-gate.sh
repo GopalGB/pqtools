@@ -74,7 +74,16 @@ git checkout-index -a -f
 # directory ("is a directory", exit 0 under the -f) so a deleted submodule or
 # directory would survive. Either way a BASE-only path lingers in the tree the
 # reviewer reads, which is the staleness this block exists to prevent.
-git diff -z --name-only --diff-filter=D "$BASE" "$HEAD" \
+# --no-renames, because rename detection EXEMPTS the very paths this block
+# exists to remove. Round 59: `evidence/floor-venv-suite-2026-09-09.log` was
+# renamed to `...-2026-09-10.log`; git scored it R092, `--diff-filter=D`
+# reported ZERO files, nothing was deleted, and the BASE-era log lingered on
+# disk beside the HEAD one. The reviewer then correctly reported a tree with
+# two floor logs - a real broken state, produced by this harness rather than
+# by the commit under review, and filed against the repo as a CRITICAL.
+# Verified: `--diff-filter=D` -> 0 paths; `--no-renames --diff-filter=D` -> the
+# old path. A rename is a delete plus an add, and only the delete matters here.
+git diff -z --name-only --no-renames --diff-filter=D "$BASE" "$HEAD" \
   | while IFS= read -r -d '' gone; do
       [ -n "$gone" ] && rm -rf -- "$gone"
     done
