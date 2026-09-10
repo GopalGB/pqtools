@@ -2906,3 +2906,208 @@ def test_every_documented_pq_command_uses_options_that_exist() -> None:
     # The scan must actually be finding commands; a broken extractor would
     # satisfy the assertion above by checking nothing at all.
     assert checked >= 50, checked
+
+
+# --------------------------------------------------------------------------
+# release_gate.sh step 9 - floor-log freshness
+# --------------------------------------------------------------------------
+
+
+def _freshness_repo(path: Path) -> Path:
+    """A miniature repo the real freshness scripts can run inside.
+
+    Both scripts resolve their own root with `git rev-parse --show-toplevel`
+    and read the digest scope from `floor_digest.sh`, so the fixture has to
+    supply that scope for real rather than stand in for it. The scripts under
+    test are COPIED in, not reimplemented - the round-17 MEDIUM was a control
+    that grepped the script instead of running it.
+    """
+    _repo(path)
+    real = Path(__file__).resolve().parent.parent / "scripts"
+    (path / "src").mkdir()
+    (path / "tests").mkdir()
+    (path / "evidence").mkdir()
+    (path / "scripts").mkdir()
+    (path / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (path / "tests" / "test_a.py").write_text("def test_a(): pass\n", encoding="utf-8")
+    (path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (path / "scripts" / "floor_venv_run.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    for name in ("floor_digest.sh", "check_floor_freshness.sh"):
+        target = path / "scripts" / name
+        target.write_text((real / name).read_text(encoding="utf-8"), encoding="utf-8")
+        target.chmod(0o755)
+    _git(["add", "-A"], path)
+    _git(["commit", "-qm", "fixture"], path)
+    return path
+
+
+def _freshness(repo: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "check_floor_freshness.sh")],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_git_env(),
+    )
+
+
+def _write_log(repo: Path, name: str, digest: str) -> Path:
+    log = repo / "evidence" / name
+    log.write_text(f"#   tree digest             : {digest}\n", encoding="utf-8")
+    return log
+
+
+def _fixture_digest(repo: Path) -> str:
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "floor_digest.sh")],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=_git_env(),
+    ).stdout.strip()
+
+
+def test_the_freshness_check_fails_when_there_is_no_floor_log(tmp_path: Path) -> None:
+    """The round-58 HIGH, and the reason this logic is its own script.
+
+    Step 9 used to resolve one HARDCODED dated filename and, when that file
+    was absent, print `SKIP  no floor log present` without touching the
+    gate's failure counter - so a renamed, deleted, or simply dated-out log
+    produced `GATE PASSED`, exit 0, with the evidence check never having run.
+    The name carries the date the floor was produced, so the next floor run
+    on any other day would have made that silent pass permanent.
+
+    An absent artifact is the case this step exists for. It must fail.
+    """
+    repo = _freshness_repo(tmp_path / "repo")
+    result = _freshness(repo)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "no floor log matching" in result.stderr, result.stderr
+
+
+def test_the_freshness_check_refuses_when_two_floor_logs_are_present(
+    tmp_path: Path,
+) -> None:
+    """Resolving by glob replaced a hardcoded name, which introduces the
+    opposite failure: two logs and no way to know which one the gate is
+    certifying. Picking either silently would let a stale log be shadowed by
+    a fresh one, or the reverse."""
+    repo = _freshness_repo(tmp_path / "repo")
+    digest = _fixture_digest(repo)
+    _write_log(repo, "floor-venv-suite-2026-01-01.log", digest)
+    _write_log(repo, "floor-venv-suite-2026-02-02.log", digest)
+    result = _freshness(repo)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "more than one floor log" in result.stderr, result.stderr
+
+
+def test_the_freshness_check_fails_on_a_stale_digest(tmp_path: Path) -> None:
+    """The case step 9 was written for: the log describes a tree that is no
+    longer the tree on disk."""
+    repo = _freshness_repo(tmp_path / "repo")
+    _write_log(repo, "floor-venv-suite-2026-01-01.log", "0" * 64)
+    result = _freshness(repo)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "is stale" in result.stderr, result.stderr
+
+
+def test_the_freshness_check_passes_on_a_current_log(tmp_path: Path) -> None:
+    """The positive control for the three refusals above.
+
+    Without it, a script that failed unconditionally would satisfy every
+    other test in this group.
+    """
+    repo = _freshness_repo(tmp_path / "repo")
+    log = _write_log(repo, "floor-venv-suite-2026-01-01.log", _fixture_digest(repo))
+    result = _freshness(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert log.name in result.stdout, result.stdout
+
+
+def test_the_digest_refuses_an_untracked_file_in_its_own_scope(
+    tmp_path: Path,
+) -> None:
+    """Untracked files used to be hashed IN (`git ls-files -co`), which made
+    the digest depend on the developer's private working files: a value no
+    clone, CI run, or review worktree could reproduce, and one that step 9's
+    printed remedy - re-run the floor - cannot fix, because the untracked
+    file is still there afterwards."""
+    repo = _freshness_repo(tmp_path / "repo")
+    (repo / "src" / "private_scratch.py").write_text("y = 2\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "floor_digest.sh")],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_git_env(),
+    )
+    assert result.returncode != 0, result.stdout
+    assert "untracked file(s) in scope" in result.stderr, result.stderr
+    assert "private_scratch.py" in result.stderr, result.stderr
+
+
+def test_the_digest_file_count_agrees_with_what_the_digest_hashed(
+    tmp_path: Path,
+) -> None:
+    """`--files` is a claim printed beside the digest, so it needs its own
+    control.
+
+    The obvious NUL-aware count, `awk 'BEGIN { RS = "\\0" }'`, is wrong on
+    macOS: awk reads "\\0" as the empty string and switches to paragraph
+    mode, so the whole NUL-separated list becomes ONE record. It reported
+    `1` for a 125-file scope while the digest printed on the line above was
+    computed over all 125.
+    """
+    repo = _freshness_repo(tmp_path / "repo")
+    reported = subprocess.run(
+        ["bash", str(repo / "scripts" / "floor_digest.sh"), "--files"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=_git_env(),
+    ).stdout.strip()
+    tracked = _git(
+        [
+            "ls-files",
+            "--",
+            "src",
+            "tests",
+            "pyproject.toml",
+            "scripts/floor_venv_run.sh",
+            "scripts/floor_digest.sh",
+        ],
+        repo,
+    )
+    assert int(reported) == len(tracked.strip().splitlines()), reported
+
+
+def test_every_branch_of_the_gates_floor_step_reaches_the_failure_counter(
+    tmp_path: Path,
+) -> None:
+    """The specific shape of the round-58 HIGH, pinned.
+
+    This one is structural rather than behavioural, and deliberately so: the
+    branch it guards lives inside `release_gate.sh`, which runs the whole
+    suite before it gets there, so exercising it costs ~12 minutes. What
+    made the defect possible was not the freshness logic - that is now its
+    own script, tested above - but a branch in the gate that printed a
+    message and returned without touching `FAILED`. So this asserts the
+    property that was violated: the floor step has no arm that only prints.
+    """
+    gate = Path(__file__).resolve().parent.parent / "scripts" / "release_gate.sh"
+    text = gate.read_text(encoding="utf-8")
+    assert "check_floor_freshness.sh" in text, "step 9 no longer calls the script"
+    # Anchored to the INVOCATION, not to the first mention of the name: the
+    # comment above the step names the script and quotes "GATE PASSED", so
+    # the obvious `text.index(name)` sliced the comment and asserted against
+    # prose. Caught by this test failing on its own first run.
+    start = text.index("if FRESHNESS=")
+    step = text[start : text.index("GATE PASSED", start)]
+    assert "check 0 " in step and "check 1 " in step, step
+    # The exact wording the defect wore. If a SKIP arm is ever reintroduced
+    # for a missing artifact, it fails here.
+    assert "SKIP" not in step, step

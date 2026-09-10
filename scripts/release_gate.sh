@@ -155,20 +155,17 @@ step "9. The PRD 6.2 floor evidence describes THIS tree"
 # by a run that the assertion itself would fail. The gate is where "is this
 # evidence current" belongs anyway - a stale artifact should block shipping,
 # not block editing.
-FLOOR_LOG=evidence/floor-venv-suite-2026-09-09.log
-if [ -f "$FLOOR_LOG" ]; then
-  recorded=$(sed -n 's/^#   tree digest *: *//p' "$FLOOR_LOG" | head -1)
-  actual=$(git ls-files -zco --exclude-standard src tests scripts pyproject.toml \
-    | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
-  if [ -n "$recorded" ] && [ "$recorded" = "$actual" ]; then
-    check 0 "floor log's digest matches the working tree"
-  else
-    check 1 "floor log's digest matches the working tree"
-    printf '    recorded: %s\n    actual  : %s\n' "${recorded:-<none found>}" "$actual"
-    printf '    regenerate: scripts/floor_venv_run.sh <floor-venv-python> %s\n' "$FLOOR_LOG"
-  fi
+# Both the log-resolving and the comparing live in check_floor_freshness.sh,
+# which exits non-zero for EVERY way this can go wrong - including "there is
+# no log at all". The branch that used to handle that case printed SKIP and
+# left FAILED untouched, so a renamed or dated-out log shipped as GATE PASSED
+# with the check never run. An absent artifact is now a failure, which is the
+# whole reason this step exists.
+if FRESHNESS=$(scripts/check_floor_freshness.sh 2>&1); then
+  check 0 "floor log is current ($FRESHNESS)"
 else
-  printf '  SKIP  no floor log present - THIS CHECK DID NOT RUN\n'
+  check 1 "floor log is current"
+  printf '%s\n' "$FRESHNESS" | sed 's/^/    /'
 fi
 
 printf '\n'

@@ -449,3 +449,50 @@ def test_eval_set_param_never_uses_python_eval(tmp_path: Path, capsys) -> None:
     path = _write(tmp_path / "q.pq", "1")
     assert main(["eval", str(path), "--set-param", "X=__import__('os').getcwd()"]) == 2
     assert "not a valid M value" in capsys.readouterr().err
+
+
+def test_check_reports_a_clean_single_file_the_way_a_clean_batch_does(
+    tmp_path: Path, capsys
+) -> None:
+    """One file and two files must agree on what "clean" looks like.
+
+    `_run_check_batch` prints `path: OK` for a clean file deliberately -
+    its docstring gives the reason: `pq check 'src/**/*.pq' | grep error`
+    and the ABSENCE of a hit both have to mean what they look like they
+    mean. The single-file path printed nothing at all, so the most common
+    invocation there is - one file, no problems - was byte-identical to a
+    no-op: same empty stdout, same exit 0, whether the linter had run or
+    had silently done nothing.
+    """
+    one = _write(tmp_path / "one.pq", "let A = 1 + 1 in A")
+    two = _write(tmp_path / "two.pq", "let A = 1 + 1 in A")
+
+    assert main(["check", str(one)]) == 0
+    single = capsys.readouterr().out
+    assert main(["check", str(one), str(two)]) == 0
+    batch = capsys.readouterr().out
+
+    # Anchored to the batch contract, not to a literal typed twice: if the
+    # batch ever stops saying "OK" this test fails here rather than
+    # quietly asserting nothing about the single-file path below.
+    assert f"{one}: OK" in batch, batch
+    assert single.strip() == f"{one}: OK", single
+
+
+def test_check_json_stays_an_empty_list_for_a_clean_file(
+    tmp_path: Path, capsys
+) -> None:
+    """The OK line is for humans and must not leak into --json.
+
+    Both check paths already emit `[]` for a clean file, which is
+    unambiguous on its own. This pins that the fix above did not reach
+    the machine-readable surface, where a stray "OK" would break every
+    caller that does `json.loads`.
+    """
+    one = _write(tmp_path / "one.pq", "let A = 1 + 1 in A")
+    two = _write(tmp_path / "two.pq", "let A = 1 + 1 in A")
+
+    assert main(["check", "--json", str(one)]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert main(["check", "--json", str(one), str(two)]) == 0
+    assert json.loads(capsys.readouterr().out) == []

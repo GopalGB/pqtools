@@ -5461,3 +5461,122 @@ belongs anyway: a stale artifact should block shipping, not block editing.
 |---|---|---|---|
 | TT1 | the log as it stood, after this round's script rewrite moved the tree | `recorded: 58191443…` / `actual: 8cded8f0…` | FAIL, with the regeneration command printed |
 | TT2 | digest line set to the live tree | - | PASS |
+
+## Round 58 - `afc9a92..c582a8c`, verdict FIX-FIRST, all ten taken
+
+Ten findings, every one reproduced against the baseline before it was touched,
+none rejected. All ten are in the evidence scripts; `src/` is untouched for the
+twenty-second consecutive round.
+
+The two HIGHs are the same defect seen from opposite sides: step 9, added last
+round to prove the floor evidence is current, could neither fail when it should
+nor pass when it should.
+
+### 1 HIGH - the freshness check passed when the artifact was missing
+
+The branch handling "no floor log" printed `SKIP  no floor log present - THIS
+CHECK DID NOT RUN` and never called `check`, so `FAILED` stayed 0 and the gate
+printed `GATE PASSED`, exit 0. The log's filename carries the date it was
+produced and the gate hardcoded one such name, so **the next floor run on any
+other day would have made that silent pass permanent** - which is exactly what
+happened this round, when the regenerated log became `...-2026-09-10.log`.
+
+This is the identical failure `release_gate.sh` already memorialises 130 lines
+above its own step 9: *"a rename or a missing file sent the error to stderr and
+the gate ran on to GATE PASSED"*. I wrote the comment and then wrote the bug
+underneath it. The regime error again: I checked that the digest comparison was
+correct and never asked which inputs reach it.
+
+The logic now lives in `scripts/check_floor_freshness.sh`, which exits non-zero
+for **every** way this can go wrong - missing (65), ambiguous (66), stale or
+unreadable (67) - and resolves the log by glob rather than by a hardcoded date.
+Extracting it is also what makes the branch reachable from a test instead of
+only from a 12-minute gate run.
+
+### 2 HIGH - the evidence invalidated itself
+
+The digest scope was `src tests scripts pyproject.toml`, so editing
+`release_gate.sh` - or any unrelated helper in `scripts/` - changed the digest
+and reddened step 9 until a ~12-minute floor re-run. The stated rationale
+("this script is one of the things the artifact claims produced it") only ever
+required the *producer*. Scope is now `src tests pyproject.toml
+scripts/floor_venv_run.sh scripts/floor_digest.sh`; the gate consumes this
+evidence and is deliberately not in it.
+
+### 3 MEDIUM - the header justified itself with a false premise
+
+`-co` hashed untracked files, and the header explained why: *"tracked AND
+untracked (pytest collects an untracked test; git ls-files alone cannot see
+one)"*. Measured: `git ls-files -o --exclude-standard` over that scope returns
+**nothing**, and did at the commit where the sentence was written. Worse, an
+untracked file makes the digest unreproducible by any clone, CI run, or review
+worktree - and step 9's printed remedy, re-run the floor, cannot fix it,
+because the file is still there afterwards. Untracked files in scope are now a
+refusal (64), not an input.
+
+### 4 MEDIUM - the shared pipeline was two copies
+
+The digest command was written out in `floor_venv_run.sh` and again in
+`release_gate.sh`. The scope had just changed, which is precisely when two
+copies diverge, and the failure would have been the gate certifying a
+different set of files than the log's own printed command names, silently.
+One definition now: `scripts/floor_digest.sh`, read by both.
+
+### 5 MEDIUM - the third inlined substitution
+
+Round 57's own HIGH was `$(...)` inlined into `echo`. It hoisted `pushed tip`
+and `local HEAD` and left `uncommitted` - in a repo an autocommit bot sweeps
+concurrently, which is the one situation that field exists to report. Hoisted.
+
+### 6 MEDIUM - a missing tool produced a confident wrong diagnosis
+
+`paste -sd+ - | bc 2>/dev/null || echo 0`: `bc` is absent from slim images,
+and the fallback returns `0`, which fails the equality check and aborts with
+*"'-rs' did not account for every skip"* on a run where `-rs` worked perfectly.
+Now `awk '{ s += $1 } END { print s + 0 }'` - no suppression, no fallback.
+
+### CORRECTION - the reviewer's suggested fix was wrong, and I reproduced it first
+
+For the LOW that `DIGEST_FILES` used `wc -l` without `-z`, the review proposed
+`awk 'BEGIN { RS = "\0" } { n++ } END { print n + 0 }'`. I implemented it and
+printed the result beside the digest, as the standing rule requires. It said
+**`files : 1`** for a 125-file scope.
+
+macOS awk reads `"\0"` as the empty string and switches to **paragraph mode**,
+making the whole NUL-separated list one record. Minimal control:
+`printf 'a\0b\0c\0' | awk 'BEGIN { RS = "\0" } NF { n++ } END { print n+0 }'`
+prints **1**; `tr -dc '\0' | wc -c` prints **3**. The count is now the latter.
+
+This is the second consecutive round where reproducing the reviewer's proposed
+fix is what caught that the fix was wrong (round 57: SKIPPED *lines* are not
+skips). The rule earns its keep: **implement the suggestion, then measure the
+observable it was supposed to change.** Had I taken it on trust, the header
+would have printed a file count contradicting the digest printed beside it -
+the exact class of defect this script exists to end.
+
+### The remaining four
+
+- Refusal codes moved to the 64+ sysexits range. `exit "${CODE}"` returns
+  pytest's code, and pytest uses 3/4/5 for internal error / usage error / no
+  tests collected - indistinguishable from the script's own 3/4/5.
+- `skips_total` was extracted by an unanchored `sed` that would match any line
+  containing "*n* skipped"; it worked only because pytest's summary happens to
+  be last. Now the summary line is selected first.
+- `CLAUDE.md` said the gate has 8 steps; it has 9.
+- Step 9 had no test. Six now cover the extracted script's four branches plus
+  the digest's untracked refusal and its file count, and a seventh pins the
+  property the HIGH violated: the gate's floor step has no arm that only
+  prints. Positive-controlled by reintroducing the `SKIP` arm and watching it
+  redden, then reverting.
+
+### The one product finding this round, found by using the tool
+
+Not from the review. Running `pq check` on a single clean file printed **zero
+bytes** and exited 0, while `pq check` on two clean files printed `path: OK`
+for each - the batch path does it deliberately, and its docstring gives the
+reason: *"at least one line per file, including a clean one"*. So the commonest
+invocation there is - one file, no problems - was byte-identical to a linter
+that had never run. Fixed in `cli.py`; the single-file path now matches the
+batch contract, and a test pins the two paths together rather than pinning the
+literal twice. `--json` still emits `[]` on both, pinned separately so the
+human line cannot leak into the machine-readable surface.

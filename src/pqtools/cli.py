@@ -1611,9 +1611,15 @@ def main(argv: list[str] | None = None) -> int:
             diagnostics = check(_source(args.file), str(args.file))
             if args.json:
                 _print([item.as_dict() for item in diagnostics], True)
-            else:
+            elif diagnostics:
                 for line in render_diagnostics(diagnostics):
                     print(line)
+            else:
+                # Same contract as `_run_check_batch`, for the same reason:
+                # a clean file has to SAY it is clean. Printing nothing made
+                # the commonest invocation there is - one file, no problems -
+                # byte-identical to a linter that never ran.
+                print(f"{args.file}: OK")
             return 2 if any(item.severity == "error" for item in diagnostics) else 0
         if args.command == "dependencies":
             _print(dependencies(_source(args.file)), True)

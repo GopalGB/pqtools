@@ -4,7 +4,7 @@ Run, lint and format Power Query M without Power BI. Python package, MIT,
 remote `GopalGB/pqtools`. This folder IS the git repo.
 
     .venv/bin/python -m pytest -q          # ~10 min, 3746 tests
-    bash scripts/release_gate.sh           # 8 steps, the thing that says "ship"
+    bash scripts/release_gate.sh           # 9 steps, the thing that says "ship"
 
 ## What this package will not do
 

@@ -55,7 +55,7 @@ PYPROBE
 if [[ -n "${present}" ]]; then
     echo "refusing: not a floor venv -- these extras are importable in" >&2
     echo "${FLOOR_PYTHON}: ${present}" >&2
-    exit 3
+    exit 68
 fi
 readonly extras="pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)"
 
@@ -64,20 +64,27 @@ find src tests -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 PYCACHE_LEFT="$(find src tests -name __pycache__ -type d | wc -l | tr -d ' ')"
 readonly PYCACHE_LEFT
 
-# -z/-0 throughout: `-co` pulls in untracked paths, and a path with a space
-# would otherwise be split into two filenames and hashed as neither.
-# `scripts` is in scope because this script is one of the things the artifact
-# claims produced it.
+# The scope and the hashing both live in floor_digest.sh now. They used to be
+# written out here AND again in release_gate.sh step 9; round 58 caught the
+# duplication one round after the scope changed, which is exactly when two
+# copies diverge. The gate must certify the same set of files this header
+# names, so there is one definition and both read it.
 digest() {
-    git ls-files -zco --exclude-standard src tests scripts pyproject.toml \
-        | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1
+    "${ROOT}/scripts/floor_digest.sh"
 }
 DIGEST_BEFORE="$(digest)"; readonly DIGEST_BEFORE
-DIGEST_FILES="$(git ls-files -co --exclude-standard src tests scripts pyproject.toml | wc -l | tr -d ' ')"
+DIGEST_FILES="$("${ROOT}/scripts/floor_digest.sh" --files)"
 readonly DIGEST_FILES
 TREE_SHA="$(git rev-parse 'HEAD^{tree}')"; readonly TREE_SHA
 UPSTREAM="$(git rev-parse --short '@{upstream}' 2>/dev/null || echo '(no upstream)')"
 readonly UPSTREAM
+# Hoisted for the same reason as the two above, which round 57 hoisted and
+# this one it missed: a substitution inlined into `echo` cannot fail the
+# script, so a failing `git status` would have written a blank provenance
+# field while the run reported success - in a repo an autocommit bot sweeps
+# concurrently, which is precisely when this field matters.
+UNCOMMITTED="$(git status --porcelain | wc -l | tr -d ' ')"
+readonly UNCOMMITTED
 
 readonly ARGS=(-p no:cacheprovider "--rootdir=${ROOT}" -rs)
 FLOOR_COLLECT="$("${FLOOR_PYTHON}" -m pytest --collect-only -q "--rootdir=${ROOT}" 2>/dev/null | tail -1)"
@@ -100,8 +107,17 @@ DIGEST_AFTER="$(digest)"; readonly DIGEST_AFTER
 # failures under the default -r fE), so compare the skips it accounts for
 # against the skips the summary counts.
 skips_reported="$(grep -cE '^SKIPPED ' "${body}" || true)"
-skips_accounted="$(sed -nE 's/^SKIPPED \[([0-9]+)\].*/\1/p' "${body}" | paste -sd+ - | bc 2>/dev/null || echo 0)"
-skips_total="$(sed -nE 's/.*[^0-9]([0-9]+) skipped.*/\1/p' "${body}" | tail -1)"
+# awk, not `paste | bc`: bc is absent from slim images, and the old
+# `2>/dev/null || echo 0` turned that absence into the number 0, which fails
+# the equality below and aborts with the WRONG diagnosis - "'-rs' did not
+# account for every skip" on a run where -rs worked perfectly.
+skips_accounted="$(sed -nE 's/^SKIPPED \[([0-9]+)\].*/\1/p' "${body}" \
+    | awk '{ s += $1 } END { print s + 0 }')"
+# Anchored to pytest's own summary rule, not to any line that happens to
+# contain "<n> skipped": a captured stdout or a skip reason can carry that
+# text, and this only ever worked because the summary happened to be last.
+skips_total="$(grep -E '^=+ .* =+$' "${body}" \
+    | sed -nE 's/.*[^0-9]([0-9]+) skipped.*/\1/p' | tail -1)"
 : "${skips_accounted:=0}" "${skips_total:=0}"
 # A floor run MUST skip: the extras-dependent tests are exactly what the absent
 # extras make unrunnable. Without this, a run with zero skips satisfies the
@@ -112,20 +128,20 @@ if [[ "${skips_total}" -eq 0 ]]; then
     echo "refusing to write: a floor run with ZERO skips is not a floor run -" >&2
     echo "the extras-dependent tests should be skipping. Nothing here could" >&2
     echo "show whether '-rs' applied." >&2
-    exit 6
+    exit 65
 fi
 if [[ "${skips_accounted}" != "${skips_total}" ]]; then
     echo "refusing to write: '-rs' did not account for every skip, so the" >&2
     echo "recorded argv would not describe the run that happened." >&2
     echo "  SKIPPED lines: ${skips_reported}  accounting for: ${skips_accounted}" >&2
     echo "  summary says skipped: ${skips_total}" >&2
-    exit 4
+    exit 66
 fi
 [[ "${DIGEST_BEFORE}" == "${DIGEST_AFTER}" ]] || {
     echo "refusing to write: the tree changed under the run" >&2
     echo "  before: ${DIGEST_BEFORE}" >&2
     echo "  after : ${DIGEST_AFTER}" >&2
-    exit 5
+    exit 67
 }
 
 {
@@ -147,15 +163,17 @@ fi
     echo "#   skips: ${skips_reported} SKIPPED lines accounting for ${skips_accounted}, summary says ${skips_total}"
     echo "#"
     echo "#   tree digest             : ${DIGEST_BEFORE}"
-    echo "#     git ls-files -zco --exclude-standard src tests scripts pyproject.toml \\"
-    echo "#       | sort -z | xargs -0 shasum -a 256 | shasum -a 256"
-    echo "#     over ${DIGEST_FILES} files, tracked AND untracked (pytest collects an untracked"
-    echo "#     test; git ls-files alone cannot see one). Re-measured after the run:"
+    echo "#     scripts/floor_digest.sh - the single definition, read by this"
+    echo "#     script and by release_gate.sh step 9 so the gate cannot certify"
+    echo "#     a different scope than this header names."
+    echo "#     over ${DIGEST_FILES} TRACKED files. Untracked files are refused rather"
+    echo "#     than hashed: including them produced a digest no clone, CI run or"
+    echo "#     review worktree could reproduce. Re-measured after the run:"
     echo "#     ${DIGEST_AFTER}"
     echo "#"
     echo "#   git tree sha            : ${TREE_SHA}"
     echo "#   pushed tip              : ${UPSTREAM}"
-    echo "#   uncommitted             : $(git status --porcelain | wc -l | tr -d ' ') file(s)"
+    echo "#   uncommitted             : ${UNCOMMITTED} file(s)"
     echo "#   started                 : ${STARTED}"
     echo "#   finished                : ${FINISHED}"
     echo "#   collected (floor)       : ${FLOOR_COLLECT}"
@@ -166,4 +184,9 @@ fi
 } > "${OUT}"
 
 echo "wrote ${OUT} (pytest exit ${CODE}, ${skips_accounted} skips accounted, digest stable)"
+# pytest's own code, passed through. This is safe ONLY because every refusal
+# above uses the 64+ sysexits range: pytest exits 1-5 (5 = no tests collected,
+# 4 = usage error, 3 = internal error), so while the refusals sat at 3/4/5 a
+# caller could not tell "the tree moved under the run" from "pytest collected
+# nothing". Do not move a refusal back below 64.
 exit "${CODE}"

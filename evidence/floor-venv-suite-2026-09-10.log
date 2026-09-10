@@ -18,27 +18,29 @@
 #   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
 #   skips: 37 SKIPPED lines accounting for 41, summary says 41
 #
-#   tree digest             : 8cded8f0cddf7ed8a8261093734967896e8f5b7f22edb47a633877958c7c0df4
-#     git ls-files -zco --exclude-standard src tests scripts pyproject.toml \
-#       | sort -z | xargs -0 shasum -a 256 | shasum -a 256
-#     over 130 files, tracked AND untracked (pytest collects an untracked
-#     test; git ls-files alone cannot see one). Re-measured after the run:
-#     8cded8f0cddf7ed8a8261093734967896e8f5b7f22edb47a633877958c7c0df4
+#   tree digest             : f7e9d5bffd34dd878e420a269c65ce9953878580ddea8058d98fc091f668030d
+#     scripts/floor_digest.sh - the single definition, read by this
+#     script and by release_gate.sh step 9 so the gate cannot certify
+#     a different scope than this header names.
+#     over 125 TRACKED files. Untracked files are refused rather
+#     than hashed: including them produced a digest no clone, CI run or
+#     review worktree could reproduce. Re-measured after the run:
+#     f7e9d5bffd34dd878e420a269c65ce9953878580ddea8058d98fc091f668030d
 #
-#   git tree sha            : 05474285ad25abc612b0aaae3497fbff944a5452
-#   pushed tip              : afc9a92
-#   uncommitted             : 1 file(s)
-#   started                 : 2026-09-09T18:31:03Z
-#   finished                : 2026-09-09T18:43:23Z
-#   collected (floor)       : 4176 tests collected in 1.05s
-#   collected (dev)         : 4176 tests collected in 2.31s
+#   git tree sha            : ae819360f795a24e08e5db03a28cd763e5a7a3c1
+#   pushed tip              : c582a8c
+#   uncommitted             : 8 file(s)
+#   started                 : 2026-09-10T01:50:58Z
+#   finished                : 2026-09-10T02:01:14Z
+#   collected (floor)       : 4185 tests collected in 1.06s
+#   collected (dev)         : 4185 tests collected in 1.63s
 #
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/gopalmacbook/Desktop/Max HQ/pqtools
 configfile: pyproject.toml
 testpaths: tests
-collected 4176 items
+collected 4185 items
 
 tests/test_adapters.py ..............s.....                              [  0%]
 tests/test_binary_format.py ............................................ [  1%]
@@ -52,11 +54,11 @@ tests/test_builtins_scalar.py .......................................... [  6%]
 ....                                                                     [  8%]
 tests/test_builtins_shape.py ........................................... [  9%]
 .........................                                                [  9%]
-tests/test_builtins_type.py ............................................ [ 11%]
+tests/test_builtins_type.py ............................................ [ 10%]
 .                                                                        [ 11%]
 tests/test_catalog.py ............                                       [ 11%]
 tests/test_cli.py ...........s....                                       [ 11%]
-tests/test_cli_verbs.py ......................................           [ 12%]
+tests/test_cli_verbs.py ........................................         [ 12%]
 tests/test_comparers.py ................................................ [ 13%]
 .                                                                        [ 13%]
 tests/test_connector_arity_before_policy.py ......                       [ 13%]
@@ -101,9 +103,9 @@ tests/test_documented_signatures.py .................................... [ 46%]
 ........................................................................ [ 59%]
 ...............................................                          [ 61%]
 tests/test_end_to_end.py ..ssss........................s.s.............. [ 62%]
-.............................................                            [ 63%]
+....................................................                     [ 63%]
 tests/test_evaluate.py ................................................. [ 64%]
-....................                                                     [ 64%]
+....................                                                     [ 65%]
 tests/test_evidence_captures.py .....                                    [ 65%]
 tests/test_export.py .....ssssssssssssssssssssssss.....                  [ 65%]
 tests/test_from_text.py ................................................ [ 67%]
@@ -127,7 +129,7 @@ tests/test_odbc_options.py ..........                                    [ 76%]
 tests/test_operators.py ................................................ [ 77%]
 .....                                                                    [ 77%]
 tests/test_readme_builtins.py .....                                      [ 77%]
-tests/test_realworld.py ....                                             [ 77%]
+tests/test_realworld.py ....                                             [ 78%]
 tests/test_registry.py .........                                         [ 78%]
 tests/test_rules.py .                                                    [ 78%]
 tests/test_sort_criteria.py ............                                 [ 78%]
@@ -196,5 +198,5 @@ SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module na
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4135 passed, 41 skipped in 739.47s (0:12:19) =================
+================= 4144 passed, 41 skipped in 616.09s (0:10:16) =================
 FLOOR EXIT: 0
