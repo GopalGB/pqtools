@@ -144,6 +144,33 @@ $PY -m pytest tests/test_doc_examples.py -q >/tmp/pq-gate-docs.log 2>&1
 check $? "documented examples run and reproduce their output"
 tail -1 /tmp/pq-gate-docs.log
 
+step "9. The PRD 6.2 floor evidence describes THIS tree"
+# The floor log records a digest of the tree it ran on. If the tree has moved
+# since, the log certifies something that is no longer being shipped - which
+# is the defect rounds 52-57 kept finding by hand, in six different disguises.
+#
+# This lives in the GATE and not in the test suite on purpose. The suite runs
+# INSIDE the floor run, where the log on disk is still the previous one, so a
+# pytest assertion here could never go green: the log can only be regenerated
+# by a run that the assertion itself would fail. The gate is where "is this
+# evidence current" belongs anyway - a stale artifact should block shipping,
+# not block editing.
+FLOOR_LOG=evidence/floor-venv-suite-2026-09-09.log
+if [ -f "$FLOOR_LOG" ]; then
+  recorded=$(sed -n 's/^#   tree digest *: *//p' "$FLOOR_LOG" | head -1)
+  actual=$(git ls-files -zco --exclude-standard src tests scripts pyproject.toml \
+    | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
+  if [ -n "$recorded" ] && [ "$recorded" = "$actual" ]; then
+    check 0 "floor log's digest matches the working tree"
+  else
+    check 1 "floor log's digest matches the working tree"
+    printf '    recorded: %s\n    actual  : %s\n' "${recorded:-<none found>}" "$actual"
+    printf '    regenerate: scripts/floor_venv_run.sh <floor-venv-python> %s\n' "$FLOOR_LOG"
+  fi
+else
+  printf '  SKIP  no floor log present - THIS CHECK DID NOT RUN\n'
+fi
+
 printf '\n'
 if [ "$FAILED" -eq 0 ]; then printf 'GATE PASSED\n'; else printf 'GATE FAILED\n'; fi
 exit "$FAILED"

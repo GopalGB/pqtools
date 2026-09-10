@@ -1,29 +1,37 @@
 # PRD 6.2 - the suite with pandas, pyarrow, openpyxl and python-calamine ABSENT.
 #
-# Produced by scripts/floor_venv_run.sh, which is committed and is the only
-# thing that writes this file. Every line below is emitted by the same
-# invocation as the run; none of it is typed by hand. The script refuses to
-# write at all if '-rs' did not take effect or the tree moved under the run.
+# Produced by scripts/floor_venv_run.sh, which is committed, is in the
+# digest below, and is the only thing that writes this file. Every line
+# here is emitted by the same invocation as the run; none is typed by
+# hand. The script refuses to write when a claim would be unfalsifiable.
 #
-#   pytest argv        : -p no:cacheprovider --rootdir=/Users/gopalmacbook/Desktop/Max HQ/pqtools -rs
-#   __pycache__ dirs   : 0
+#   pytest argv, one %q-quoted word per line:
+#     -p
+#     no:cacheprovider
+#     --rootdir=/Users/gopalmacbook/Desktop/Max\ HQ/pqtools
+#     -rs
+#   (printed per word because joining an array with spaces reproduces
+#    the exact one-giant-argument string of the round-56 defect)
+#
+#   __pycache__ dirs        : 0
 #   PYTHONDONTWRITEBYTECODE : 1
-#   extras absent      : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
+#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
+#   skips: 37 SKIPPED lines accounting for 41, summary says 41
 #
-#   tree digest        : 58191443ed83c87ce4f41e7edb1d1eca5df12c196a218a5754fc268ef6dcf76b
-#     git ls-files -co --exclude-standard src tests pyproject.toml \
-#       | sort | xargs shasum -a 256 | shasum -a 256
-#     over 123 files, tracked AND untracked (pytest collects an
-#     untracked test; 'git ls-files' alone cannot see one). Re-measured
-#     after the run: 58191443ed83c87ce4f41e7edb1d1eca5df12c196a218a5754fc268ef6dcf76b
+#   tree digest             : 8cded8f0cddf7ed8a8261093734967896e8f5b7f22edb47a633877958c7c0df4
+#     git ls-files -zco --exclude-standard src tests scripts pyproject.toml \
+#       | sort -z | xargs -0 shasum -a 256 | shasum -a 256
+#     over 130 files, tracked AND untracked (pytest collects an untracked
+#     test; git ls-files alone cannot see one). Re-measured after the run:
+#     8cded8f0cddf7ed8a8261093734967896e8f5b7f22edb47a633877958c7c0df4
 #
-#   started            : 2026-09-09T18:01:23Z
-#   finished           : 2026-09-09T18:13:03Z
-#   collected (floor)  : 4176 tests collected in 1.06s
-#   collected (dev)    : 4176 tests collected in 1.77s
-#   pushed tip         : 6cb64f6 on origin/feat/connectors-and-real-m-0.9.0
-#   local HEAD at run  : 21ed1ca
-#   uncommitted        : 1 file(s)
+#   git tree sha            : 05474285ad25abc612b0aaae3497fbff944a5452
+#   pushed tip              : afc9a92
+#   uncommitted             : 1 file(s)
+#   started                 : 2026-09-09T18:31:03Z
+#   finished                : 2026-09-09T18:43:23Z
+#   collected (floor)       : 4176 tests collected in 1.05s
+#   collected (dev)         : 4176 tests collected in 2.31s
 #
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
@@ -188,5 +196,5 @@ SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module na
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4135 passed, 41 skipped in 699.47s (0:11:39) =================
+================= 4135 passed, 41 skipped in 739.47s (0:12:19) =================
 FLOOR EXIT: 0
