@@ -39,8 +39,17 @@ readonly SCOPE=(
     scripts/floor_digest.sh
 )
 
+# One flag means one flag. Only $1 used to be inspected, so a second word
+# was silently accepted: `floor_digest.sh --files junk` printed the 125-file
+# scope count and exited 0 (measured, round 60). Refused with 2, before the
+# untracked scan, so a typo in a dirty tree still reads as a typo.
 case "${1-}" in
-"" | --files) ;;
+"" | --files)
+    if (( $# > 1 )); then
+        echo "usage: floor_digest.sh [--files]" >&2
+        exit 2
+    fi
+    ;;
 *)
     echo "usage: floor_digest.sh [--files]" >&2
     exit 2

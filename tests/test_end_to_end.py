@@ -3038,6 +3038,62 @@ def test_the_freshness_check_passes_on_a_current_log(tmp_path: Path) -> None:
     assert log.name in result.stdout, result.stdout
 
 
+def test_the_freshness_check_ignores_an_untracked_stray_log(tmp_path: Path) -> None:
+    """The round-60 HIGH: the gate-side fix (glob -> `git ls-files`) had no
+    test that could fail on its revert.
+
+    `_write_log` tracks every log it writes, so all the freshness tests
+    above are green under EITHER resolution strategy - the defect being
+    guarded, an untracked stray log deciding what the gate certifies, is
+    never constructed. This one constructs it: a tracked current log beside
+    an untracked stale copy. The `git ls-files` resolution certifies the
+    tracked one and exits 0; the old filesystem glob saw two logs and
+    refused with 66.
+    """
+    repo = _freshness_repo(tmp_path / "repo")
+    digest = _fixture_digest(repo)
+    log = _write_log(repo, "floor-venv-suite-2026-01-01.log", digest)
+    stray = repo / "evidence" / "floor-venv-suite-2020-05-05.log"
+    stray.write_text("#   tree digest: " + "0" * 64 + "\n", encoding="utf-8")
+    ls = _git(["ls-files"], repo)
+    assert "floor-venv-suite-2020" not in ls, "stray must stay untracked"
+    result = _freshness(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert log.name in result.stdout, result.stdout
+
+
+def test_the_digest_refuses_a_second_word(tmp_path: Path) -> None:
+    """The round-60 LOW: only `$1` was inspected, so `floor_digest.sh
+    --files junk` printed the scope count and exited 0 - hashing while
+    claiming to count. Usage is refused with 2, before the untracked scan,
+    so a typo in a dirty tree still reads as a typo rather than as dirt.
+    """
+    repo = _freshness_repo(tmp_path / "repo")
+    for argv in (["--files", "junk"], ["--bogus", "junk"], ["junk"]):
+        result = subprocess.run(
+            ["bash", str(repo / "scripts" / "floor_digest.sh"), *argv],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_git_env(),
+        )
+        assert result.returncode == 2, (argv, result.stdout + result.stderr)
+        assert "usage" in result.stderr, (argv, result.stderr)
+    # And the usage refusal wins over the dirt refusal: --bogus in a dirty
+    # tree is still a typo (2), not an untracked-files report (64).
+    (repo / "src" / "private_scratch.py").write_text("y = 2\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "floor_digest.sh"), "--bogus"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_git_env(),
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+
+
 def test_the_digest_refuses_an_untracked_file_in_its_own_scope(
     tmp_path: Path,
 ) -> None:

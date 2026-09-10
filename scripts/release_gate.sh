@@ -164,7 +164,13 @@ step "9. The PRD 6.2 floor evidence describes THIS tree"
 # Streams kept apart. With `2>&1`, any stderr a SUCCESSFUL run might emit
 # (a future warning, a git notice) would be captured into $FRESHNESS and
 # printed inside the PASS line as though it were the resolved log name.
-FRESHNESS_ERR=$(mktemp)
+# And the mktemp is load-bearing: round 60 measured the failure mode - on a
+# failed mktemp the redirect target is the empty string and step 9's
+# diagnosis is lost silently. So the status is checked, and the file is owned
+# by an EXIT trap rather than a straight-line `rm -f` that an early exit
+# (set -e, or step 9's own `exit`) would skip past.
+FRESHNESS_ERR=$(mktemp) || exit 2
+trap 'rm -f "$FRESHNESS_ERR"' EXIT
 if FRESHNESS=$(scripts/check_floor_freshness.sh 2>"$FRESHNESS_ERR"); then
   check 0 "floor log is current ($FRESHNESS)"
   [ -s "$FRESHNESS_ERR" ] && sed 's/^/    warning: /' "$FRESHNESS_ERR"
@@ -173,6 +179,7 @@ else
   sed 's/^/    /' "$FRESHNESS_ERR"
 fi
 rm -f "$FRESHNESS_ERR"
+trap - EXIT
 
 printf '\n'
 if [ "$FAILED" -eq 0 ]; then printf 'GATE PASSED\n'; else printf 'GATE FAILED\n'; fi

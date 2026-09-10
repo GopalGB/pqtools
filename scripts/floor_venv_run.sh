@@ -81,15 +81,27 @@ digest() {
 DIGEST_BEFORE="$(digest)"; readonly DIGEST_BEFORE
 DIGEST_FILES="$("${HERE}/floor_digest.sh" --files)"
 readonly DIGEST_FILES
-TREE_SHA="$(git rev-parse 'HEAD^{tree}')"; readonly TREE_SHA
-UPSTREAM="$(git rev-parse --short '@{upstream}' 2>/dev/null || echo '(no upstream)')"
-readonly UPSTREAM
+# Provenance captured at t=0. The t=end halves live next to `finished`
+# below; both are printed and a disagreement refuses, exactly like the
+# digest pair. Round 60 measured why on the round-59 log itself: the digest
+# it records (40876b6d) is the digest of the UNCOMMITTED working tree at run
+# time - the floor run's own producer edits plus the review fixes sat dirty
+# in the scope - while `git tree sha` is the BASE commit's tree, and four
+# in-scope files differ between them. A single `uncommitted` reading taken
+# at either epoch certifies a tree that never existed at the other; the
+# stated reason for the field is an autocommit bot sweeping concurrently, a
+# change that lands exactly between the two readings.
+TREE_SHA_BEFORE="$(git rev-parse 'HEAD^{tree}')"; readonly TREE_SHA_BEFORE
+UNCOMMITTED_BEFORE="$(git status --porcelain | wc -l | tr -d ' ')"
+readonly UNCOMMITTED_BEFORE
 
 readonly ARGS=(-p no:cacheprovider "--rootdir=${ROOT}" -rs)
 FLOOR_COLLECT="$("${FLOOR_PYTHON}" -m pytest --collect-only -q "--rootdir=${ROOT}" 2>/dev/null | tail -1)"
 readonly FLOOR_COLLECT
 DEV_COLLECT="$("${DEV_PYTHON}" -m pytest --collect-only -q 2>/dev/null | tail -1)"
 readonly DEV_COLLECT
+UPSTREAM="$(git rev-parse --short '@{upstream}' 2>/dev/null || echo '(no upstream)')"
+readonly UPSTREAM
 
 body="$(mktemp)"
 trap 'rm -f "${body}"' EXIT
@@ -100,14 +112,12 @@ CODE=$?
 set -e
 readonly CODE
 FINISHED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; readonly FINISHED
-# Measured HERE, next to `finished`, because that is where it is PRINTED.
-# Round 57 hoisted this out of an `echo` (a substitution inlined there cannot
-# fail under `set -e`) but hoisted it to t=0, so the header reported the dirt
-# from before a ~10-minute run. The stated reason for the field is an
-# autocommit bot sweeping concurrently - which is exactly the thing a t=0
-# reading cannot see.
-UNCOMMITTED="$(git status --porcelain | wc -l | tr -d ' ')"
-readonly UNCOMMITTED
+# The t=end halves of the provenance pair. A sweep landing DURING the run
+# changes what digest-after certifies, so a start-only reading prints the
+# dirt from before a ~10-minute run and misses it entirely.
+TREE_SHA_AFTER="$(git rev-parse 'HEAD^{tree}')"; readonly TREE_SHA_AFTER
+UNCOMMITTED_AFTER="$(git status --porcelain | wc -l | tr -d ' ')"
+readonly UNCOMMITTED_AFTER
 DIGEST_AFTER="$(digest)"; readonly DIGEST_AFTER
 
 # Did `-rs` actually apply? The block alone proves nothing (it also prints for
@@ -125,8 +135,19 @@ skips_accounted="$(sed -nE 's/^SKIPPED \[([0-9]+)\].*/\1/p' "${body}" \
 # real log - `test session starts`, `short test summary info`, and the actual
 # result - so it still leaned on `tail -1` to pick the right one, which is the
 # reliance the comment claimed to have removed. Only the result line carries
-# passed/failed/error. Verified on this repo's own log: 3 matches -> 1.
-skips_total="$(grep -E '^=+ .*(passed|failed|error).* =+$' "${body}" \
+# passed/failed/error - plus the two degenerate summaries a real run can end
+# with instead. Round 60 measured the gap: `== 41 skipped in 3s ==` and
+# `== no tests ran in 0.1s ==` carry no outcome word, so the match fell back
+# to empty, `skips_total` defaulted to 0, and the script aborted with the
+# exit-65 inverted diagnosis ("a floor run with ZERO skips") for a run that
+# skipped everything - the same wrong-diagnosis failure the r57 comment above
+# memorialises.
+# `skipped` alone is not an outcome word - but a skip-only summary IS a real
+# result line (no outcome words apply), and `no tests ran` carries no count
+# at all. So match a summary that either names an outcome or names a skip
+# count; the `no tests ran` case still falls back to 0 and refuses at 65,
+# which is the right verdict for a run that collected nothing.
+skips_total="$(grep -E '^=+ .*((passed|failed|error)|([0-9]+ skipped)).* =+$' "${body}" \
     | sed -nE 's/.*[^0-9]([0-9]+) skipped.*/\1/p' | tail -1)"
 : "${skips_accounted:=0}" "${skips_total:=0}"
 # A floor run MUST skip: the extras-dependent tests are exactly what the absent
@@ -151,6 +172,25 @@ fi
     echo "refusing to write: the tree changed under the run" >&2
     echo "  before: ${DIGEST_BEFORE}" >&2
     echo "  after : ${DIGEST_AFTER}" >&2
+    exit 67
+}
+# The provenance pair must agree too. A commit (or an autocommit sweep)
+# landing mid-run moves HEAD, so digest-after certifies a different tree
+# than tree-sha-before names; and uncommitted dirt appearing or being swept
+# mid-run means neither epoch's count describes the run. The round-59 log is
+# the exhibit: digest 40876b6d over a dirty tree beside tree sha 0781af50 of
+# the base commit, four in-scope files apart.
+[[ "${TREE_SHA_BEFORE}" == "${TREE_SHA_AFTER}" ]] || {
+    echo "refusing to write: HEAD moved under the run" >&2
+    echo "  tree sha before: ${TREE_SHA_BEFORE}" >&2
+    echo "  tree sha after : ${TREE_SHA_AFTER}" >&2
+    exit 67
+}
+[[ "${UNCOMMITTED_BEFORE}" == "${UNCOMMITTED_AFTER}" ]] || {
+    echo "refusing to write: uncommitted files changed under the run" >&2
+    echo "  uncommitted before: ${UNCOMMITTED_BEFORE}" >&2
+    echo "  uncommitted after : ${UNCOMMITTED_AFTER}" >&2
+    echo "  (an autocommit sweep landing mid-run is exactly this)" >&2
     exit 67
 }
 
@@ -181,9 +221,11 @@ fi
     echo "#     review worktree could reproduce. Re-measured after the run:"
     echo "#     ${DIGEST_AFTER}"
     echo "#"
-    echo "#   git tree sha            : ${TREE_SHA}"
+    echo "#   git tree sha (at start) : ${TREE_SHA_BEFORE}"
+    echo "#   git tree sha (at end)   : ${TREE_SHA_AFTER}"
     echo "#   pushed tip              : ${UPSTREAM}"
-    echo "#   uncommitted             : ${UNCOMMITTED} file(s)"
+    echo "#   uncommitted (at start)  : ${UNCOMMITTED_BEFORE} file(s)"
+    echo "#   uncommitted (at end)    : ${UNCOMMITTED_AFTER} file(s)"
     echo "#   started                 : ${STARTED}"
     echo "#   finished                : ${FINISHED}"
     echo "#   collected (floor)       : ${FLOOR_COLLECT}"

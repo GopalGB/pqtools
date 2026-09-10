@@ -83,9 +83,16 @@ git checkout-index -a -f
 # by the commit under review, and filed against the repo as a CRITICAL.
 # Verified: `--diff-filter=D` -> 0 paths; `--no-renames --diff-filter=D` -> the
 # old path. A rename is a delete plus an add, and only the delete matters here.
+# Round 60 measured the cost of the other direction: --no-renames makes a
+# case-only rename (`Foo.md` -> `foo.md`) surface as `D Foo.md`, and the `rm`
+# below then deletes the HEAD file `checkout-index` just materialised -
+# /private/tmp is case-insensitive here (verified: a `CASEPROBE_Foo.md` probe
+# is visible as `caseprobe_foo.md`). So delete only what HEAD does not have;
+# a path HEAD still names survives, whatever the diff calls it.
 git diff -z --name-only --no-renames --diff-filter=D "$BASE" "$HEAD" \
   | while IFS= read -r -d '' gone; do
-      [ -n "$gone" ] && rm -rf -- "$gone"
+      [ -n "$gone" ] || continue
+      git cat-file -e "$HEAD:$gone" 2>/dev/null || rm -rf -- "$gone"
     done
 STUB_BRIDGE=$(printf '// vendored esbuild bundle of @microsoft/powerquery-parser 2.0.0 + powerquery-formatter 1.0.0 (2.6 MB, committed; excluded from review diff, reproducible via `npm run bundle`)\n' | git hash-object -w --stdin)
 STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3, pins parser 2.0.0 / formatter 1.0.0 / esbuild 0.28.2); excluded from review diff" }\n' | git hash-object -w --stdin)

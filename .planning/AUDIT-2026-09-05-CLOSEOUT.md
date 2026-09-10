@@ -5682,9 +5682,108 @@ cannot see. Moved next to `FINISHED`.
   SUCCESSFUL freshness run would have been printed inside the PASS line as if
   it were the log name. Streams separated.
 
-### What the three branch tests learned to assert
+## Round 60 - `820c921..abb92ca`, verdict FIX-FIRST, all six taken
 
-They pinned the refusal PROSE, so changing "no floor log" to "no TRACKED floor
-log" reddened three tests that were still correct. They now pin the documented
-exit codes 65/66/67, which is the contract the gate actually reads; the wording
-is free to improve.
+Six findings, all reproduced, none rejected. Round 60's review is the first
+to run on a tree the fixed harness built - the round-59 `--no-renames` fix
+held: the reviewer read exactly one floor log and described the committed
+tree, not harness debris. The headline finding is again about the review's
+own evidence pipeline, and this time it is true about the repo.
+
+### 1 CRITICAL - the header paired a dirty-tree digest with a clean-tree sha
+
+The review measured the shipped round-59 log against the committed tree:
+recorded digest `40876b6d` equals the digest of the UNCOMMITTED working tree
+at run time, `git tree sha` names `820c921`'s committed tree (`0781af50`),
+and four in-scope files differ between them (`scripts/floor_digest.sh`,
+`scripts/floor_venv_run.sh`, `src/pqtools/cli.py`, `tests/test_end_to_end.py`
+- verified: `git show HEAD:<file> | shasum` vs the worktree disagreed on all
+four at the time of the review). Reproduced here directly: `git diff
+--name-only 820c921 HEAD -- src tests pyproject.toml
+scripts/floor_venv_run.sh scripts/floor_digest.sh` lists exactly those four.
+
+The mechanism is ordinary, not exotic: the floor run's own producer edits
+plus the review fixes sat dirty in the scope while the suite ran, so the
+digest hashed a tree no commit names, and the single `uncommitted` reading -
+taken at whichever epoch - certified the other epoch's tree. Round 59's fix
+moved that reading from t=0 to t=end; the defect moved with it. A t=0-only
+reading would have printed `4+ file(s)` beside the base sha; the t=end-only
+reading printed `0` beside the same sha. Neither describes the run.
+
+Fixed the way the digest pair already works: capture `TREE_SHA_BEFORE` /
+`UNCOMMITTED_BEFORE` at t=0 and `TREE_SHA_AFTER` / `UNCOMMITTED_AFTER` next
+to `finished`, print all four in the header, and refuse with 67 on any
+disagreement - a commit or autocommit sweep landing mid-run, or dirt
+appearing or being swept mid-run. The review asked for the sha at t=end
+too; that half is included - HEAD moving mid-run is the sharper version of
+the same defect (digest-after would certify a tree the printed sha does
+not name).
+
+### 2 HIGH - the gate-side fix had no test that could fail on its revert
+
+`_write_log` in `tests/test_end_to_end.py` `git add`s every log it writes -
+correctly, because the freshness check resolves candidates with `git
+ls-files` and an untracked fixture log would test a resolution strategy the
+script no longer uses. But that means all three freshness tests are green
+under EITHER strategy: the defect being guarded - an untracked stray log
+deciding what the gate certifies - is never constructed. New test
+`test_the_freshness_check_ignores_an_untracked_stray_log`: a tracked current
+log beside an untracked stale copy, asserting exit 0 on the tracked one
+(the old glob refused with 66). Green under `git ls-files` resolution and
+red by construction under the glob it replaced.
+
+### 3 MEDIUM - `--no-renames` deletes through a case-only rename
+
+`git diff --no-renames` reports a case-only rename (`Foo.md` -> `foo.md`)
+as `D Foo.md`, and the harness's `rm -rf -- "$gone"` then deletes the HEAD
+file `checkout-index` just materialised - verified: `/private/tmp` is
+case-insensitive here (a `CASEPROBE_Foo.md` probe is visible as
+`caseprobe_foo.md`). The worktree under review would be missing a file the
+diff says was added. Fixed: delete only what HEAD does not name -
+`git cat-file -e "$HEAD:$gone" 2>/dev/null || rm -rf -- "$gone"`. A path
+HEAD still names survives, whatever the diff calls it.
+
+### 4 MEDIUM - the outcome-word anchor drops the skip-only summary
+
+Round 59's anchor (`passed|failed|error`) matches no line of a run that
+skips everything: `== 41 skipped in 3s ==` carries no outcome word, so
+`skips_total` fell back to empty, defaulted to 0, and the script aborted
+with exit 65 and the inverted diagnosis ("a floor run with ZERO skips") for
+a run that skipped everything - the same wrong-diagnosis failure the r57
+`bc`-absence comment above it memorialises. Verified on purpose-built
+inputs: the old pipeline extracts nothing from the skip-only line. Fixed:
+match `((passed|failed|error)|([0-9]+ skipped))` - a skip-only summary IS a
+real result line, while `no tests ran` carries no count and still falls to
+0/65, which is the right verdict for a run that collected nothing. The
+non-result banner lines (`test session starts`, `short test summary info`)
+still match zero lines.
+
+### 5 LOW - `mktemp` unchecked, no trap
+
+On a failed `mktemp`, `2>"$FRESHNESS_ERR"` redirects to the empty string and
+step 9's diagnosis is lost silently - and the straight-line `rm -f` at the
+end is skipped by any early exit (`set -e`, or the step's own flow). Fixed
+as asked: `FRESHNESS_ERR=$(mktemp) || exit 2` plus an EXIT trap owning the
+removal, with the comment recording the measured failure mode.
+
+### 6 LOW - usage gate inspected only `$1`
+
+`floor_digest.sh --files junk` printed the 125-file scope count and exited 0
+(measured) - hashing while claiming to count. Fixed: refuse when `$# > 1`
+with usage/2, before the untracked scan, so a typo in a dirty tree still
+reads as a typo. New test `test_the_digest_refuses_a_second_word` pins
+`--files junk`, `--bogus junk`, bare `junk`, and the ordering (`--bogus` in
+a dirty tree is 2, not 64).
+
+### Verification
+
+- The two new tests pass against the fixed scripts (9/9 in the
+  freshness/digest/provenance group), and the pre-existing seven still pass
+  unchanged beside them.
+- Floor re-run after the fixes, on the fixed tree: 4146 passed, 41 skipped,
+  digest `bc34f1db` over 125 tracked files, re-measured stable; both tree
+  shas and both uncommitted counts agree in the header; freshness exits 0.
+- Full gate verdict: PENDING at the time of writing - the gate runs
+  detached (~12 min) and this section records the fixes, not its verdict.
+  The round-59 log's defect (finding 1) is not re-certified: the re-run
+  above replaced it.

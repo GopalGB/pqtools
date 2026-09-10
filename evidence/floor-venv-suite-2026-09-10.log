@@ -18,29 +18,31 @@
 #   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
 #   skips: 37 SKIPPED lines accounting for 41, summary says 41
 #
-#   tree digest             : 40876b6d18d4f86b590208c9ebe953be19585840620b21c991260daf0c01f2f4
+#   tree digest             : bc34f1dbf22e5030f4bd33c1bb499183811b01e6fc22bcc6e7c2aa2a274de7a5
 #     scripts/floor_digest.sh - the single definition, read by this
 #     script and by release_gate.sh step 9 so the gate cannot certify
 #     a different scope than this header names.
 #     over 125 TRACKED files. Untracked files are refused rather
 #     than hashed: including them produced a digest no clone, CI run or
 #     review worktree could reproduce. Re-measured after the run:
-#     40876b6d18d4f86b590208c9ebe953be19585840620b21c991260daf0c01f2f4
+#     bc34f1dbf22e5030f4bd33c1bb499183811b01e6fc22bcc6e7c2aa2a274de7a5
 #
-#   git tree sha            : 0781af50ee0eac16c4aa575c28e1766f47e85d3b
-#   pushed tip              : 820c921
-#   uncommitted             : 0 file(s)
-#   started                 : 2026-09-10T02:54:03Z
-#   finished                : 2026-09-10T03:05:42Z
-#   collected (floor)       : 4185 tests collected in 1.15s
-#   collected (dev)         : 4185 tests collected in 1.73s
+#   git tree sha (at start) : f143eaaca68c1c68036458ea86e62d5916bd924a
+#   git tree sha (at end)   : f143eaaca68c1c68036458ea86e62d5916bd924a
+#   pushed tip              : abb92ca
+#   uncommitted (at start)  : 5 file(s)
+#   uncommitted (at end)    : 5 file(s)
+#   started                 : 2026-09-10T03:34:17Z
+#   finished                : 2026-09-10T03:45:46Z
+#   collected (floor)       : 4187 tests collected in 1.06s
+#   collected (dev)         : 4187 tests collected in 1.59s
 #
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/gopalmacbook/Desktop/Max HQ/pqtools
 configfile: pyproject.toml
 testpaths: tests
-collected 4185 items
+collected 4187 items
 
 tests/test_adapters.py ..............s.....                              [  0%]
 tests/test_binary_format.py ............................................ [  1%]
@@ -83,7 +85,7 @@ tests/test_doc_examples.py ............................................. [ 21%]
 ........................................................................ [ 31%]
 ........................................................................ [ 33%]
 ........................................................................ [ 35%]
-........................................................................ [ 37%]
+........................................................................ [ 36%]
 ........................................................................ [ 38%]
 ........................................................................ [ 40%]
 ........................................................................ [ 42%]
@@ -96,14 +98,14 @@ tests/test_documented_signatures.py .................................... [ 46%]
 ........................................................................ [ 47%]
 ........................................................................ [ 49%]
 ........................................................................ [ 51%]
-........................................................................ [ 53%]
+........................................................................ [ 52%]
 ........................................................................ [ 54%]
 ........................................................................ [ 56%]
 ........................................................................ [ 58%]
 ........................................................................ [ 59%]
-...............................................                          [ 61%]
+...............................................                          [ 60%]
 tests/test_end_to_end.py ..ssss........................s.s.............. [ 62%]
-....................................................                     [ 63%]
+......................................................                   [ 63%]
 tests/test_evaluate.py ................................................. [ 64%]
 ....................                                                     [ 65%]
 tests/test_evidence_captures.py .....                                    [ 65%]
@@ -198,5 +200,5 @@ SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module na
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4144 passed, 41 skipped in 698.48s (0:11:38) =================
+================= 4146 passed, 41 skipped in 688.63s (0:11:28) =================
 FLOOR EXIT: 0
