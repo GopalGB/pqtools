@@ -18,6 +18,9 @@ python -m venv /tmp/pqtools-floor-release
 python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 bash scripts/floor_venv_run.sh /tmp/pqtools-floor-release/bin/python evidence/floor-venv-suite-2026-09-15.log .venv/bin/python
+git rm evidence/floor-venv-suite-2026-09-10.log
+git add evidence/floor-venv-suite-2026-09-15.log
+git commit -m "evidence: floor run <candidate-sha>"
 bash scripts/check_floor_freshness.sh
 PQ_GATE_PYTEST_ARGS='-n auto --cov=pqtools --cov-report=term-missing --cov-fail-under=80' bash scripts/release_gate.sh
 ```
