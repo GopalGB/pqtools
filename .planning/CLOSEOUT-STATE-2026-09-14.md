@@ -31,3 +31,16 @@ PQ_CLOSEOUT_DIR=/tmp/pqtools-closeout-20260914.z11kgu
 
 ## Next command
 - continue with PLAN.md Phase 1 task 6: begin focused implementation.
+## Final checkpoint — 2026-09-15
+
+- Branch: `feat/connectors-and-real-m-0.9.0`; candidate checkpoint: `2082e19`.
+- The working tree is clean at this checkpoint. The floor producer now refuses a dirty digest scope (`d2b9f6c`).
+- Passing receipts: product regression 207 passed; review materialization 6 passed/1 skipped; full dev receipt 4207 passed/1 skipped; minimum-version 3 passed; package build/twine/base+extras smoke; portfolio lint/build.
+- Historical fresh floor receipt: 4166 passed/42 skipped with stable digest and strict checker passing under C and en_US.UTF-8. It was produced before the dirty-scope guard and is retained as historical evidence.
+- Clean committed floor attempt: `floor-final-clean.log` recorded 3260 passed/33 skipped then KeyboardInterrupt at 31:07 (`FLOOR EXIT: 2`); it was not installed as tracked evidence.
+- Exact review: `claude-opus-5`, `abb92ca..HEAD`, `FIX-FIRST`. The critical finding about dirty-tree provenance was reproduced and the producer guard was added. A clean replacement floor log is still required.
+- Security: explicit npm audit, pip-audit, and semgrep project rules passed; broad security-auditor/gitleaks found historical redacted token-like strings and semgrep's dynamic-URL warning, so security remains `SECURITY_BLOCKED` pending triage.
+- Release gate: no `GATE PASSED`; the run was interrupted during the full suite and later reported stale floor evidence. Ruff and mypy are now green at `2082e19`.
+- Public actions remain pending: no push, tag, PR, PyPI publish, website deploy, or live Microsoft-service validation occurred.
+
+Next command: from a clean checkout at `2082e19`, rerun the exact floor command in `RELEASE-HANDOFF-2026-09-14.md`, then run `scripts/check_floor_freshness.sh` and `scripts/release_gate.sh` without interrupting either process.
