@@ -56,7 +56,8 @@ jobs:
           PYTHON_BIN="$(command -v python)"
           python -m venv /tmp/pqtools-floor-venv
           /tmp/pqtools-floor-venv/bin/python -m pip install -e .
-          bash scripts/floor_venv_run.sh /tmp/pqtools-floor-venv/bin/python evidence/floor-venv-suite-2026-09-10.log "$PYTHON_BIN" \
+          FLOOR_LOG="$(git ls-files 'evidence/floor-venv-suite-*.log' | head -n 1)"
+          bash scripts/floor_venv_run.sh /tmp/pqtools-floor-venv/bin/python "$FLOOR_LOG" "$PYTHON_BIN" \
             > /tmp/pqtools-floor-run.log 2>&1
           bash scripts/check_floor_freshness.sh > /tmp/pqtools-floor-fresh.log 2>&1
           tail -n 20 /tmp/pqtools-floor-run.log /tmp/pqtools-floor-fresh.log
@@ -67,7 +68,7 @@ jobs:
         with:
           name: floor-evidence-logs-${{ matrix.os }}-${{ matrix.python-version }}
           path: |
-            evidence/floor-venv-suite-2026-09-10.log
+            evidence/floor-venv-suite-*.log
             /tmp/pqtools-floor-run.log
             /tmp/pqtools-floor-fresh.log
           if-no-files-found: error

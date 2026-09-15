@@ -2964,11 +2964,9 @@ def _write_log(repo: Path, name: str, digest: str) -> Path:
     """
     log = repo / "evidence" / name
     log.write_text(
-        "# PRD 6.2 - the suite with pandas, pyarrow, openpyxl and "
-        "python-calamine ABSENT.\n"
+        "# PRD 6.2 - the suite with pandas, pyarrow, openpyxl and python-calamine ABSENT.\n"  # noqa: E501
         "#\n"
-        "#   extras absent           : pandas, pyarrow, openpyxl, "
-        "python_calamine all absent (find_spec -> None)\n"
+        "#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)\n"  # noqa: E501
         f"#   tree digest             : {digest}\n"
         "FLOOR EXIT: 0\n",
         encoding="utf-8",
@@ -3057,7 +3055,7 @@ def test_the_digest_is_independent_of_locale(tmp_path: Path) -> None:
     c_digest = _locale_digest(repo, "C")
     locale_tag = "en_US.UTF-8"
     locales = subprocess.run(
-        ["bash", "-c", "locale -a"],
+        ["bash", "-lc", "locale -a"],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -3173,7 +3171,7 @@ def test_current_digest_does_not_certify_invalid_floor_evidence(
     digest = _fixture_digest(repo)
     log = _write_log(repo, "floor-venv-suite-2026-01-01.log", digest)
     content = log.read_text(encoding="utf-8")
-    marker = (
+    marker = (  # noqa: E501
         "#   extras absent           : pandas, pyarrow, openpyxl, "
         "python_calamine all absent (find_spec -> None)\n"
     )

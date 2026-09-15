@@ -8,7 +8,7 @@ Completed local artifacts:
 - Packaging distributions passed `twine check`; base and extras install smoke passed.
 - Portfolio copy passed local lint and production build in the separate portfolio checkout.
 - Security receipts are under `/tmp/pqtools-closeout-20260914.z11kgu/security/`.
-- Exact Claude review is preserved in `review-final.txt`; it identified a provenance issue that is recorded in ACCEPTANCE.
+- Exact Claude review is preserved in `/tmp/pqtools-closeout-20260914.z11kgu/review-post-remediation.txt`; its remaining concern is recorded in ACCEPTANCE.
 
 Before any public release, run from a clean checkout of the candidate:
 
@@ -18,7 +18,7 @@ python -m venv /tmp/pqtools-floor-release
 python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 bash scripts/floor_venv_run.sh /tmp/pqtools-floor-release/bin/python evidence/floor-venv-suite-2026-09-15.log .venv/bin/python
-git rm evidence/floor-venv-suite-2026-09-10.log
+git rm evidence/floor-venv-suite-2026-09-10.log  # only when replacing an older checkout
 git add evidence/floor-venv-suite-2026-09-15.log
 git commit -m "evidence: floor run <candidate-sha>"
 bash scripts/check_floor_freshness.sh
