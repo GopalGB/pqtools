@@ -40,7 +40,7 @@ At execution start, create `.planning/CLOSEOUT-STATE-2026-09-14.md` with: phase/
 | `README.md`, `llms.txt`, `SUPPORT-MATRIX.md`, `pyproject.toml` comments only | Accurate usage, dependency evidence and claims; no manifest dependency changes by default. |
 | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | Enforce successful no-extras verification in CI/release, rather than only the dev environment. |
 | Existing `tests/test_export.py`, `tests/test_cli_verbs.py`, `tests/test_container_workflow.py`, safety suites | Reuse acceptance coverage; patch only reproduced defects with focused regressions. |
-| `evidence/floor-venv-suite-2026-09-10.log` | Replace through the producer after code is frozen; retain one tracked floor log. Keep the existing filename to avoid a pointless rename. Header timestamps identify the new run. |
+| `evidence/floor-venv-suite-2026-09-15.log` | Replace through the producer after code is frozen; retain one tracked floor log. Header timestamps identify the new run. |
 | `.planning/CLOSEOUT-STATE-2026-09-14.md`, `.planning/ACCEPTANCE-2026-09-14.md`, `.planning/RELEASE-HANDOFF-2026-09-14.md` | Small current checkpoint, acceptance table, and publication handoff. |
 | Separate portfolio `components/sections/work.tsx`; `components/project-tile.tsx` only if a link defect reproduces | Correct only the pqtools card; preserve unrelated site work. |
 
@@ -229,7 +229,7 @@ bash scripts/floor_venv_run.sh "$PQ_SCRATCH/floor-venv/bin/python" "$PQ_SCRATCH/
 
 Wait for completion with tools that retain the job ID; do not infer completion from a stopped-task notification. Inspect producer exit, body summary, exact absent-extras check, skip reasons/counts, start/end tree identity, digest, and `FLOOR EXIT: 0`. Compare import paths to this checkout. Any failure keeps the old artifact untouched.
 
-- [ ] Copy the completed log to the single tracked `evidence/floor-venv-suite-2026-09-10.log`. Run the strengthened checker under both C and an installed differing-collation locale. Commit only the completed evidence and necessary final state/docs; no source/test/producer changes in this checkpoint. Record this as `PQ_FINAL_HEAD`.
+- [ ] Copy the completed log to the single tracked `evidence/floor-venv-suite-2026-09-15.log`. Run the strengthened checker under both C and an installed differing-collation locale. Commit only the completed evidence and necessary final state/docs; no source/test/producer changes in this checkpoint. Record this as `PQ_FINAL_HEAD`.
 - [ ] Run one intact full dev suite through the existing release gate, forcing sequential execution and retaining coverage:
 
 ```bash

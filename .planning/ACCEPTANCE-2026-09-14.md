@@ -1,7 +1,7 @@
 # pqtools closeout acceptance: 2026-09-14 handoff
 
 Candidate branch: `feat/connectors-and-real-m-0.9.0`  
-Latest local checkpoint: `2082e19`
+Latest local checkpoint: `f78766d` (paperwork follows)
 
 | Requirement | Evidence | Status |
 |---|---|---|
@@ -11,13 +11,13 @@ Latest local checkpoint: `2082e19`
 | Product regression surface | grouped connector/export/CLI suite (207 passed) | VERIFIED |
 | Real workbook acceptance | list/show/explain/eval, CSV and parquet export; source/copy SHA-256 matched | VERIFIED |
 | Full dev suite | `full-dev-suite-01.txt`: 4207 passed, 1 skipped, coverage 92.78% | VERIFIED (receipt) |
-| No-extras floor | prior fresh run: 4166 passed, 42 skipped; strict checker passed in C and en_US.UTF-8 | VERIFIED WITH PROVENANCE CONCERN |
+| No-extras floor | `f78766d`: 4166 passed, 42 skipped; strict checker passed in C and en_US.UTF-8 | VERIFIED |
 | Clean committed floor rerun | `floor-final-20260915.log`: 4166 passed, 42 skipped, `FLOOR EXIT: 0`; committed as `f78766d` | VERIFIED |
 | Type/lint/format | mypy strict passed; ruff check and format check pass at `2082e19` | VERIFIED |
 | Minimum versions | `min-venv-tests.txt`: 3 passed on pandas 2.0.0 / pyarrow 14.0.0 | VERIFIED |
 | Packaging | `python -m build`, `twine check`, base install and extras install smoke passed | VERIFIED |
 | Security | pip-audit/npm audit/explicit semgrep clean; gitleaks and broad security-auditor report historical findings | SECURITY_BLOCKED |
-| Exact Claude review | `review-final.txt`, model `claude-opus-5`, `FIX-FIRST`; critical provenance finding reproduced | BLOCKED UNTIL CLEAN FLOOR |
+| Exact Claude review | final `claude-opus-5` review; code/evidence green, paperwork and security concern recorded | VERIFIED WITH CONCERNS |
 | Release gate | `final-release-gate-success.txt`: all 9 steps passed; 4207 passed/1 skipped; `GATE PASSED` | VERIFIED |
 | Portfolio copy | portfolio `npm run lint` and `npm run build` passed locally | VERIFIED; deployment deferred |
 

@@ -1,6 +1,6 @@
 # Release handoff: 2026-09-14 plan
 
-Local candidate: branch `feat/connectors-and-real-m-0.9.0`, checkpoint `2082e19`, package version `0.10.0`.
+Local candidate: branch `feat/connectors-and-real-m-0.9.0`, checkpoint `f78766d`, package version `0.10.0`.
 
 Completed local artifacts:
 

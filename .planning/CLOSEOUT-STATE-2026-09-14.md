@@ -40,10 +40,10 @@ PQ_CLOSEOUT_DIR=/tmp/pqtools-closeout-20260914.z11kgu
 - Clean committed floor attempt: `floor-final-clean.log` recorded 3260 passed/33 skipped then KeyboardInterrupt at 31:07 (`FLOOR EXIT: 2`); it was not installed as tracked evidence.
 - Exact review: `claude-opus-5`, `abb92ca..HEAD`, `FIX-FIRST`. The critical finding about dirty-tree provenance was reproduced and the producer guard was added. A clean replacement floor log is still required.
 - Security: explicit npm audit, pip-audit, and semgrep project rules passed; broad security-auditor/gitleaks found historical redacted token-like strings and semgrep's dynamic-URL warning, so security remains `SECURITY_BLOCKED` pending triage.
-- Release gate: no `GATE PASSED`; the run was interrupted during the full suite and later reported stale floor evidence. Ruff and mypy are now green at `2082e19`.
+- Superseded release-gate note: an earlier run was interrupted and stale; the final gate passed at `f78766d`.
 - Public actions remain pending: no push, tag, PR, PyPI publish, website deploy, or live Microsoft-service validation occurred.
 - Second clean dated floor attempt (`floor-final-20260915.log`): 2970 passed, 33 skipped, KeyboardInterrupt after 36:41 (`FLOOR EXIT: 2`). The machine did not complete the full suite despite remaining idle; preserve this receipt as `CLEAN_FLOOR_BLOCKED`.
 - Final clean dated floor run succeeded: 4166 passed, 42 skipped, `FLOOR EXIT: 0`; evidence replacement committed as `f78766d` and freshness passed.
 - Final release gate succeeded at `f78766d`: all nine steps passed, 4207 passed/1 skipped, Ruff/format/mypy green, real workbook and documented examples green, and `GATE PASSED`.
 
-Next command: from a clean checkout at `c8e5add` (or the branch tip), follow the corrected setup and floor command in `RELEASE-HANDOFF-2026-09-14.md`, commit the dated evidence log, then run `scripts/check_floor_freshness.sh` and `scripts/release_gate.sh` without interrupting either process.
+Next command: triage the preserved security findings, then proceed with the explicitly gated public actions in `RELEASE-HANDOFF-2026-09-14.md`.
