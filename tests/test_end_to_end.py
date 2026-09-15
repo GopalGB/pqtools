@@ -26,8 +26,8 @@ import errno
 import json
 import os
 import re
-import subprocess
 import shlex
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -2964,9 +2964,9 @@ def _write_log(repo: Path, name: str, digest: str) -> Path:
     """
     log = repo / "evidence" / name
     log.write_text(
-        "# PRD 6.2 - the suite with pandas, pyarrow, openpyxl and python-calamine ABSENT.\n"
+        "# PRD 6.2 - the suite with pandas, pyarrow, openpyxl and python-calamine ABSENT.\n"  # noqa: E501
         "#\n"
-        "#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)\n"
+        "#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)\n"  # noqa: E501
         f"#   tree digest             : {digest}\n"
         "FLOOR EXIT: 0\n",
         encoding="utf-8",
@@ -3021,7 +3021,13 @@ def _locale_digest(repo: Path, locale: str) -> str:
 
 def _sorted_names(repo: Path, locale: str, names: tuple[str, ...]) -> str:
     return subprocess.run(
-        ["bash", "-lc", "printf '%s\n' " + " ".join(shlex.quote(name) for name in names) + " | sort"],
+        [
+            "bash",
+            "-lc",
+            "printf '%s\n' "
+            + " ".join(shlex.quote(name) for name in names)
+            + " | sort",
+        ],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -3065,7 +3071,8 @@ def test_the_digest_is_independent_of_locale(tmp_path: Path) -> None:
     utf8_order = _sorted_names(repo, locale_tag, names)
     if c_order == utf8_order:
         pytest.skip(
-            "locale sort order is not visibly different on this host; skip as portability guard"
+            "locale sort order is not visibly different on this host; "
+            "skip as portability guard"
         )
     assert c_digest == locale_digest, (c_digest, locale_digest)
 
@@ -3075,7 +3082,10 @@ def test_the_digest_is_independent_of_locale(tmp_path: Path) -> None:
     assert changed_content_digest != c_digest, (changed_content_digest, c_digest)
     _git(["mv", "src/a.txt", "src/a-renamed.txt"], repo)
     changed_path_digest = _locale_digest(repo, "C")
-    assert changed_path_digest != changed_content_digest, (changed_path_digest, changed_content_digest)
+    assert changed_path_digest != changed_content_digest, (
+        changed_path_digest,
+        changed_content_digest,
+    )
 
 
 def test_the_freshness_check_fails_when_there_is_no_floor_log(tmp_path: Path) -> None:
@@ -3161,7 +3171,10 @@ def test_current_digest_does_not_certify_invalid_floor_evidence(
     digest = _fixture_digest(repo)
     log = _write_log(repo, "floor-venv-suite-2026-01-01.log", digest)
     content = log.read_text(encoding="utf-8")
-    marker = "#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)\n"
+    marker = (  # noqa: E501
+        "#   extras absent           : pandas, pyarrow, openpyxl, "
+        "python_calamine all absent (find_spec -> None)\n"
+    )
 
     if case == "digest_only":
         content = f"#   tree digest             : {digest}\n"

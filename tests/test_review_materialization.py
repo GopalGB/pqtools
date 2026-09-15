@@ -74,7 +74,9 @@ def _fixture(repo: Path, *files: str) -> None:
     assert _git(["commit", "-qm", "fixture"], repo).returncode == 0
 
 
-def test_materialize_populates_target_tree_in_disposable_review_checkout(tmp_path: Path) -> None:
+def test_materialize_populates_target_tree_in_disposable_review_checkout(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "basic"
     _repo(repo)
     _fixture(
@@ -90,11 +92,16 @@ def test_materialize_populates_target_tree_in_disposable_review_checkout(tmp_pat
     target = _git(["rev-parse", "HEAD"], repo).stdout.strip()
     assert _git(["checkout", "-q", base], repo).returncode == 0
 
-    expected = _git(["diff", "--name-status", "--no-renames", base, target], repo).stdout
+    expected = _git(
+        ["diff", "--name-status", "--no-renames", base, target], repo
+    ).stdout
     result = _materialize(repo, target)
     assert result.returncode == 0, result.stdout + result.stderr
     assert _git(["rev-parse", "HEAD"], repo).stdout.strip() == base
-    assert _git(["diff", "--name-status", "--no-renames", "--cached"], repo).stdout == expected
+    assert (
+        _git(["diff", "--name-status", "--no-renames", "--cached"], repo).stdout
+        == expected
+    )
     assert _read(repo, "src/root.txt") == "target\n"
     assert _read(repo, "src/extra.txt") == "added\n"
 
@@ -114,10 +121,13 @@ def test_materialize_handles_deleted_paths(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert not (repo / "b.txt").exists()
     assert (repo / "a.txt").exists()
-    assert _git(["diff", "--name-status", "--no-renames", "--cached"], repo).stdout == _git(
-        ["diff", "--name-status", "--no-renames", base, target],
-        repo,
-    ).stdout
+    assert (
+        _git(["diff", "--name-status", "--no-renames", "--cached"], repo).stdout
+        == _git(
+            ["diff", "--name-status", "--no-renames", base, target],
+            repo,
+        ).stdout
+    )
 
 
 def test_materialize_replays_file_renames(tmp_path: Path) -> None:
@@ -181,8 +191,13 @@ def test_materialize_replaces_content_without_changing_path(tmp_path: Path) -> N
     result = _materialize(repo, target)
     assert result.returncode == 0, result.stdout + result.stderr
     assert _read(repo, "a.txt") == "replacement\n"
-    expected = _git(["diff", "--name-status", "--no-renames", base, target], repo).stdout
-    assert _git(["diff", "--cached", "--name-status", "--no-renames"], repo).stdout == expected
+    expected = _git(
+        ["diff", "--name-status", "--no-renames", base, target], repo
+    ).stdout
+    assert (
+        _git(["diff", "--cached", "--name-status", "--no-renames"], repo).stdout
+        == expected
+    )
 
 
 def test_materialize_handles_case_only_rename_when_possible(tmp_path: Path) -> None:
@@ -204,5 +219,7 @@ def test_materialize_handles_case_only_rename_when_possible(tmp_path: Path) -> N
     assert not (repo / "Foo.md").exists()
     assert _read(repo, "foo.md") == "Foo.md\n"
     cached = _git(["diff", "--cached", "--name-status", "--no-renames"], repo).stdout
-    expected = _git(["diff", "--name-status", "--no-renames", base, target], repo).stdout
+    expected = _git(
+        ["diff", "--name-status", "--no-renames", base, target], repo
+    ).stdout
     assert cached == expected

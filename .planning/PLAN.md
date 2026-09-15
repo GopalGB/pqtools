@@ -100,7 +100,9 @@ def test_a_failed_floor_run_is_not_fresh(tmp_path: Path, exit_code: int) -> None
     log = _write_log(repo, "floor-venv-suite-2026-01-01.log", _fixture_digest(repo))
     text = log.read_text(encoding="utf-8")
     assert text.count("FLOOR EXIT: 0") == 1
-    log.write_text(text.replace("FLOOR EXIT: 0", f"FLOOR EXIT: {exit_code}"), encoding="utf-8")
+    log.write_text(
+        text.replace("FLOOR EXIT: 0", f"FLOOR EXIT: {exit_code}"), encoding="utf-8"
+    )
     result = _freshness(repo)
     assert result.returncode == 67, result.stdout + result.stderr
 ```

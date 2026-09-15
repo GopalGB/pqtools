@@ -748,8 +748,8 @@ beats a `NaN` you cannot distinguish from data.
 import pqtools
 
 report = pqtools.open("report.pbix")
-report.queries                      # ['Sales', 'Customers', ...]
-report.source("Sales")              # the M, unevaluated - same text as `pq show`
+report.queries  # ['Sales', 'Customers', ...]
+report.source("Sales")  # the M, unevaluated - same text as `pq show`
 rows = report.eval("Sales", bindings={"Source": my_rows})
 pqtools.to_pandas(rows)
 ```
