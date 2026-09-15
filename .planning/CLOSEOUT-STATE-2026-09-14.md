@@ -43,5 +43,7 @@ PQ_CLOSEOUT_DIR=/tmp/pqtools-closeout-20260914.z11kgu
 - Release gate: no `GATE PASSED`; the run was interrupted during the full suite and later reported stale floor evidence. Ruff and mypy are now green at `2082e19`.
 - Public actions remain pending: no push, tag, PR, PyPI publish, website deploy, or live Microsoft-service validation occurred.
 - Second clean dated floor attempt (`floor-final-20260915.log`): 2970 passed, 33 skipped, KeyboardInterrupt after 36:41 (`FLOOR EXIT: 2`). The machine did not complete the full suite despite remaining idle; preserve this receipt as `CLEAN_FLOOR_BLOCKED`.
+- Final clean dated floor run succeeded: 4166 passed, 42 skipped, `FLOOR EXIT: 0`; evidence replacement committed as `f78766d` and freshness passed.
+- Final release gate succeeded at `f78766d`: all nine steps passed, 4207 passed/1 skipped, Ruff/format/mypy green, real workbook and documented examples green, and `GATE PASSED`.
 
 Next command: from a clean checkout at `c8e5add` (or the branch tip), follow the corrected setup and floor command in `RELEASE-HANDOFF-2026-09-14.md`, commit the dated evidence log, then run `scripts/check_floor_freshness.sh` and `scripts/release_gate.sh` without interrupting either process.
