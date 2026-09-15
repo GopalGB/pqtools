@@ -16,33 +16,33 @@
 #   __pycache__ dirs        : 0
 #   PYTHONDONTWRITEBYTECODE : 1
 #   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
-#   skips: 37 SKIPPED lines accounting for 41, summary says 41
+#   skips: 38 SKIPPED lines accounting for 42, summary says 42
 #
-#   tree digest             : bc34f1dbf22e5030f4bd33c1bb499183811b01e6fc22bcc6e7c2aa2a274de7a5
+#   tree digest             : 7288c48ccc24cb3db38b925431d6b183d80c8582c4ac4cea864a0004f7209a49
 #     scripts/floor_digest.sh - the single definition, read by this
 #     script and by release_gate.sh step 9 so the gate cannot certify
 #     a different scope than this header names.
-#     over 125 TRACKED files. Untracked files are refused rather
+#     over 126 TRACKED files. Untracked files are refused rather
 #     than hashed: including them produced a digest no clone, CI run or
 #     review worktree could reproduce. Re-measured after the run:
-#     bc34f1dbf22e5030f4bd33c1bb499183811b01e6fc22bcc6e7c2aa2a274de7a5
+#     7288c48ccc24cb3db38b925431d6b183d80c8582c4ac4cea864a0004f7209a49
 #
-#   git tree sha (at start) : f143eaaca68c1c68036458ea86e62d5916bd924a
-#   git tree sha (at end)   : f143eaaca68c1c68036458ea86e62d5916bd924a
-#   pushed tip              : abb92ca
-#   uncommitted (at start)  : 5 file(s)
-#   uncommitted (at end)    : 5 file(s)
-#   started                 : 2026-09-10T03:34:17Z
-#   finished                : 2026-09-10T03:45:46Z
-#   collected (floor)       : 4187 tests collected in 1.06s
-#   collected (dev)         : 4187 tests collected in 1.59s
+#   git tree sha (at start) : 697ca147bc9619e1f6a4783d9226a64b0e64024d
+#   git tree sha (at end)   : 697ca147bc9619e1f6a4783d9226a64b0e64024d
+#   pushed tip              : 6e1c90d
+#   uncommitted (at start)  : 15 file(s)
+#   uncommitted (at end)    : 15 file(s)
+#   started                 : 2026-09-14T18:13:20Z
+#   finished                : 2026-09-15T01:40:26Z
+#   collected (floor)       : 4208 tests collected in 1.23s
+#   collected (dev)         : 4208 tests collected in 2.19s
 #
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/gopalmacbook/Desktop/Max HQ/pqtools
 configfile: pyproject.toml
 testpaths: tests
-collected 4187 items
+collected 4208 items
 
 tests/test_adapters.py ..............s.....                              [  0%]
 tests/test_binary_format.py ............................................ [  1%]
@@ -57,7 +57,7 @@ tests/test_builtins_scalar.py .......................................... [  6%]
 tests/test_builtins_shape.py ........................................... [  9%]
 .........................                                                [  9%]
 tests/test_builtins_type.py ............................................ [ 10%]
-.                                                                        [ 11%]
+.                                                                        [ 10%]
 tests/test_catalog.py ............                                       [ 11%]
 tests/test_cli.py ...........s....                                       [ 11%]
 tests/test_cli_verbs.py ........................................         [ 12%]
@@ -74,38 +74,38 @@ tests/test_core.py ..................................................... [ 17%]
 tests/test_corpus.py ...                                                 [ 17%]
 tests/test_culture_formats.py .......................................... [ 18%]
 ........................                                                 [ 19%]
-tests/test_datetime_format_parsing.py ...........................        [ 20%]
+tests/test_datetime_format_parsing.py ...........................        [ 19%]
 tests/test_doc_example_shapes.py .................                       [ 20%]
 tests/test_doc_examples.py ............................................. [ 21%]
 ........................................................................ [ 23%]
 ........................................................................ [ 24%]
 ........................................................................ [ 26%]
 ........................................................................ [ 28%]
-........................................................................ [ 30%]
+........................................................................ [ 29%]
 ........................................................................ [ 31%]
 ........................................................................ [ 33%]
 ........................................................................ [ 35%]
 ........................................................................ [ 36%]
 ........................................................................ [ 38%]
 ........................................................................ [ 40%]
-........................................................................ [ 42%]
-............................................                             [ 43%]
-tests/test_documented_enum_values.py ................................... [ 44%]
+........................................................................ [ 41%]
+............................................                             [ 42%]
+tests/test_documented_enum_values.py ................................... [ 43%]
 ......................                                                   [ 44%]
 tests/test_documented_optional_arguments.py ............................ [ 45%]
 .                                                                        [ 45%]
-tests/test_documented_signatures.py .................................... [ 46%]
+tests/test_documented_signatures.py .................................... [ 45%]
 ........................................................................ [ 47%]
 ........................................................................ [ 49%]
 ........................................................................ [ 51%]
 ........................................................................ [ 52%]
 ........................................................................ [ 54%]
 ........................................................................ [ 56%]
-........................................................................ [ 58%]
+........................................................................ [ 57%]
 ........................................................................ [ 59%]
 ...............................................                          [ 60%]
-tests/test_end_to_end.py ..ssss........................s.s.............. [ 62%]
-......................................................                   [ 63%]
+tests/test_end_to_end.py ..ssss........................s.s.............. [ 61%]
+....................................................................     [ 63%]
 tests/test_evaluate.py ................................................. [ 64%]
 ....................                                                     [ 65%]
 tests/test_evidence_captures.py .....                                    [ 65%]
@@ -131,24 +131,25 @@ tests/test_odbc_options.py ..........                                    [ 76%]
 tests/test_operators.py ................................................ [ 77%]
 .....                                                                    [ 77%]
 tests/test_readme_builtins.py .....                                      [ 77%]
-tests/test_realworld.py ....                                             [ 78%]
+tests/test_realworld.py ....                                             [ 77%]
 tests/test_registry.py .........                                         [ 78%]
+tests/test_review_materialization.py ......s                             [ 78%]
 tests/test_rules.py .                                                    [ 78%]
 tests/test_sort_criteria.py ............                                 [ 78%]
 tests/test_sources.py .....................ss..................          [ 79%]
-tests/test_sql_credentials.py ...................                        [ 79%]
+tests/test_sql_credentials.py ...................                        [ 80%]
 tests/test_sql_navigation.py .......................                     [ 80%]
 tests/test_sql_options.py .............................                  [ 81%]
-tests/test_support_matrix.py ..............................              [ 81%]
+tests/test_support_matrix.py ..............................              [ 82%]
 tests/test_table_0_10.py ............................................... [ 83%]
 .....................................................                    [ 84%]
 tests/test_table_coverage_gaps.py ..............                         [ 84%]
 tests/test_table_gaps_0_9.py ..............................              [ 85%]
-tests/test_table_optional_arguments.py .........................         [ 85%]
-tests/test_tail_namespaces.py .......................................... [ 86%]
+tests/test_table_optional_arguments.py .........................         [ 86%]
+tests/test_tail_namespaces.py .......................................... [ 87%]
 ..........                                                               [ 87%]
 tests/test_temporal_0_10.py ............................................ [ 88%]
-........................................................................ [ 89%]
+........................................................................ [ 90%]
 ........................................................................ [ 91%]
 ........................................................................ [ 93%]
 ..........................                                               [ 94%]
@@ -165,12 +166,12 @@ tests/test_write_validation.py ssssss                                    [100%]
 =========================== short test summary info ============================
 SKIPPED [1] tests/test_adapters.py:383: could not import 'pyarrow': No module named 'pyarrow'
 SKIPPED [1] tests/test_cli.py:162: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [1] tests/test_end_to_end.py:95: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:115: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:141: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:153: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:486: could not import 'pandas': No module named 'pandas'
-SKIPPED [1] tests/test_end_to_end.py:536: could not import 'pandas': No module named 'pandas'
+SKIPPED [1] tests/test_end_to_end.py:96: could not import 'pandas': No module named 'pandas'
+SKIPPED [1] tests/test_end_to_end.py:116: could not import 'pandas': No module named 'pandas'
+SKIPPED [1] tests/test_end_to_end.py:142: could not import 'pandas': No module named 'pandas'
+SKIPPED [1] tests/test_end_to_end.py:154: could not import 'pandas': No module named 'pandas'
+SKIPPED [1] tests/test_end_to_end.py:487: could not import 'pandas': No module named 'pandas'
+SKIPPED [1] tests/test_end_to_end.py:537: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_export.py:107: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_export.py:122: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_export.py:141: could not import 'pandas': No module named 'pandas'
@@ -196,9 +197,10 @@ SKIPPED [1] tests/test_export.py:413: could not import 'pandas': No module named
 SKIPPED [1] tests/test_export.py:441: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_export.py:471: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_item_access.py:85: could not import 'openpyxl': No module named 'openpyxl'
+SKIPPED [1] tests/test_review_materialization.py:190: case-only rename fixture requires a case-sensitive filesystem
 SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================= 4146 passed, 41 skipped in 688.63s (0:11:28) =================
+================ 4166 passed, 42 skipped in 1176.79s (0:19:36) =================
 FLOOR EXIT: 0

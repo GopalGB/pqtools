@@ -58,18 +58,42 @@ if [[ ! -f "${log}" ]]; then
     echo "tracked floor log ${log} is missing from the working tree" >&2
     exit 67
 fi
-recorded="$(sed -n 's/^#   tree digest *: *//p' "${log}" | head -1)"
+
+recorded_digest_count="$(grep -F -c '#   tree digest             : ' "${log}" || true)"
+if (( recorded_digest_count != 1 )); then
+    echo "tracked floor log ${log} has ${recorded_digest_count} tree digest lines" >&2
+    exit 67
+fi
+recorded="$(grep -F '#   tree digest             : ' "${log}" | sed 's/^#   tree digest             : //' | head -1 || true)"
+if [[ -z "${recorded}" ]]; then
+    echo "floor log ${log} records an empty tree digest" >&2
+    exit 67
+fi
+
+readonly exact_extras_marker="#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)"
+recorded_extras_count="$(grep -Fx -c "${exact_extras_marker}" "${log}" || true)"
+if (( recorded_extras_count != 1 )); then
+    echo "tracked floor log ${log} has ${recorded_extras_count} exact extras marker lines" >&2
+    exit 67
+fi
+
+floor_exit_count="$(grep -c '^FLOOR EXIT: ' "${log}" || true)"
+if (( floor_exit_count != 1 )); then
+    echo "tracked floor log ${log} has ${floor_exit_count} FLOOR EXIT lines" >&2
+    exit 67
+fi
+if [[ "$(tail -n 1 "${log}")" != "FLOOR EXIT: 0" ]]; then
+    echo "tracked floor log ${log} is invalid" >&2
+    echo "  floor exit line: $(tail -n 1 "${log}")" >&2
+    exit 67
+fi
+
 # Guarded, not bare: under `set -e` a bare `actual="$(helper)"` exits with the
 # helper's own status, so floor_digest.sh's 64 (untracked file in scope) would
 # leave this script with an exit code its header does not document and its
 # caller cannot interpret.
 if ! actual="$("${HERE}/floor_digest.sh")"; then
     echo "cannot compute the digest to compare against ${log}" >&2
-    exit 67
-fi
-
-if [[ -z "${recorded}" ]]; then
-    echo "floor log ${log} records no tree digest" >&2
     exit 67
 fi
 if [[ "${recorded}" != "${actual}" ]]; then

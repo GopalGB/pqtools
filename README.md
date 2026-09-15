@@ -53,10 +53,11 @@ and tells you exactly which piece it could not do - it never quietly returns
 half your rows or a number that is subtly wrong. A clear "I can't do this" is
 the point.
 
-It is also **not made by Microsoft** and not a copy of their engine. The one
-big thing their engine does that this does not is *query folding* - pushing the
-work down into your database instead of downloading the rows first. You get the
-same answers here, just more data over the wire.
+ It is also **not made by Microsoft** and not a copy of their engine. The one
+ big thing their engine does that this does not is *query folding* - pushing the
+ work down into your database instead of downloading the rows first. Supported
+ queries run locally; unsupported features are refused, and semantic equivalence
+ with Microsoft's engine is not claimed.
 
 ---
 

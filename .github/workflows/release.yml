@@ -51,7 +51,7 @@ jobs:
       - run: npm run bundle
       - run: git diff --exit-code -- src/pqtools/_bridge.cjs
       - run: python -m pip install -e ".[dev,fabric]"
-      - run: python -m pytest -q -n auto --cov=pqtools --cov-fail-under=80
+      - run: python -m pytest -q --cov=pqtools --cov-fail-under=80
       - run: python -m mypy src
       - run: python -m ruff check .
       - run: python -m ruff format --check .
@@ -61,6 +61,28 @@ jobs:
       - run: python -m pip install --upgrade pip setuptools
       - run: python -m pip_audit
       - run: python -m pip install semgrep==1.157.0 && semgrep scan --metrics=off --disable-version-check --error --config semgrep-rules.yaml src tests js
+
+      - name: Floor run without optional extras (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          PYTHON_BIN="$(command -v python)"
+          python -m venv /tmp/pqtools-floor-venv
+          /tmp/pqtools-floor-venv/bin/python -m pip install -e .
+          bash scripts/floor_venv_run.sh /tmp/pqtools-floor-venv/bin/python evidence/floor-venv-suite-2026-09-10.log "$PYTHON_BIN" \
+            > /tmp/pqtools-floor-run.log 2>&1
+          bash scripts/check_floor_freshness.sh > /tmp/pqtools-floor-fresh.log 2>&1
+          tail -n 20 /tmp/pqtools-floor-run.log /tmp/pqtools-floor-fresh.log
+
+      - name: Upload floor evidence and logs
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-floor-evidence-logs
+          path: |
+            evidence/floor-venv-suite-2026-09-10.log
+            /tmp/pqtools-floor-run.log
+            /tmp/pqtools-floor-fresh.log
+          if-no-files-found: error
 
       - run: pip install build twine
       - run: python -m build

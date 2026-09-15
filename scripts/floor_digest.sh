@@ -28,6 +28,7 @@
 # in scope" whenever the scope happened to be dirty, and no caller could tell
 # a typo from a real refusal by exit code alone.
 set -euo pipefail
+export LC_ALL=C
 
 cd "$(git rev-parse --show-toplevel)"
 

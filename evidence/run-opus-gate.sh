@@ -55,45 +55,11 @@ trap 'cleanup; exit 143' TERM
 sweep
 git worktree add -q "$WT" "$BASE" || exit 1
 cd "$WT" || exit 1
-git read-tree "$HEAD"
-
-# The index now holds HEAD while the FILES on disk still hold BASE, which is
-# what `git diff --cached` needs (the worktree's HEAD commit is BASE, so the
-# staged diff is exactly BASE..HEAD). But a reviewer that opens a file reads
-# the BASE version, and round 22 said so plainly: "I cannot verify the diff's
-# own edits against a real tree from this session."
-#
-# Materialise HEAD's files too. This does not disturb the staged diff - that
-# is computed from the worktree's HEAD COMMIT (still BASE) against the INDEX
-# (still HEAD), neither of which the working files participate in.
-git checkout-index -a -f
-# checkout-index only writes; paths deleted between BASE and HEAD would linger.
-# -z, because `git diff --name-only` C-QUOTES a non-ASCII path - verified:
-# `src/café.py` comes back as `"src/caf\303\251.py"`, which names no file, and
-# `rm -f` swallows the ENOENT silently. And -rf, because `rm -f` refuses a
-# directory ("is a directory", exit 0 under the -f) so a deleted submodule or
-# directory would survive. Either way a BASE-only path lingers in the tree the
-# reviewer reads, which is the staleness this block exists to prevent.
-# --no-renames, because rename detection EXEMPTS the very paths this block
-# exists to remove. Round 59: `evidence/floor-venv-suite-2026-09-09.log` was
-# renamed to `...-2026-09-10.log`; git scored it R092, `--diff-filter=D`
-# reported ZERO files, nothing was deleted, and the BASE-era log lingered on
-# disk beside the HEAD one. The reviewer then correctly reported a tree with
-# two floor logs - a real broken state, produced by this harness rather than
-# by the commit under review, and filed against the repo as a CRITICAL.
-# Verified: `--diff-filter=D` -> 0 paths; `--no-renames --diff-filter=D` -> the
-# old path. A rename is a delete plus an add, and only the delete matters here.
-# Round 60 measured the cost of the other direction: --no-renames makes a
-# case-only rename (`Foo.md` -> `foo.md`) surface as `D Foo.md`, and the `rm`
-# below then deletes the HEAD file `checkout-index` just materialised -
-# /private/tmp is case-insensitive here (verified: a `CASEPROBE_Foo.md` probe
-# is visible as `caseprobe_foo.md`). So delete only what HEAD does not have;
-# a path HEAD still names survives, whatever the diff calls it.
-git diff -z --name-only --no-renames --diff-filter=D "$BASE" "$HEAD" \
-  | while IFS= read -r -d '' gone; do
-      [ -n "$gone" ] || continue
-      git cat-file -e "$HEAD:$gone" 2>/dev/null || rm -rf -- "$gone"
-    done
+./scripts/materialize_review_tree.sh "$HEAD" >/tmp/run-opus-materialize.log
+if [[ $? -ne 0 ]]; then
+  cat /tmp/run-opus-materialize.log >&2
+  exit 3
+fi
 STUB_BRIDGE=$(printf '// vendored esbuild bundle of @microsoft/powerquery-parser 2.0.0 + powerquery-formatter 1.0.0 (2.6 MB, committed; excluded from review diff, reproducible via `npm run bundle`)\n' | git hash-object -w --stdin)
 STUB_LOCK=$(printf '{ "_note": "package-lock.json is committed (npm lockfile v3, pins parser 2.0.0 / formatter 1.0.0 / esbuild 0.28.2); excluded from review diff" }\n' | git hash-object -w --stdin)
 # The package was renamed mquery_toolkit -> pqtools in 0.2.0. This line kept the

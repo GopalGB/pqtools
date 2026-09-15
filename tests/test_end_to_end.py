@@ -27,6 +27,7 @@ import json
 import os
 import re
 import subprocess
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -2953,7 +2954,7 @@ def _freshness(repo: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _write_log(repo: Path, name: str, digest: str) -> Path:
-    """Write a floor log AND track it.
+    """Write a minimal producer-format floor log and track it.
 
     Tracking is not incidental to the fixture - it is the contract. The
     freshness check resolves candidates with `git ls-files`, not a filesystem
@@ -2962,7 +2963,14 @@ def _write_log(repo: Path, name: str, digest: str) -> Path:
     resolution strategy the script no longer uses.
     """
     log = repo / "evidence" / name
-    log.write_text(f"#   tree digest             : {digest}\n", encoding="utf-8")
+    log.write_text(
+        "# PRD 6.2 - the suite with pandas, pyarrow, openpyxl and python-calamine ABSENT.\n"
+        "#\n"
+        "#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)\n"
+        f"#   tree digest             : {digest}\n"
+        "FLOOR EXIT: 0\n",
+        encoding="utf-8",
+    )
     _git(["add", "--", f"evidence/{name}"], repo)
     return log
 
@@ -2976,6 +2984,98 @@ def _fixture_digest(repo: Path) -> str:
         check=True,
         env=_git_env(),
     ).stdout.strip()
+
+
+def _locale_repo(path: Path) -> Path:
+    """Create a fixture whose filename ordering differs across collation orders.
+
+    The paths are intentionally non-ASCII and punctuation-mixed so a wrong
+    locale assumption in sorting is observable in the scope hash.
+    """
+    repo = _freshness_repo(path)
+    for name in (
+        "a.txt",
+        "Zeta.txt",
+        "Éclair.txt",
+        "space name.txt",
+        "space-name.txt",
+        "space-name_2.txt",
+    ):
+        (path / "src" / name).write_text(name, encoding="utf-8")
+    # Commit one version so digest uses those paths, not the working tree.
+    _git(["add", "src"], repo)
+    _git(["commit", "-qm", "locale fixture"], repo)
+    return repo
+
+
+def _locale_digest(repo: Path, locale: str) -> str:
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "floor_digest.sh")],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**_git_env(), "LC_ALL": locale},
+    ).stdout.strip()
+
+
+def _sorted_names(repo: Path, locale: str, names: tuple[str, ...]) -> str:
+    return subprocess.run(
+        ["bash", "-lc", "printf '%s\n' " + " ".join(shlex.quote(name) for name in names) + " | sort"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**_git_env(), "LC_ALL": locale},
+    ).stdout.strip()
+
+
+def test_the_digest_is_independent_of_locale(tmp_path: Path) -> None:
+    """Reproduce the pre-fix defect with a small crafted scope.
+
+    In the baseline state, different locale sort orders produce different
+    digests for the same tracked files. This test captures that so we can keep
+    the regression pinned.
+    """
+    names = (
+        "a.txt",
+        "Zeta.txt",
+        "Éclair.txt",
+        "space name.txt",
+        "space-name.txt",
+        "space-name_2.txt",
+    )
+    repo = _locale_repo(tmp_path / "locale-repo")
+    c_digest = _locale_digest(repo, "C")
+    locale_tag = "en_US.UTF-8"
+    locales = subprocess.run(
+        ["bash", "-lc", "locale -a"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**_git_env()},
+    ).stdout
+    if locale_tag not in locales and "en_US.utf8" not in locales:
+        pytest.skip(
+            "en_US.UTF-8 locale not available for precondition check in this fixture"
+        )
+    locale_digest = _locale_digest(repo, locale_tag)
+    c_order = _sorted_names(repo, "C", names)
+    utf8_order = _sorted_names(repo, locale_tag, names)
+    if c_order == utf8_order:
+        pytest.skip(
+            "locale sort order is not visibly different on this host; skip as portability guard"
+        )
+    assert c_digest == locale_digest, (c_digest, locale_digest)
+
+    # Digest changes when file content and file path change, while locale does not.
+    (repo / "src" / "a.txt").write_text("A changed\n", encoding="utf-8")
+    changed_content_digest = _locale_digest(repo, "C")
+    assert changed_content_digest != c_digest, (changed_content_digest, c_digest)
+    _git(["mv", "src/a.txt", "src/a-renamed.txt"], repo)
+    changed_path_digest = _locale_digest(repo, "C")
+    assert changed_path_digest != changed_content_digest, (changed_path_digest, changed_content_digest)
 
 
 def test_the_freshness_check_fails_when_there_is_no_floor_log(tmp_path: Path) -> None:
@@ -3036,6 +3136,60 @@ def test_the_freshness_check_passes_on_a_current_log(tmp_path: Path) -> None:
     result = _freshness(repo)
     assert result.returncode == 0, result.stdout + result.stderr
     assert log.name in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize(
+    "case,exit_code",
+    [
+        ("digest_only", None),
+        ("missing_footer", None),
+        ("truncated_footer", None),
+        ("duplicate_footer", None),
+        *[(f"exit-{code}", code) for code in [1, 2, 3, 4, 5]],
+        ("missing_marker", None),
+        ("wrong_marker", None),
+        ("duplicate_digest", None),
+        ("duplicate_marker", None),
+    ],
+)
+def test_current_digest_does_not_certify_invalid_floor_evidence(
+    tmp_path: Path,
+    case: str,
+    exit_code: int | None,
+) -> None:
+    repo = _freshness_repo(tmp_path / "repo")
+    digest = _fixture_digest(repo)
+    log = _write_log(repo, "floor-venv-suite-2026-01-01.log", digest)
+    content = log.read_text(encoding="utf-8")
+    marker = "#   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)\n"
+
+    if case == "digest_only":
+        content = f"#   tree digest             : {digest}\n"
+    elif case == "missing_footer":
+        content = content.replace("FLOOR EXIT: 0\n", "")
+    elif case == "truncated_footer":
+        content = content.replace("FLOOR EXIT: 0", "FLOOR EXIT: ")
+    elif case == "duplicate_footer":
+        content += "FLOOR EXIT: 0\n"
+    elif case.startswith("exit-") and exit_code is not None:
+        content = content.replace("FLOOR EXIT: 0", f"FLOOR EXIT: {exit_code}")
+    elif case == "missing_marker":
+        content = content.replace(marker, "")
+    elif case == "wrong_marker":
+        content = content.replace(
+            "python_calamine all absent (find_spec -> None)",
+            "python_calamine present",
+        )
+    elif case == "duplicate_digest":
+        content += f"#   tree digest             : {digest}\n"
+    elif case == "duplicate_marker":
+        content += marker
+    else:
+        raise AssertionError(case)
+
+    log.write_text(content, encoding="utf-8")
+    result = _freshness(repo)
+    assert result.returncode == 67, (case, result.stdout + result.stderr)
 
 
 def test_the_freshness_check_ignores_an_untracked_stray_log(tmp_path: Path) -> None:
