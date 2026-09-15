@@ -41,6 +41,20 @@ readonly HERE
 cd "${ROOT}"
 readonly DEV_PYTHON="${3:-${ROOT}/.venv/bin/python}"
 
+readonly SCOPE=(
+    src
+    tests
+    pyproject.toml
+    scripts/floor_venv_run.sh
+    scripts/floor_digest.sh
+)
+
+if [[ -n "$(git status --porcelain -- "${SCOPE[@]}")" ]]; then
+    echo "refusing: the floor digest scope is dirty; commit or remove changes first" >&2
+    git status --short -- "${SCOPE[@]}" >&2
+    exit 69
+fi
+
 for interpreter in "${FLOOR_PYTHON}" "${DEV_PYTHON}"; do
     [[ -x "${interpreter}" ]] || {
         echo "not an executable interpreter: ${interpreter}" >&2
