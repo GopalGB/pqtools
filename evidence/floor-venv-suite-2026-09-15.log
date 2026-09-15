@@ -18,24 +18,24 @@
 #   extras absent           : pandas, pyarrow, openpyxl, python_calamine all absent (find_spec -> None)
 #   skips: 38 SKIPPED lines accounting for 42, summary says 42
 #
-#   tree digest             : 7288c48ccc24cb3db38b925431d6b183d80c8582c4ac4cea864a0004f7209a49
+#   tree digest             : 46b3949e46d44c4b5499d79edc4699d9366dd28628dd3030b5f8a1b34a32d68e
 #     scripts/floor_digest.sh - the single definition, read by this
 #     script and by release_gate.sh step 9 so the gate cannot certify
 #     a different scope than this header names.
 #     over 126 TRACKED files. Untracked files are refused rather
 #     than hashed: including them produced a digest no clone, CI run or
 #     review worktree could reproduce. Re-measured after the run:
-#     7288c48ccc24cb3db38b925431d6b183d80c8582c4ac4cea864a0004f7209a49
+#     46b3949e46d44c4b5499d79edc4699d9366dd28628dd3030b5f8a1b34a32d68e
 #
-#   git tree sha (at start) : 697ca147bc9619e1f6a4783d9226a64b0e64024d
-#   git tree sha (at end)   : 697ca147bc9619e1f6a4783d9226a64b0e64024d
+#   git tree sha (at start) : e24070874e6ae726afec769b2f15bedb38af503f
+#   git tree sha (at end)   : e24070874e6ae726afec769b2f15bedb38af503f
 #   pushed tip              : 6e1c90d
-#   uncommitted (at start)  : 15 file(s)
-#   uncommitted (at end)    : 15 file(s)
-#   started                 : 2026-09-14T18:13:20Z
-#   finished                : 2026-09-15T01:40:26Z
-#   collected (floor)       : 4208 tests collected in 1.23s
-#   collected (dev)         : 4208 tests collected in 2.19s
+#   uncommitted (at start)  : 0 file(s)
+#   uncommitted (at end)    : 0 file(s)
+#   started                 : 2026-09-15T13:08:34Z
+#   finished                : 2026-09-15T13:23:51Z
+#   collected (floor)       : 4208 tests collected in 1.27s
+#   collected (dev)         : 4208 tests collected in 3.21s
 #
 ============================= test session starts ==============================
 platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
@@ -197,10 +197,10 @@ SKIPPED [1] tests/test_export.py:413: could not import 'pandas': No module named
 SKIPPED [1] tests/test_export.py:441: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_export.py:471: could not import 'pandas': No module named 'pandas'
 SKIPPED [1] tests/test_item_access.py:85: could not import 'openpyxl': No module named 'openpyxl'
-SKIPPED [1] tests/test_review_materialization.py:190: case-only rename fixture requires a case-sensitive filesystem
+SKIPPED [1] tests/test_review_materialization.py:205: case-only rename fixture requires a case-sensitive filesystem
 SKIPPED [2] tests/test_sources.py:259: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [4] tests/test_write_validation.py:44: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:120: could not import 'openpyxl': No module named 'openpyxl'
 SKIPPED [1] tests/test_write_validation.py:138: could not import 'python_calamine': No module named 'python_calamine'
-================ 4166 passed, 42 skipped in 1176.79s (0:19:36) =================
+================= 4166 passed, 42 skipped in 916.27s (0:15:16) =================
 FLOOR EXIT: 0
