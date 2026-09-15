@@ -31,7 +31,7 @@ PQ_CLOSEOUT_DIR=/tmp/pqtools-closeout-20260914.z11kgu
 
 ## Next command
 - continue with PLAN.md Phase 1 task 6: begin focused implementation.
-## Final checkpoint — 2026-09-15
+## Final checkpoint: 2026-09-15
 
 - Branch: `feat/connectors-and-real-m-0.9.0`; candidate checkpoint: `2082e19`.
 - The working tree is clean at this checkpoint. The floor producer now refuses a dirty digest scope (`d2b9f6c`).
@@ -43,4 +43,4 @@ PQ_CLOSEOUT_DIR=/tmp/pqtools-closeout-20260914.z11kgu
 - Release gate: no `GATE PASSED`; the run was interrupted during the full suite and later reported stale floor evidence. Ruff and mypy are now green at `2082e19`.
 - Public actions remain pending: no push, tag, PR, PyPI publish, website deploy, or live Microsoft-service validation occurred.
 
-Next command: from a clean checkout at `2082e19`, rerun the exact floor command in `RELEASE-HANDOFF-2026-09-14.md`, then run `scripts/check_floor_freshness.sh` and `scripts/release_gate.sh` without interrupting either process.
+Next command: from a clean checkout at `2082e19`, follow the corrected setup and floor command in `RELEASE-HANDOFF-2026-09-14.md`, commit the dated evidence log, then run `scripts/check_floor_freshness.sh` and `scripts/release_gate.sh` without interrupting either process.

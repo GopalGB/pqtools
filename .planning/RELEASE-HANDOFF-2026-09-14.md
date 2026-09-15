@@ -1,4 +1,4 @@
-# Release handoff — 2026-09-14 plan
+# Release handoff: 2026-09-14 plan
 
 Local candidate: branch `feat/connectors-and-real-m-0.9.0`, checkpoint `2082e19`, package version `0.10.0`.
 
@@ -14,11 +14,12 @@ Before any public release, run from a clean checkout of the candidate:
 
 ```bash
 python -m venv /tmp/pqtools-floor-release
-/tmp/pqtools-floor-release/bin/pip install -e '.[dev]'
-bash scripts/floor_venv_run.sh /tmp/pqtools-floor-release/bin/python evidence/floor-venv-suite-2026-09-10.log .venv/bin/python
+/tmp/pqtools-floor-release/bin/pip install -e . pytest pytest-cov pytest-xdist
+python -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+bash scripts/floor_venv_run.sh /tmp/pqtools-floor-release/bin/python evidence/floor-venv-suite-2026-09-15.log .venv/bin/python
 bash scripts/check_floor_freshness.sh
-PQ_GATE_PYTEST_ARGS='--cov=pqtools --cov-report=term-missing --cov-fail-under=80' bash scripts/release_gate.sh
+PQ_GATE_PYTEST_ARGS='-n auto --cov=pqtools --cov-report=term-missing --cov-fail-under=80' bash scripts/release_gate.sh
 ```
 
 External actions remain pending and intentionally unperformed: external CI confirmation, website deployment, creating a public PR, creating tag `v0.10.0` (the release workflow publishes PyPI), and PyPI publication. Live Microsoft-service and native Mashup validation also remain deferred.
-

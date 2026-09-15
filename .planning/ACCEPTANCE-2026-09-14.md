@@ -1,4 +1,4 @@
-# pqtools closeout acceptance — 2026-09-14 handoff
+# pqtools closeout acceptance: 2026-09-14 handoff
 
 Candidate branch: `feat/connectors-and-real-m-0.9.0`  
 Latest local checkpoint: `2082e19`
@@ -22,4 +22,3 @@ Latest local checkpoint: `2082e19`
 | Portfolio copy | portfolio `npm run lint` and `npm run build` passed locally | VERIFIED; deployment deferred |
 
 The committed plan deliberately leaves dependency-graph/Fabric/PQTest/TMDL/folding/Mashup behavior, live Microsoft-service validation, external CI, website deployment, PyPI publication, and public PR/tag actions outside local acceptance.
-
